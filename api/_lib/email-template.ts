@@ -64,7 +64,9 @@ function shell(input: { preheader: string; body: string; reason: string; site: s
           <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:20px;overflow:hidden;">
             <tr>
               <td align="center" style="background-color:${GREEN_DEEP};padding:26px 32px 22px;">
-                <img src="${site}/images/icon-white.png" alt="" width="75" height="56" style="display:block;width:75px;height:56px;border:0;outline:none;" />
+                <!-- Was: width="75" height="56" (the old 683x512 canvas). The mark file
+                     is a square now, so its box is square too and the leaf is not stretched. -->
+                <img src="${site}/images/icon-white.png" alt="" width="56" height="56" style="display:block;width:56px;height:56px;border:0;outline:none;" />
                 <p style="margin:10px 0 0;font-family:${HEADING_FONT};font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:#ffffff;">People Growth Africa</p>
               </td>
             </tr>

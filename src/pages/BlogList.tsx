@@ -285,7 +285,7 @@ export default function BlogList() {
               Get HR Insights<br />Delivered to Your Inbox
             </h2>
             <p className="font-[family-name:var(--font-body)] text-[1.05rem] text-charcoal/60 leading-relaxed mb-9 max-w-[500px] mx-auto">
-              Join 2,000+ business leaders across Africa receiving practical people management tips, regulatory updates, and growth strategies every two weeks.
+              Join 2,000+ business leaders across Africa receiving practical people management tips, regulatory updates, and growth strategies. It comes in quarterly.
             </p>
             <form onSubmit={handleSubscribe} className="flex flex-col sm:flex-row gap-3 max-w-[480px] mx-auto">
               <input
@@ -312,7 +312,8 @@ export default function BlogList() {
                 {newsletterState === 'sending' ? 'Sending…' : newsletterState === 'sent' ? 'Thanks ✓' : 'Subscribe'}
               </button>
             </form>
-            <p className="font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/40 mt-4">No spam. The newsletter and nothing else, every two weeks.</p>
+            {/* Old wording, kept for reference: No spam. The newsletter and nothing else, every two weeks. */}
+            <p className="font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/40 mt-4">No spam. The newsletter and nothing else. It comes in quarterly.</p>
             {/* Mounted from the start so a screen reader announces the server's answer when it lands. */}
             <p
               role="status"

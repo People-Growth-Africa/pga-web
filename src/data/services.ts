@@ -152,6 +152,29 @@ export const servicesData: ServiceDetail[] = [
     category: 'operations',
   },
   {
+    id: 'agribusiness-people-strategy',
+    name: 'Agribusiness People Strategy',
+    tagline: 'People systems built around seasons, field teams and the realities of farming.',
+    description:
+      'Specialist HR support designed for the unique workforce challenges of agribusinesses across Nigeria.',
+    deliverables: [
+      'Seasonal workforce planning',
+      'Farmer and field staff development programmes',
+      'Agro-processing team structure design',
+      'Rural workforce engagement strategies',
+      'Agribusiness HR compliance and policy',
+    ],
+    timeline: '4 to 6 weeks',
+    targetAudience:
+      'Agribusiness owners, farm estate managers and agro-processing directors with 10 to 100 employees.',
+    businessOutcomes: [
+      'A workforce plan that holds through peak and off seasons',
+      'Field and processing teams who know what good work looks like',
+      'People policies that stand up to audits and community scrutiny',
+    ],
+    category: 'operations',
+  },
+  {
     id: 'career-development',
     name: 'Career Development Programmes',
     tagline: 'Show your best people a future here, not somewhere else.',

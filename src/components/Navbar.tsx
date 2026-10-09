@@ -23,6 +23,30 @@ const baseNavLinks = [
   { to: '/#testimonials', label: 'Testimonials' },
 ];
 
+/** Height of the fixed bar a section has to clear when it is scrolled to. */
+const NAV_OFFSET_PX = 88;
+
+/**
+ * Scroll to a section, allowing for the fixed header.
+ *
+ * A phone's glide to a section is easily cancelled: the entry animations move
+ * the content above the target as it fades in, and the browser abandons a
+ * programmatic scroll when the layout under it shifts. That is why tapping a
+ * menu item sometimes did nothing. The same target is issued a second time once
+ * the page has settled, which lands the section even if the first try was cut
+ * short.
+ */
+function scrollToSection(id: string) {
+  const go = () => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const top = el.getBoundingClientRect().top + window.scrollY - NAV_OFFSET_PX;
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  };
+  go();
+  window.setTimeout(go, 600);
+}
+
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -110,12 +134,20 @@ export default function Navbar() {
         navigate('/');
         // The new page mounts only after the outgoing one has faded
         // (PageTransition), and scrolling before it exists does nothing.
+        setTimeout(() => scrollToSection(id), 300);
+      } else {
+        scrollToSection(id);
+      }
+      /* The direct scrollIntoView calls this used, kept for reference:
+      if (location.pathname !== '/') {
+        navigate('/');
         setTimeout(() => {
           document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
         }, 300);
       } else {
         document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
       }
+      */
     }
   };
 

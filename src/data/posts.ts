@@ -64,9 +64,9 @@ When your team crosses 15-20 people, things start to slip through the cracks. Pe
 
 ## Phase 1: Foundation (10-25 Employees)
 
-This is where most businesses should start. You don't need an enterprise HR system — you need basic structure.
+This is where most businesses should start. You don't need an enterprise HR system: you need basic structure.
 
-**Employment contracts and documentation.** Every employee should have a written contract that clearly outlines their role, compensation, benefits, and the terms of their employment. This isn't just good practice — it's a legal requirement under Nigeria's Labour Act.
+**Employment contracts and documentation.** Every employee should have a written contract that clearly outlines their role, compensation, benefits, and the terms of their employment. This isn't just good practice: it's a legal requirement under Nigeria's Labour Act.
 
 **A basic employee handbook.** This doesn't need to be 50 pages. Start with your core policies: working hours, leave entitlements, code of conduct, and grievance procedures. Make it accessible and ensure every team member receives a copy.
 
@@ -78,7 +78,7 @@ With basic documentation in place, you can start building the systems that drive
 
 **Defined roles and reporting lines.** As your team grows, ambiguity about who does what becomes costly. Create clear job descriptions with defined responsibilities and reporting relationships. This is also the time to introduce basic organisational design.
 
-**Performance management.** You don't need OKRs or complex KPIs right away. Start with quarterly check-ins where managers and employees discuss progress, challenges, and development goals. The goal is regular, structured conversation — not a perfect system.
+**Performance management.** You don't need OKRs or complex KPIs right away. Start with quarterly check-ins where managers and employees discuss progress, challenges, and development goals. The goal is regular, structured conversation, not a perfect system.
 
 **Compensation structure.** Move from ad-hoc pay decisions to a transparent compensation framework. Define salary bands for each role level and create clear criteria for promotions and raises. This reduces turnover and builds trust.
 
@@ -114,7 +114,7 @@ People Growth Africa helps businesses at every stage of this journey. Whether yo
     content: `
 ## Why Labour Law Compliance Matters
 
-Nigeria's Labour Act, along with other employment-related legislation, establishes the framework for the employer-employee relationship. Ignoring these requirements doesn't just expose your business to legal risk — it erodes trust with your workforce and makes it harder to attract and retain talent.
+Nigeria's Labour Act, along with other employment-related legislation, establishes the framework for the employer-employee relationship. Ignoring these requirements doesn't just expose your business to legal risk, it erodes trust with your workforce and makes it harder to attract and retain talent.
 
 ## Key Provisions Every Employer Should Know
 
@@ -150,7 +150,7 @@ The law requires that termination follows the terms specified in the employment 
 Rather than treating compliance as a burden, smart businesses integrate it into their HR systems:
 
 1. **Audit your current practices** against the requirements of the Labour Act
-2. **Document everything** — contracts, policies, leave records, performance reviews
+2. **Document everything**: contracts, policies, leave records, performance reviews
 3. **Train your managers** on what the law requires and how to apply it consistently
 4. **Review regularly** as legislation evolves and your workforce changes
 
@@ -199,7 +199,7 @@ Feedback in the African context requires cultural sensitivity. Direct negative f
 
 ### 4. Build Systems, Not Just Answers
 
-New managers often fall into the trap of being the answer machine — everyone comes to them for solutions. Instead, build systems and processes that help your team solve problems independently. This frees you to focus on strategy and development.
+New managers often fall into the trap of being the answer machine, everyone comes to them for solutions. Instead, build systems and processes that help your team solve problems independently. This frees you to focus on strategy and development.
 
 ### 5. Ask for Help
 
@@ -207,7 +207,7 @@ There's no shame in admitting you're learning. The best managers seek mentorship
 
 ## How People Growth Africa Supports New Managers
 
-Our Leadership Development programme is specifically designed for the African business context. We provide practical frameworks, coaching, and support that help first-time managers build real capability — not just inherited authority.
+Our Leadership Development programme is specifically designed for the African business context. We provide practical frameworks, coaching, and support that help first-time managers build real capability, not just inherited authority.
     `,
     category: 'leadership',
     tags: ['Leadership', 'Startups', 'Management', 'Career Development'],
@@ -238,7 +238,7 @@ Culture doesn't disappear because people stop caring. It erodes because:
 
 ### Document Your Values
 
-If your culture lives only in the founder's head, it's fragile. Write down the values that define how your organisation operates. Not aspirational values — real ones. The principles that actually guide decisions when no one is watching.
+If your culture lives only in the founder's head, it's fragile. Write down the values that define how your organisation operates. Not aspirational values, real ones. The principles that actually guide decisions when no one is watching.
 
 ### Hire for Culture Add, Not Just Culture Fit
 
@@ -250,11 +250,11 @@ Your performance management, hiring, promotion, and reward systems should all re
 
 ### Create Rituals and Traditions
 
-Every strong culture has rituals — regular practices that reinforce shared values. This could be weekly team celebrations, monthly all-hands meetings, or annual retreats. The specific rituals matter less than their consistency and authenticity.
+Every strong culture has rituals: regular practices that reinforce shared values. This could be weekly team celebrations, monthly all-hands meetings, or annual retreats. The specific rituals matter less than their consistency and authenticity.
 
 ## How People Growth Africa Helps
 
-Our Culture Development service helps businesses define, document, and embed the culture that will carry them through their next phase of growth. We don't impose generic culture frameworks — we work with you to codify what's authentic to your organisation and build systems that sustain it.
+Our Culture Development service helps businesses define, document, and embed the culture that will carry them through their next phase of growth. We don't impose generic culture frameworks: we work with you to codify what's authentic to your organisation and build systems that sustain it.
     `,
     category: 'culture',
     tags: ['Culture', 'Growth', 'Values', 'Scaling'],
@@ -285,7 +285,7 @@ Without a transparent compensation framework, pay decisions feel arbitrary. When
 
 ### 3. Managerial Deficiency
 
-People don't leave companies — they leave managers. In many African businesses, managers are promoted for technical skill rather than people management ability. The result is a workforce managed by people who were never trained to manage.
+People don't leave companies; they leave managers. In many African businesses, managers are promoted for technical skill rather than people management ability. The result is a workforce managed by people who were never trained to manage.
 
 ### 4. Cultural Misalignment
 
@@ -295,7 +295,7 @@ As businesses grow, culture shifts. If the values that attracted your best peopl
 
 ### Build Career Frameworks
 
-Define what growth looks like at every level in your organisation. Create dual tracks — one for people who want to manage teams, one for people who want to deepen their expertise. Give your best people a reason to stay by showing them a future.
+Define what growth looks like at every level in your organisation. Create dual tracks: one for people who want to manage teams, one for people who want to deepen their expertise. Give your best people a reason to stay by showing them a future.
 
 ### Implement Regular Stay Interviews
 
@@ -328,7 +328,7 @@ Our Talent Management and Retention strategies are built specifically for the Af
     content: `
 ## What Is an HR Audit?
 
-An HR audit is a systematic review of your organisation's people practices, policies, and systems to identify strengths, gaps, and risks. It's the foundation for any meaningful HR improvement — you can't fix what you haven't assessed.
+An HR audit is a systematic review of your organisation's people practices, policies, and systems to identify strengths, gaps, and risks. It's the foundation for any meaningful HR improvement: you can't fix what you haven't assessed.
 
 ## Why Most HR Audits Fail
 
@@ -388,7 +388,7 @@ The transition from 10 to 100 employees is the most important period in any comp
 ## Why This Window Matters
 
 ### At 10 Employees
-Everyone knows everyone. Communication is informal. Culture is carried by proximity. The founder manages everything personally. This works — until it doesn't.
+Everyone knows everyone. Communication is informal. Culture is carried by proximity. The founder manages everything personally. This works, until it doesn't.
 
 ### At 25 Employees
 Communication starts to break down. The founder can no longer manage everything directly. You need managers, but most haven't been trained. Informal agreements create confusion. First signs of culture drift appear.
@@ -401,7 +401,7 @@ You need a proper organisational structure, comprehensive policies, trained mana
 
 ## The Cost of Delay
 
-Every month you wait to invest in proper people systems, you accumulate technical debt — the human resources equivalent. Turnover increases. Mis-hires multiply. Managerial problems compound. By the time you reach 100 employees, the cost of fixing what's broken is five to ten times what it would have been at 25.
+Every month you wait to invest in proper people systems, you accumulate technical debt, the human resources equivalent. Turnover increases. Mis-hires multiply. Managerial problems compound. By the time you reach 100 employees, the cost of fixing what's broken is five to ten times what it would have been at 25.
 
 ## What "HR Can't Wait" Actually Means
 
@@ -416,7 +416,7 @@ It doesn't mean you need to hire an HR director at 15 employees. It means you ne
 
 ## How People Growth Africa Helps
 
-We specialise in exactly this inflection point. Our services are designed for businesses with 10-100 employees who need practical, cost-effective HR systems that scale with their growth. We don't sell enterprise solutions to startups — we build the right systems for where you are today.
+We specialise in exactly this inflection point. Our services are designed for businesses with 10-100 employees who need practical, cost-effective HR systems that scale with their growth. We don't sell enterprise solutions to startups: we build the right systems for where you are today.
     `,
     category: 'growth',
     tags: ['Business Growth', 'Scaling', 'HR Systems', 'SMEs'],
@@ -443,7 +443,7 @@ In a startup, priorities shift quarterly, sometimes monthly. Your performance ma
 
 ### Cultural Sensitivity
 
-In many African cultures, direct feedback — especially negative feedback — requires careful handling. Traditional performance review formats can feel confrontational and damage relationships rather than build them.
+In many African cultures, direct feedback, especially negative feedback, requires careful handling. Traditional performance review formats can feel confrontational and damage relationships rather than build them.
 
 ### Limited HR Resources
 
@@ -510,7 +510,7 @@ In competitive markets, your employer brand matters. Share your company culture,
 
 ### Skills-Based Assessment
 
-CVs in the African context can be unreliable — embellishment is common and educational credentials don't always correlate with capability. Use practical skills assessments early in the process to verify actual ability.
+CVs in the African context can be unreliable: embellishment is common and educational credentials don't always correlate with capability. Use practical skills assessments early in the process to verify actual ability.
 
 ### Cultural Alignment
 

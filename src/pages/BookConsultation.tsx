@@ -25,9 +25,12 @@ export default function BookConsultation() {
             >
               Book Your People Systems Consultation
             </h1>
+            {/* The intro line below is hidden for now; the calendar's own header
+                carries the same guidance.
             <p className="font-[family-name:var(--font-body)] text-white/80 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
               Choose a slot on the calendar below, or send us a written enquiry. An advisor will review your situation and come back with clear next steps.
             </p>
+            */}
           </AnimateOnScroll>
         </div>
       </section>

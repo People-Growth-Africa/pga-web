@@ -2,7 +2,36 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Old tab icon kept for reference: it read as squeezed at tab size.
+         <link rel="icon" type="image/png" href="/images/icon-black.png" /> -->
+    <!-- The two existing brand icons, one per browser mode: the black leaf for a
+         light tab bar, the white leaf for a dark one. The plain black link first
+         is the fallback for anything that ignores `media` on an icon.
+         Earlier versions: <link rel="icon" type="image/png" href="/images/icon-black.png" />
+                           <link rel="icon" type="image/png" href="/images/favicon-32.png" /> -->
     <link rel="icon" type="image/png" href="/images/icon-black.png" />
+    <link rel="icon" type="image/png" href="/images/icon-black.png" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/png" href="/images/icon-white.png" media="(prefers-color-scheme: dark)" />
+    <script>
+      /* Chrome ignores `media` on icon links, so the same rule is applied here
+         with the same two existing files: icon-white.png for a dark browser bar,
+         icon-black.png for a light one. Writing the file to every icon link as
+         well keeps them in step, so whichever one a browser picks shows the
+         right leaf. Without this the tab icon stays black in Chrome, on a dark
+         tab bar. */
+      (function () {
+        var scheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+        if (!scheme) return;
+        var links = document.querySelectorAll('link[rel~="icon"]');
+        function apply() {
+          var file = scheme.matches ? '/images/icon-white.png' : '/images/icon-black.png';
+          for (var i = 0; i < links.length; i++) links[i].href = file;
+        }
+        apply();
+        if (scheme.addEventListener) scheme.addEventListener('change', apply);
+        else if (scheme.addListener) scheme.addListener(apply);
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="People Growth Africa helps growing businesses across Nigeria and Africa build the HR systems and cultures that make growth sustainable." />
     <meta name="theme-color" content="#0F6E56" />

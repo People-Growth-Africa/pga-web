@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { ContourPanel } from '../components/ContourPattern';
+import { BrandMark, MARK_FRAME_SIZE } from '../components/LogoIntroAnimation';
 import AuthComingSoon from '../components/AuthComingSoon';
 import Select from '../components/Select';
 import { accountScreensOpen } from '../lib/accountGate';
@@ -15,6 +16,15 @@ import {
   type AuthUser,
   type Role,
 } from '../lib/authClient';
+
+/**
+ * Accounts are built but not announced, so the coming soon page is what every
+ * visitor sees for now, on every host. Set this to true (or delete it and the
+ * branch that reads it) to hand the decision back to the host rule in
+ * src/lib/accountGate.ts: localhost and *.vercel.app show the real forms, and
+ * the public domain keeps the coming soon page.
+ */
+const ACCOUNT_FORMS_OPEN = false;
 
 type Tab = 'signup' | 'login';
 
@@ -94,7 +104,10 @@ export default function Auth() {
   // deliberate decision; every environment the work happens in keeps the real
   // forms. A signed in session never reaches this line, so existing accounts are
   // unaffected (src/lib/accountGate.ts has the whole rule).
-  if (!accountScreensOpen(window.location.hostname)) {
+  //
+  // While ACCOUNT_FORMS_OPEN is false the coming soon page wins on every host,
+  // which is what the site needs until the launch is announced.
+  if (!ACCOUNT_FORMS_OPEN || !accountScreensOpen(window.location.hostname)) {
     return <AuthComingSoon />;
   }
 
@@ -266,14 +279,19 @@ export default function Auth() {
                     panel and read as the page's own heading, so making it a
                     link to the home page tempted people away mid-signup. */}
                 <div className="inline-flex items-center gap-2.5 mb-5">
+                  {/* Was:
                   <img
-                    src="/images/icon-white.png"
+                    src="/images/mark-white.png"
                     alt=""
                     width={36}
                     height={36}
-                    className="h-9 w-9"
+                    className="h-9 w-9 object-contain"
                     loading="lazy"
                   />
+                  No derived square mark any more: this panel is a dark surface,
+                  so it carries the brand's own white icon, in the same clipped
+                  square frame and at the same size as the header lockup. */}
+                  <BrandMark darkSrc="/images/icon-white.png" frameClassName={MARK_FRAME_SIZE} />
                   <span className="font-[family-name:var(--font-body)] text-sm font-semibold tracking-wide">
                     People Growth Africa
                   </span>

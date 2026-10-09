@@ -127,9 +127,11 @@ export default function Events() {
 
           {/* Events Grid */}
           {filteredEvents.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            // Four cards across on a large screen, giving three rows for the
+            // twelve programmes; tablets and phones keep two and one column.
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
               {filteredEvents.map((event) => (
-                <AnimateOnScroll key={event.id}>
+                <AnimateOnScroll key={event.id} className="h-full">
                   <EventCard
                     event={event}
                     featured={event.featured}

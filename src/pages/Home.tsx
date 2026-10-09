@@ -14,7 +14,7 @@ import { useConsultation } from '../hooks/useConsultation';
 
 const stats = [
   { number: '10–100', label: 'Employees at the businesses we serve' },
-  { number: '15+', label: 'Specialised HR service areas' },
+  { number: '5+', label: 'Specialised HR service areas' },
   { number: '2025', label: 'Founded' },
   { number: 'Nigeria', label: 'Where we work' },
 ];
@@ -39,15 +39,30 @@ const vmCards = [
     text: 'To help organisations across Africa build the people, systems and cultures that turn everyday work into meaningful growth for employees and businesses alike.',
   },
   {
+    /* The third card used to be "Target"; it now carries the word "Purpose".
+       Kept here for reference:
     title: 'Target',
     icon: (
       <svg viewBox="0 0 24 24" className="w-7 h-7 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
     ),
-    text: 'Growing businesses across Nigeria and Africa — agribusinesses, SMEs and startups with 10 to 100 employees — ready to move from informal management to proper people practices.',
+    text: 'Growing businesses across Nigeria and Africa, agribusinesses, SMEs and startups with 10 to 100 employees, ready to move from informal management to proper people practices.',
+    */
+    title: 'Purpose',
+    // A compass: the mark for a direction you keep pointing at, which is what
+    // "purpose" means here rather than the people glyph the Target card used.
+    icon: (
+      <svg viewBox="0 0 24 24" className="w-7 h-7 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round">
+        <circle cx="12" cy="12" r="10" /><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+      </svg>
+    ),
+    text: 'To restore the dignity of work by making people, not just processes, the foundation of every organisation we touch.',
   },
 ];
+
+/* The fifteen-area list this page used to render. Kept for reference only:
+it is not read anywhere while the five boxes below are the ones on screen.
 
 const specialties = [
   { name: 'HR Advisory & Consulting', icon: <svg viewBox="0 0 24 24" className="w-5 h-5 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg> },
@@ -65,6 +80,18 @@ const specialties = [
   { name: 'Nigerian Labour Law Compliance', icon: <svg viewBox="0 0 24 24" className="w-5 h-5 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg> },
   { name: 'Team Effectiveness', icon: <svg viewBox="0 0 24 24" className="w-5 h-5 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
   { name: 'Leadership Development', icon: <svg viewBox="0 0 24 24" className="w-5 h-5 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg> },
+];
+*/
+
+/* The five practice areas the home page shows. `serviceId` points at the
+   detail record in servicesData that "View Details" opens, so the label shown
+   here can read differently from the record's own name. */
+const specialties = [
+  { serviceId: 'hr-advisory', name: 'HR Advisory & Consulting', icon: <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg> },
+  { serviceId: 'learning-development', name: 'Learning & Development', icon: <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg> },
+  { serviceId: 'organisational-design', name: 'Organisational Design & Culture', icon: <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg> },
+  { serviceId: 'performance-management', name: 'Performance Management Systems', icon: <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg> },
+  { serviceId: 'agribusiness-people-strategy', name: 'Agribusiness People Strategy', icon: <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-brand-green fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"><path d="M12 22V10" /><path d="M12 10C12 6 9 3 5 3c0 4 3 7 7 7z" /><path d="M12 13c0-4 3-7 7-7 0 4-3 7-7 7z" /></svg> },
 ];
 
 const values = [
@@ -137,6 +164,8 @@ export default function Home() {
             </h1>
           </AnimateOnScroll>
 
+          {/* The lead-in line below is hidden for now; the heading and the
+              buttons carry the hero on their own.
           <AnimateOnScroll delay={0.2}>
             <p
               className="font-[family-name:var(--font-body)] text-white/80 max-w-[560px] leading-relaxed mb-10"
@@ -145,6 +174,7 @@ export default function Home() {
               You have outgrown informal people management. We build the HR systems that let your business and your people grow together.
             </p>
           </AnimateOnScroll>
+          */}
 
           <AnimateOnScroll delay={0.3}>
             <div className="flex flex-wrap gap-4">
@@ -203,15 +233,25 @@ export default function Home() {
             >
               Purpose-Driven. People-Focused.<br />Built for Africa.
             </h2>
+            {/* The original line said "a defined target"; the third card is now
+                Purpose, so the wording follows it.
             <p className="font-[family-name:var(--font-body)] text-[1.05rem] text-charcoal/65 max-w-[600px] mx-auto leading-relaxed">
               We are here for the long term, staying until the growth takes root. Everything we do is anchored in a clear vision, a bold mission, and a defined target.
+            </p>
+            */}
+            <p className="font-[family-name:var(--font-body)] text-[1.05rem] text-charcoal/65 max-w-[600px] mx-auto leading-relaxed">
+              We are here for the long term, staying until the growth takes root. Everything we do is anchored in a clear vision, a bold mission, and a defined purpose.
             </p>
           </AnimateOnScroll>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-7">
             {vmCards.map((card, i) => (
-              <AnimateOnScroll key={i} delay={i * 0.1}>
-                <div className="bg-white rounded-[20px] p-11 shadow-card hover:-translate-y-1 hover:shadow-card-hover transition-all duration-300 border border-charcoal/5">
+              /* h-full on the wrapper and the card lets the grid stretch all
+                 three to the tallest one, so no card ends short of its
+                 neighbours. The cards keep their lift-less hover: the text is
+                 the only thing that changes between them. */
+              <AnimateOnScroll key={i} delay={i * 0.1} className="h-full">
+                <div className="h-full flex flex-col bg-white rounded-[20px] p-11 shadow-card border border-charcoal/5">
                   <div className="w-14 h-14 rounded-full bg-mint flex items-center justify-center mb-6">{card.icon}</div>
                   <h3 className="font-[family-name:var(--font-heading)] text-[1.4rem] font-semibold text-charcoal mb-3.5">{card.title}</h3>
                   <p className="font-[family-name:var(--font-body)] text-[0.95rem] text-charcoal/65 leading-relaxed">{card.text}</p>
@@ -231,30 +271,37 @@ export default function Home() {
               className="font-[family-name:var(--font-heading)] font-semibold text-charcoal leading-[1.15] mb-4"
               style={{ fontSize: 'clamp(2rem, 4vw, 3rem)' }}
             >
-              15 Specialised HR<br />Service Areas
+              5 Specialised HR<br />Service Areas
             </h2>
             <p className="font-[family-name:var(--font-body)] text-[1.05rem] text-charcoal/65 max-w-[600px] mx-auto leading-relaxed">
               Pick a service to see what you get, how long it usually takes and the businesses it suits.
             </p>
           </AnimateOnScroll>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+          {/* Six columns at laptop width with each card two wide: three across
+              the first row, then the last two centred underneath. Phones and
+              tablets keep the old two and three column flow. */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 lg:gap-5">
             {specialties.map((sp, i) => {
-              const detail = servicesData.find((s) => s.name === sp.name);
+              const detail = servicesData.find((s) => s.id === sp.serviceId);
               return (
-                <AnimateOnScroll key={i} delay={Math.min(i * 0.04, 0.4)}>
+                <AnimateOnScroll
+                  key={i}
+                  delay={Math.min(i * 0.04, 0.4)}
+                  className={`lg:col-span-2 ${i === 3 ? 'lg:col-start-2' : ''}`}
+                >
                   <button
                     type="button"
                     onClick={() => detail && setSelectedServiceDetail(detail)}
-                    className="w-full bg-white rounded-[14px] p-5 text-center shadow-card hover:-translate-y-[4px] hover:shadow-card-hover transition-all duration-300 border border-charcoal/5 cursor-pointer group flex flex-col items-center justify-between min-h-[140px]"
+                    className="w-full h-full bg-white rounded-[16px] p-6 text-center shadow-card hover:-translate-y-[4px] hover:shadow-card-hover transition-all duration-300 border border-charcoal/5 cursor-pointer group flex flex-col items-center justify-between min-h-[180px]"
                   >
-                    <div className="w-10 h-10 rounded-full bg-mint group-hover:bg-brand-green/20 flex items-center justify-center mx-auto mb-2.5 transition-colors">
+                    <div className="w-12 h-12 rounded-full bg-mint group-hover:bg-brand-green/20 flex items-center justify-center mx-auto mb-3.5 transition-colors">
                       {sp.icon}
                     </div>
-                    <h4 className="font-[family-name:var(--font-body)] text-[0.8rem] font-semibold text-charcoal leading-snug group-hover:text-deep-green transition-colors">
+                    <h4 className="font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-charcoal leading-snug group-hover:text-deep-green transition-colors">
                       {sp.name}
                     </h4>
-                    <span className="text-[0.65rem] text-brand-green font-semibold mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[0.75rem] text-brand-green font-semibold mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       View Details →
                     </span>
                   </button>
@@ -351,30 +398,71 @@ export default function Home() {
             </p>
           </AnimateOnScroll>
 
-          {/* Premium quote box */}
-          <div className="text-center py-16 px-8 max-w-xl mx-auto bg-cream/30 rounded-[24px] border border-charcoal/10">
-            <div className="w-12 h-12 rounded-full bg-mint text-deep-green flex items-center justify-center mx-auto mb-4 border border-brand-green/30">
-              <svg className="w-6 h-6 stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round" viewBox="0 0 24 24">
-                <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.75-2-2-2H4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 0 4-1.5 6-3 6" />
-                <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.75-2-2-2h-4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 0 4-1.5 6-3 6" />
-              </svg>
-            </div>
-            <p
-              className="font-[family-name:var(--font-heading)] font-semibold text-charcoal mb-3"
-              style={{ fontSize: 'clamp(1.4rem, 2.5vw, 1.8rem)' }}
-            >
-              Be our next success story
-            </p>
-            <p className="font-[family-name:var(--font-body)] text-sm md:text-base text-charcoal/60 leading-relaxed mb-6">
-              Work with us, and let your growth story become the next one we tell.
-            </p>
-            <button
-              type="button"
-              onClick={() => openConsultation()}
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-deep-green text-white text-xs font-semibold rounded-full hover:bg-brand-green transition-all cursor-pointer"
-            >
-              Talk to an advisor
-            </button>
+          {/* A real client story sits to the left of the invitation box; the
+              two stack on phones and sit side by side from lg up. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-7 items-stretch">
+            <AnimateOnScroll>
+              <figure className="h-full bg-white rounded-[24px] p-8 md:p-10 border border-charcoal/10 shadow-card flex flex-col text-left">
+                <div className="w-12 h-12 rounded-full bg-mint text-deep-green flex items-center justify-center mb-5 border border-brand-green/30">
+                  <svg className="w-6 h-6 stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round" viewBox="0 0 24 24">
+                    <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.75-2-2-2H4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 0 4-1.5 6-3 6" />
+                    <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.75-2-2-2h-4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 0 4-1.5 6-3 6" />
+                  </svg>
+                </div>
+                <blockquote className="flex-1 flex flex-col gap-4">
+                  <p className="font-[family-name:var(--font-body)] text-[0.95rem] md:text-base text-charcoal/70 leading-relaxed">
+                    It has been a pleasure working with PGA. Your support has helped Herdbase Africa become more intentional about building the right people, structures, and culture alongside our growth.
+                  </p>
+                  <p className="font-[family-name:var(--font-body)] text-[0.95rem] md:text-base text-charcoal/70 leading-relaxed">
+                    I particularly appreciate your practical approach and willingness to understand our unique needs as a growing company. I would gladly recommend PGA to any organisation looking to build stronger people systems and a high-performing team.
+                  </p>
+                  <p className="font-[family-name:var(--font-body)] text-[0.95rem] md:text-base text-charcoal/70 leading-relaxed">
+                    Thank you for being part of our journey.
+                  </p>
+                </blockquote>
+                <figcaption className="mt-7 pt-6 border-t border-charcoal/10 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-deep-green text-mint flex items-center justify-center font-[family-name:var(--font-heading)] font-semibold text-sm shrink-0">
+                    MIS
+                  </div>
+                  <div>
+                    <div className="font-[family-name:var(--font-body)] font-semibold text-[0.95rem] text-charcoal">
+                      Mustapha Idris Suleiman
+                    </div>
+                    <div className="font-[family-name:var(--font-body)] text-[0.85rem] text-charcoal/55">
+                      Founder, Herdbase Africa
+                    </div>
+                  </div>
+                </figcaption>
+              </figure>
+            </AnimateOnScroll>
+
+            {/* Premium quote box (invitation) */}
+            <AnimateOnScroll delay={0.1}>
+              <div className="h-full text-center py-16 px-8 max-w-xl mx-auto w-full bg-cream/30 rounded-[24px] border border-charcoal/10 flex flex-col items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-mint text-deep-green flex items-center justify-center mx-auto mb-4 border border-brand-green/30">
+                  <svg className="w-6 h-6 stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round" viewBox="0 0 24 24">
+                    <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.75-2-2-2H4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 0 4-1.5 6-3 6" />
+                    <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.75-2-2-2h-4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 0 4-1.5 6-3 6" />
+                  </svg>
+                </div>
+                <p
+                  className="font-[family-name:var(--font-heading)] font-semibold text-charcoal mb-3"
+                  style={{ fontSize: 'clamp(1.4rem, 2.5vw, 1.8rem)' }}
+                >
+                  Be our next success story
+                </p>
+                <p className="font-[family-name:var(--font-body)] text-sm md:text-base text-charcoal/60 leading-relaxed mb-6">
+                  Work with us, and let your growth story become the next one we tell.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => openConsultation()}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 bg-deep-green text-white text-xs font-semibold rounded-full hover:bg-brand-green transition-all cursor-pointer"
+                >
+                  Talk to an advisor
+                </button>
+              </div>
+            </AnimateOnScroll>
           </div>
         </div>
       </section>
@@ -421,7 +509,7 @@ export default function Home() {
               <AnimateOnScroll delay={VISIBLE_FAQS * 0.05}>
                 <button
                   onClick={() => setShowAllFaqs(!showAllFaqs)}
-                  className="mx-auto flex items-center gap-2 mt-4 px-6 py-3 bg-transparent border-2 border-deep-green/20 text-deep-green font-[family-name:var(--font-body)] text-[0.9rem] font-semibold rounded-full cursor-pointer hover:border-deep-green hover:bg-deep-green hover:text-white transition-all duration-300"
+                  className="mx-auto w-fit flex items-center gap-2 mt-4 px-6 py-3 bg-transparent border-2 border-deep-green/20 text-deep-green font-[family-name:var(--font-body)] text-[0.9rem] font-semibold rounded-full cursor-pointer hover:border-deep-green hover:bg-deep-green hover:text-white transition-all duration-300"
                 >
                   {showAllFaqs ? 'Show fewer questions' : `More questions (${faqs.length - VISIBLE_FAQS})`}
                   <svg viewBox="0 0 24 24" className={`w-4 h-4 fill-none stroke-2 stroke-linecap-round transition-transform duration-300 ${showAllFaqs ? 'rotate-180' : ''}`}>
