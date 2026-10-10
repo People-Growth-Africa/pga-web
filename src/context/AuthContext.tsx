@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AuthContext, type AuthStatus } from './AuthContextDef';
 import { authRequest, type AuthUser, type Role } from '../lib/authClient';
+import { AUTH_ENABLED } from '../config/signup-links';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<AuthStatus>('loading');
+  // With accounts off there is no session to look up, so the shell starts as
+  // signed out rather than briefly 'loading' for a request that will not run.
+  const [status, setStatus] = useState<AuthStatus>(AUTH_ENABLED ? 'loading' : 'signedOut');
   const [user, setUser] = useState<AuthUser | null>(null);
 
   // Any failure here (signed out, expired session, network) means the shell
@@ -21,6 +24,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadSession]);
 
   useEffect(() => {
+    // Accounts are off: skip the session request entirely. The status already
+    // starts as 'signedOut' above, so nothing needs setting here.
+    if (!AUTH_ENABLED) return;
+
     let active = true;
     void (async () => {
       const next = await loadSession();

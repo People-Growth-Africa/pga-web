@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useConsultation } from '../hooks/useConsultation';
 import { useAuth } from '../hooks/useAuth';
 import { dashboardPath } from '../lib/authClient';
+import { AUTH_ENABLED, EMPLOYER_FORM_URL, TALENT_FORM_URL } from '../config/signup-links';
+import SignupChoice from './SignupChoice';
 import HoverPill from './HoverPill';
 import LogoIntroAnimation from './LogoIntroAnimation';
 
@@ -26,8 +28,10 @@ const baseNavLinks = [
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const accountRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { openConsultation } = useConsultation();
@@ -82,6 +86,29 @@ export default function Navbar() {
     };
   }, [mobileOpen]);
 
+  // The signup menu opens on a click and has to be dismissable the same way the
+  // mobile menu is: a tap outside it, or Escape.
+  useEffect(() => {
+    if (!accountOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (accountRef.current?.contains(target)) return;
+      setAccountOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAccountOpen(false);
+    };
+
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [accountOpen]);
+
 
   const handleNavClick = (to: string) => {
     setMobileOpen(false);
@@ -107,6 +134,40 @@ export default function Navbar() {
       }
     }
   };
+
+  // While accounts are off, one "sign up" button served both audiences, so the
+  // nav bar's account control becomes a small menu holding the two signup
+  // forms. The wording and the two links live in SignupChoice, so the mobile
+  // menu and the /auth page offer exactly the same choice.
+  const signupEntry = (
+    <div className="relative" ref={accountRef}>
+      <button
+        type="button"
+        onClick={() => setAccountOpen((open) => !open)}
+        aria-label="Sign up"
+        aria-expanded={accountOpen}
+        aria-haspopup="true"
+        className="group relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/30 text-white/90 transition-colors hover:border-white hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-mint focus-visible:ring-offset-2 focus-visible:ring-offset-deep-green"
+      >
+        <svg
+          className="h-5 w-5 stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+      </button>
+      {accountOpen && (
+        <div className="absolute right-0 mt-2 w-64 rounded-xl bg-white p-2 shadow-xl ring-1 ring-black/5">
+          <p className="px-3 pb-1 pt-2 font-[family-name:var(--font-body)] text-xs font-semibold uppercase tracking-wide text-charcoal/50">
+            Sign up
+          </p>
+          <SignupChoice variant="menu" />
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <nav
@@ -176,6 +237,7 @@ export default function Navbar() {
               in" were the widest thing in the row and pushed the nav links into
               the logo on mid-size screens. The pill carries the words instead of
               the browser's own tooltip, and the mobile menu keeps them as text. */}
+          {AUTH_ENABLED ? (
           <Link
             to={accountLink.to}
             aria-label={accountLink.label}
@@ -194,6 +256,9 @@ export default function Navbar() {
             )}
             <HoverPill label={accountLink.label} align="right" />
           </Link>
+          ) : (
+            signupEntry
+          )}
           <button
             type="button"
             onClick={() => openConsultation()}
@@ -276,13 +341,36 @@ export default function Navbar() {
                   </Link>
                 ),
               )}
-              <Link
-                to={accountLink.to}
-                onClick={() => setMobileOpen(false)}
-                className="text-lg font-medium font-[family-name:var(--font-body)] py-1 text-white/85"
-              >
-                {signedIn ? 'Dashboard' : 'Sign up / Log in'}
-              </Link>
+              {AUTH_ENABLED ? (
+                <Link
+                  to={accountLink.to}
+                  onClick={() => setMobileOpen(false)}
+                  className="text-lg font-medium font-[family-name:var(--font-body)] py-1 text-white/85"
+                >
+                  {signedIn ? 'Dashboard' : 'Sign up / Log in'}
+                </Link>
+              ) : (
+                <>
+                  <a
+                    href={TALENT_FORM_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setMobileOpen(false)}
+                    className="text-lg font-medium font-[family-name:var(--font-body)] py-1 text-white/85"
+                  >
+                    Sign up as talent
+                  </a>
+                  <a
+                    href={EMPLOYER_FORM_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setMobileOpen(false)}
+                    className="text-lg font-medium font-[family-name:var(--font-body)] py-1 text-white/85"
+                  >
+                    Sign up as an employer
+                  </a>
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => {

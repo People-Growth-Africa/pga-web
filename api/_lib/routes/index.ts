@@ -1,20 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-import account from './auth/account.js';
-import forgotPassword from './auth/forgot-password.js';
-import login from './auth/login.js';
-import logoutAll from './auth/logout-all.js';
-import logout from './auth/logout.js';
-import me from './auth/me.js';
-import resendVerification from './auth/resend-verification.js';
-import resetPassword from './auth/reset-password.js';
-import signup from './auth/signup.js';
-import verifyEmail from './auth/verify-email.js';
-import consultationBooking from './leads/consultation-booking.js';
-import enquiry from './leads/enquiry.js';
-import eventRegistration from './leads/event-registration.js';
-import newsletterConfirm from './newsletter/confirm.js';
-import newsletterSubscribe from './newsletter/subscribe.js';
+import { AUTH_ENABLED, authDisabled } from '../auth-gate.js';
+import { DATABASE_CONFIGURED, databaseUnavailable } from '../db-gate.js';
 
 export type RouteHandler = (req: VercelRequest, res: VercelResponse) => Promise<void>;
 
@@ -28,6 +15,14 @@ export type RouteHandler = (req: VercelRequest, res: VercelResponse) => Promise<
  * api/_lib/routes/ (never counted) and are reached through this table from the
  * single function in api/[...path].ts.
  *
+ * Each entry loads its handler on demand rather than importing it up front.
+ * That matters now that the site deploys without DATABASE_URL, JWT_SECRET,
+ * UPSTASH_* or RESEND_API_KEY: those modules throw or connect at import time, so
+ * importing them at startup would take the whole function down before a single
+ * request - including the ones that never needed them. Loading on demand keeps
+ * the module graph small, and the auth endpoints, which are the only ones that
+ * read a session or an account, are additionally gated by `AUTH_ENABLED`.
+ *
  * The public URLs are unchanged: /api/auth/login is still /api/auth/login, and
  * so on. Writing the surface out by hand rather than walking the directory
  * keeps it readable in one place, and a route that is missing from the table is
@@ -35,19 +30,65 @@ export type RouteHandler = (req: VercelRequest, res: VercelResponse) => Promise<
  * the table is the only way in.
  */
 export const ROUTES: Record<string, RouteHandler> = {
-  '/auth/account': account,
-  '/auth/forgot-password': forgotPassword,
-  '/auth/login': login,
-  '/auth/logout': logout,
-  '/auth/logout-all': logoutAll,
-  '/auth/me': me,
-  '/auth/resend-verification': resendVerification,
-  '/auth/reset-password': resetPassword,
-  '/auth/signup': signup,
-  '/auth/verify-email': verifyEmail,
-  '/leads/consultation-booking': consultationBooking,
-  '/leads/enquiry': enquiry,
-  '/leads/event-registration': eventRegistration,
-  '/newsletter/confirm': newsletterConfirm,
-  '/newsletter/subscribe': newsletterSubscribe,
+  // --- Accounts, off unless AUTH_ENABLED is set ----------------------------
+  '/auth/account': gatedAuth(async () => (await import('./auth/account.js')).default),
+  '/auth/forgot-password': gatedAuth(async () => (await import('./auth/forgot-password.js')).default),
+  '/auth/login': gatedAuth(async () => (await import('./auth/login.js')).default),
+  '/auth/logout': gatedAuth(async () => (await import('./auth/logout.js')).default),
+  '/auth/logout-all': gatedAuth(async () => (await import('./auth/logout-all.js')).default),
+  '/auth/me': gatedAuth(async () => (await import('./auth/me.js')).default),
+  '/auth/resend-verification': gatedAuth(async () => (await import('./auth/resend-verification.js')).default),
+  '/auth/reset-password': gatedAuth(async () => (await import('./auth/reset-password.js')).default),
+  '/auth/signup': gatedAuth(async () => (await import('./auth/signup.js')).default),
+  '/auth/verify-email': gatedAuth(async () => (await import('./auth/verify-email.js')).default),
+
+  // --- Public forms that store submissions, up only when a database is set --
+  '/leads/consultation-booking': requiresDatabase(async () => (await import('./leads/consultation-booking.js')).default),
+  '/leads/enquiry': requiresDatabase(async () => (await import('./leads/enquiry.js')).default),
+  '/leads/event-registration': requiresDatabase(async () => (await import('./leads/event-registration.js')).default),
+  '/newsletter/confirm': requiresDatabase(async () => (await import('./newsletter/confirm.js')).default),
+  '/newsletter/subscribe': requiresDatabase(async () => (await import('./newsletter/subscribe.js')).default),
 };
+
+/** A handler that is loaded the first time its route is called, then reused. */
+function lazy(load: () => Promise<RouteHandler>): RouteHandler {
+  let cached: RouteHandler | null = null;
+  return async (req, res) => {
+    cached ??= await load();
+    await cached(req, res);
+  };
+}
+
+/**
+ * An account endpoint: 410 while accounts are off, and only brought into memory
+ * when they are on. The check happens before `load()` runs, so the database,
+ * session and rate limit modules are never imported while the flag is false.
+ */
+function gatedAuth(load: () => Promise<RouteHandler>): RouteHandler {
+  const handler = lazy(load);
+  return async (req, res) => {
+    if (!AUTH_ENABLED) {
+      authDisabled(res);
+      return;
+    }
+    await handler(req, res);
+  };
+}
+
+/**
+ * A form endpoint that stores its submission: 503 with a way to get in touch
+ * while no database is configured, and the handler - and, with it, the database
+ * module - is never imported until `DATABASE_URL` is present. The check runs
+ * before `load()`, so a missing connection string is a clean answer, never a
+ * crash at import time.
+ */
+function requiresDatabase(load: () => Promise<RouteHandler>): RouteHandler {
+  const handler = lazy(load);
+  return async (req, res) => {
+    if (!DATABASE_CONFIGURED) {
+      databaseUnavailable(res);
+      return;
+    }
+    await handler(req, res);
+  };
+}
