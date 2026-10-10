@@ -42,6 +42,10 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/auth/signup': gatedAuth(async () => (await import('./auth/signup.js')).default),
   '/auth/verify-email': gatedAuth(async () => (await import('./auth/verify-email.js')).default),
 
+  // --- Dashboard endpoints, behind an account like the rest of auth -------
+  '/employer/consultation': gatedAuth(async () => (await import('./employer/consultation.js')).default),
+  '/talent/profile': gatedAuth(async () => (await import('./talent/profile.js')).default),
+
   // --- Public forms that store submissions, up only when a database is set --
   '/leads/consultation-booking': requiresDatabase(async () => (await import('./leads/consultation-booking.js')).default),
   '/leads/enquiry': requiresDatabase(async () => (await import('./leads/enquiry.js')).default),

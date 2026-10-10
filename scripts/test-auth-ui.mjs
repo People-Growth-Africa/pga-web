@@ -396,13 +396,25 @@ async function main() {
         page.url(),
       );
 
-      // Delete the account through the dashboard, with the confirm password.
+      // Delete the account through the dashboard, with the confirm password. The
+      // delete form sits behind a disclosure at the bottom of the page, so the row
+      // is opened first: the destructive control is not on screen (and so not one
+      // stray click away) until someone has asked for it (9.6).
+      const deleteRow = page.getByRole('button', { name: 'Delete your account', exact: true });
+      const deleteFormHiddenBeforeOpen = (await page.locator('#delete-password').count()) === 0;
+      await deleteRow.click();
+      const deleteRowExpanded = await deleteRow.getAttribute('aria-expanded');
       await page.locator('#delete-password').fill(PASSWORD);
       const beforeDelete = await requestCount(page);
       await page.getByRole('button', { name: 'Delete my account', exact: true }).click();
       await settle(page, beforeDelete, 'account deletion');
       await page.waitForURL(`${baseUrl}/`, { timeout: 15000 });
-      check(11, 'Deleting the account returns to the home page', page.url() === `${baseUrl}/`, page.url());
+      check(
+        11,
+        'The delete form is behind a disclosure, and deleting the account returns to the home page',
+        page.url() === `${baseUrl}/` && deleteFormHiddenBeforeOpen && deleteRowExpanded === 'true',
+        `${page.url()}, hidden before open ${deleteFormHiddenBeforeOpen}, aria-expanded ${deleteRowExpanded}`,
+      );
 
       // The deletion response cleared the session cookie, so the browser now
       // counts as signed out: /me must refuse the stale session.

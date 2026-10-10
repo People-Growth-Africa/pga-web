@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { dashboardPath, type Role } from '../lib/authClient';
 import { AUTH_ENABLED } from '../config/signup-links';
+import DashboardSkeleton from './dashboard/DashboardSkeleton';
 
 /**
  * Route guard for signed in pages. The API checks the session on every request,
@@ -20,16 +21,10 @@ export default function RequireAuth({ role, children }: { role: Role; children: 
   }
 
   if (status === 'loading') {
-    return (
-      <section className="bg-cream pt-[160px] pb-[120px] min-h-screen">
-        <p
-          role="status"
-          className="text-center font-[family-name:var(--font-body)] text-sm text-charcoal/60"
-        >
-          Checking your session...
-        </p>
-      </section>
-    );
+    // Skeleton loading rather than a line of text on an empty page: the shapes
+    // of the real layout say what is coming and the page settles instead of
+    // jumping (9.2).
+    return <DashboardSkeleton />;
   }
 
   if (!user) {

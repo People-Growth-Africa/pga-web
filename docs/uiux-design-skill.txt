@@ -1,0 +1,771 @@
+UI/UX DESIGN SKILL
+A practical design reference for reasoning about, generating, and reviewing
+user interfaces — from landing pages to dense dashboards.
+
+=================================================================
+HOW TO USE THIS SKILL
+=================================================================
+
+This is not a checklist to apply mechanically. Every principle below is a
+tool: understand why it exists, then judge whether it applies to the
+specific product, content, and user goal in front of you. Where two
+principles seem to conflict, the resolution is almost always contextual
+(device, mode, density, frequency of use) — those conditions are called
+out explicitly wherever relevant.
+
+Before making any design decision, run it through three questions:
+1. What is the user trying to do right now? (task, not feature)
+2. What does this element need to communicate, and how urgently? (hierarchy)
+3. What does the user need to feel confident this worked, is safe, or is
+   reversible? (trust and feedback)
+
+Decoration that doesn't answer one of these is optional at best, and noise
+at worst.
+
+=================================================================
+1. CORE DESIGN PHILOSOPHY
+=================================================================
+
+- Design is prioritization, not decoration. Every visual choice (size,
+  weight, color, position, motion) should map to the actual importance of
+  the content or action it represents. If two elements have equal visual
+  weight, they should have roughly equal importance to the user's task —
+  if they don't, that is a hierarchy bug, not a style choice.
+
+- Default to restraint. Add a border, shadow, color, icon, or animation
+  only when it does a job: grouping related content, distinguishing a
+  state, drawing attention to something genuinely important, or
+  confirming that an action happened. Unjustified decoration increases
+  cognitive load and dilutes the things that actually matter.
+
+- Consistency beats novelty inside a single product. A button, spacing
+  unit, icon, or interaction pattern should look and behave the same
+  everywhere it appears. Novelty is reserved for a product's one or two
+  signature moments (onboarding, a key empty state, a celebratory
+  success screen) — not sprinkled across every screen.
+
+- Design for the repeat user, not just the first screenshot. A pattern
+  that feels delightful once (large illustrations, heavy motion,
+  multi-step confirmations, uppercase "SUBSCRIBE NOW" energy) can become
+  friction on the fiftieth use. Weigh interaction frequency when deciding
+  how much ceremony a flow deserves — a daily-use action should be fast
+  and quiet; a rare, high-stakes action can afford more weight.
+
+- Never make the user do work the interface can do for them. Formatting,
+  validation, defaults, and remembered state exist to remove friction.
+  If the system already knows something (a typed value, a prior choice,
+  an expected format), don't make the user re-supply or re-discover it.
+
+=================================================================
+2. VISUAL HIERARCHY & INFORMATION PRIORITY
+=================================================================
+
+PRINCIPLE: Establish one clear point of entry per screen, then a clear
+second and third priority. Hierarchy is built from strongest to weakest
+signal: position > size > weight/boldness > color/contrast/saturation >
+whitespace isolation.
+
+- The single most important piece of information or action (a price, the
+  primary CTA, a key metric, a critical status) should be visually
+  dominant — larger, bolder, or more saturated than everything around it.
+  Don't let a secondary label (e.g. a product name) outweigh the primary
+  fact the user came for (e.g. the price): give the primary fact its own
+  treatment (larger size, bolder weight, brand color) rather than
+  rendering it as regular body text of equal weight to its label.
+
+- Use weight and contrast to separate a heading from its supporting text,
+  not size alone. A bold, higher-contrast heading over lighter, thinner
+  body copy reads faster than two blocks that only differ in font-size.
+
+- Saturation and brightness communicate importance — don't spend them
+  evenly. Muted, low-saturation colors recede into the background; bright,
+  saturated colors advance and grab the eye first. Reserve your single
+  brightest/most-saturated color for the one action you want noticed
+  first (e.g. a primary "Continue" or "Sign In" button). If three
+  elements on a screen are equally saturated, none of them wins, and the
+  user has to read everything to figure out what to do — this is a common
+  cause of "flat," hard-to-scan interfaces.
+
+- Give prominence proportional to conversion or task value. On a product
+  or content card, the image usually earns the most space (it drives
+  recognition and desire), but supporting facts that affect the decision
+  — price, rating, availability — should not be visually demoted below
+  filler text. If a "Read More" truncation is needed, the truncated
+  content should be de-prioritized copy, never the price or primary fact.
+
+ANTI-PATTERN: Flat hierarchy — a screen where every text block is the
+same size, weight, and color, forcing the user to read everything
+serially to find what matters. If you can't answer "what should the eye
+hit first, second, third" for a given screen, the hierarchy hasn't been
+designed yet.
+
+=================================================================
+3. LAYOUT, SPACING & ALIGNMENT
+=================================================================
+
+- Spacing encodes relationships (proximity principle). Elements that are
+  related should sit closer together than elements that are unrelated.
+  A form label separated from its own input by the same gap used between
+  that input and the next field's label creates real ambiguity about
+  which label belongs where. Tighten spacing within a group; widen it
+  between groups. This single rule fixes a large share of "this form
+  feels confusing" complaints without changing any content.
+
+- Establish one consistent alignment edge. In forms, lists, and
+  multi-line layouts, labels and their inputs should share a single,
+  predictable left edge (or a consistent indent), not drift from field to
+  field. A misaligned left edge forces the eye to re-locate the start of
+  each line — slow, and it reads as unpolished even when users can't
+  articulate why.
+
+- Prefer single-column layouts for forms and mobile content. Side-by-side
+  fields (e.g. First Name / Last Name in one row) save vertical space but
+  split the natural top-to-bottom reading path and raise the chance a
+  field gets skipped. Use single-column as the default; reserve
+  side-by-side grouping for fields that are genuinely one concept split
+  into parts (a date's day/month/year, a phone country code + number).
+
+- Keep nested corner radii proportionate ("balance the radius"). A button
+  or inner element inside a rounded card should feel concentric with its
+  parent: the inner radius should roughly equal the outer radius minus
+  the padding between them. A small, sharp-cornered button inside a
+  large, heavily-rounded card (or vice versa) reads as visually
+  unbalanced even though neither radius is "wrong" in isolation.
+
+- Give buttons breathing room, especially horizontally. Horizontal
+  padding inside a button should meaningfully exceed vertical padding —
+  roughly a 2:1 ratio is a reasonable starting point. Buttons with tight,
+  equal padding on all sides look cramped and lower-quality, particularly
+  once a label is more than one short word.
+
+- Group related controls and information into sections that stay
+  organized when expanded. When a summary view is expanded into a
+  detailed one (an accordion, a "show more"), the detail view should
+  preserve the same grouping logic as the summary — new fields should
+  nest logically under the category they belong to, not get appended in
+  an unrelated order at the bottom.
+
+=================================================================
+4. TYPOGRAPHY
+=================================================================
+
+- Weight and contrast create readability, not size alone. A dialog or
+  alert with all text set at the same light weight is hard to parse at a
+  glance — give the headline (e.g. "Important!") real weight distinct
+  from the supporting body copy so the two are visually separable in a
+  fraction of a second.
+
+- Use Title Case or sentence case for buttons and short UI labels, not
+  UPPERCASE. All-caps removes the word-shape cues that lowercase letters
+  provide, which measurably slows reading, and it carries a "shouting"
+  tone. Reserve uppercase for very short labels where legibility loss is
+  minimal and the tone fits (eyebrow text, small tags, badges) — not for
+  primary CTAs like "Subscribe Now."
+
+- Optimize blocks of text for scanning, not just reading. Keep line
+  lengths reasonable, keep related icon/text pairs at a consistent size
+  and alignment, and let repeated structures (list items, card titles)
+  share identical typographic treatment so users can recognize the
+  pattern and skim by shape before reading a single word.
+
+- Match font weight/size to the weight of the parent surface. On a dark,
+  photographic, or heavily-branded background, oversized or overly bold
+  type can fight the imagery; on a data-dense dashboard, undersized type
+  slows comprehension of the numbers that matter most. Legibility of the
+  single most important number/word on screen is non-negotiable —
+  everything else can flex around it.
+
+=================================================================
+5. COLOR SYSTEM
+=================================================================
+
+5.1 Establishing a palette
+- Use a 60-30-10 distribution as a starting ratio, not a rigid law:
+  roughly 60% neutral/base color for backgrounds and large surfaces,
+  roughly 30% a primary/secondary brand color for major UI elements
+  (headers, nav, large components), and roughly 10% an accent color
+  reserved for buttons, highlights, and calls-to-action. The goal is that
+  the accent color's rarity is what makes it noticeable — if accent color
+  is used everywhere, it stops functioning as a signal.
+
+- Avoid pure black (#000000) and pure white (#FFFFFF) as primary surface
+  colors, especially in dark mode. Use near-black (e.g. a very dark navy
+  or charcoal) and near-white/off-white instead. Pure black backgrounds
+  paired with pure white text create harsher contrast than necessary and
+  can produce a "halation" effect that strains the eyes over extended
+  use; a softened off-black/off-white pair still reads as high-contrast
+  while feeling calmer.
+
+- Desaturate colors in dark mode. A color that looks balanced on a light
+  background (e.g. a vivid blue) often looks overly intense, almost
+  neon, on a dark background, because dark backgrounds increase perceived
+  saturation and contrast. Dark mode is not simply "invert the colors" —
+  reduce saturation and lightly increase lightness on your brand/accent
+  colors when adapting a light-mode palette for dark mode, and avoid pure
+  white text (use a warm/cool off-white) to reduce eye strain. Conversely,
+  colors that feel correct in dark mode may need increased saturation
+  when reused in light mode, where competing whitespace and daylight
+  viewing conditions mute perceived intensity.
+
+5.2 Color for hierarchy and attention
+- Color should guide the eye to what matters first. A bright, saturated
+  accent placed on the single primary action anchors visual attention
+  (e.g. a vivid green play button, a bold red "Sign In" button on a dark
+  screen); darker, lower-contrast elements around it recede. Decide which
+  single element deserves this treatment per screen — if every button
+  competes for the brightest color, none of them wins.
+
+5.3 Color for state and feedback (semantic color)
+- Adopt a consistent semantic mapping and never deviate from it within a
+  product: green = success / confirmed / positive change, red = error /
+  destructive action / negative change, yellow or orange = warning /
+  needs attention / pending decision. Once established, these mappings
+  should be used for every success toast, error message, warning banner,
+  and inline validation state — inconsistent use (e.g. red for a neutral
+  notice) actively undermines user trust in the color system.
+- Apply the same semantic logic to interactive component states: default,
+  hover, active/pressed, focus, and disabled should each have a distinct,
+  predictable treatment (e.g. active = darkest/most saturated variant of
+  the base color, hover = a slightly shifted shade, disabled = desaturated
+  and low-contrast/greyed out). Users learn these state cues quickly and
+  rely on them to know what's interactive versus inert.
+- Use color psychology deliberately for consequential actions. A
+  destructive action (delete, remove, cancel subscription) benefits from
+  a warning color (red) on its trigger even when the rest of the UI is
+  neutral — this is a case where breaking the "restrained accent" rule is
+  correct, because the color's job is to slow the user down and signal
+  irreversibility, not to please the eye.
+
+5.4 When rules bend
+- The 60-30-10 ratio is a starting heuristic for marketing sites and
+  consumer apps with a light information density; dense dashboards and
+  data tools often legitimately use more neutral gray/chart color than
+  10% accent, because more elements compete for attention simultaneously
+  — judge by whether a user can still immediately locate the primary
+  action, not by literally measuring percentages.
+
+=================================================================
+6. FORMS & INPUT DESIGN
+=================================================================
+
+- Never use a placeholder as the only label. A placeholder that
+  disappears the moment a user starts typing removes the only cue for
+  what that field is — if the user is interrupted or scrolls back, they
+  lose context. Always render a persistent label above or beside the
+  input; placeholders should only supplement the label with an example
+  value or format hint (e.g. label "Email", placeholder
+  "you@example.com").
+
+- Visually differentiate three distinct input states so they cannot be
+  confused at a glance: (1) empty placeholder/hint text — lightest,
+  lowest-contrast gray; (2) an example or format hint — similarly light
+  but may use a distinct style; (3) actual user-entered text — dark,
+  full-contrast, unambiguously "real" content. If placeholder text and
+  typed text look identical, users cannot tell at a glance whether a
+  field has been filled in or is still empty, which causes accidental
+  submission of blank required fields.
+
+- Use placeholders/format hints to show the expected input format for
+  ambiguous fields. For a date field, show "dd/mm/yyyy" rather than just
+  "Date"; for a phone number, show the expected grouping (e.g.
+  "(+___) __ ___ ___"); for a credit card, show "XXXX XXXX XXXX". This
+  prevents format errors before they happen, which is cheaper than
+  validating and correcting them after submission. Where feasible, back
+  this up with an actual input mask that enforces the format as the user
+  types.
+
+- Mark optional fields with "(Optional)" rather than marking required
+  fields with an asterisk. Most fields in most forms are required, so
+  asterisk-per-required-field adds visual noise to the majority of the
+  form; labeling the minority of optional fields is both less noisy and
+  more informative, since it tells the user exactly which fields they
+  can safely skip.
+
+- Use single-column layouts for forms by default (see Section 3) and
+  align every label to one consistent left edge.
+
+- For selection from a long list (countries, categories, etc.), allow
+  the user to both type to filter and scroll/browse — don't force a
+  purely alphabetical scroll-only dropdown for long lists. A searchable
+  combobox pattern (type "Tu" → see "Turkey", "Tunisia") is dramatically
+  faster than scrolling through 190+ entries and should be the default
+  for any list longer than roughly 10-15 items.
+
+- Match the input control to the actual semantics of the choice. A radio
+  button communicates "choose one of several mutually exclusive options"
+  — it is the wrong control for a single yes/no agreement like "I accept
+  terms and conditions." Use a checkbox for single-item agreement/consent
+  and reserve radio buttons for genuine multi-option single-select sets.
+  A toggle/switch communicates an immediate, often reversible state
+  change (e.g. "Enable notifications") rather than a form-field selection
+  to be submitted later — don't use a toggle where a checkbox-and-submit
+  flow is the actual behavior, and don't use a checkbox where the action
+  takes effect immediately.
+
+- CTA button copy must be unambiguous, especially for destructive or
+  consequential confirmations. Generic "Yes / No" on a delete
+  confirmation forces the user to re-read the whole sentence to be sure
+  which button does what; restate the action in the button itself
+  ("Yes, Delete" / "No, Keep it"). This single change meaningfully
+  reduces destructive-action mistakes.
+
+- Keep validation and error messaging attached to the field it concerns,
+  using the semantic color system (Section 5.3), and phrase it as what to
+  do next, not just what went wrong.
+
+=================================================================
+7. COMPONENTS
+=================================================================
+
+7.1 Buttons
+- One primary action per screen/section, rendered in your most
+  attention-getting treatment (see Section 2 and 5.2); secondary actions
+  use a visually quieter style (outline, ghost, lower-contrast fill).
+- Give buttons immediate visual feedback on interaction (see Section 9) —
+  never leave a tap/click with zero visible response, even if the
+  underlying action takes several seconds.
+- Keep primary action buttons in a fixed, predictable position across a
+  multi-step flow (e.g. onboarding). If "Continue" moves from
+  bottom-left, to center, to top-right across consecutive screens, the
+  user has to visually search for it every time, which undermines the
+  sense of flow a linear sequence should have. Muscle memory for
+  position is a real usability asset — don't discard it for visual
+  variety.
+
+7.2 Cards
+- A card is justified when its contents represent one coherent, glanceable
+  unit that users will scan repeatedly (a product, a metric snapshot, a
+  contact, a transaction). Don't wrap content in a card just for visual
+  structure — if the "card" has no independent meaning apart from the
+  content immediately around it, a plain grouped block (spacing +
+  optional divider) is lighter-weight and equally clear.
+- Data-focused cards benefit from one dominant number/value (see Section
+  2) plus minimal supporting chrome — avoid competing visual elements
+  (multiple equally-weighted numbers, decorative icons with no
+  information value) that dilute the one figure the user opened the card
+  to see.
+- Reserve rich imagery, gradients, and illustration for cards representing
+  an experience or identity (weather, sleep, a person's profile, media) —
+  data/utility cards (balances, transaction lists, settings) generally
+  read faster with a flatter, more neutral treatment so the numbers
+  stay the focus.
+
+7.3 Carousels
+- Always label carousel items, don't rely on dot indicators alone. Dots
+  communicate "there are more items" but tell the user nothing about what
+  those items are, forcing blind swiping. Visible text labels under or
+  beside each item (even truncated) let users jump directly to the item
+  they want and give the carousel scannability equivalent to a tab set.
+
+7.4 Bottom / primary navigation
+- Choose between a fully-labeled tab bar (icon + text label under each
+  item) and an icon-only or pill-style bar based on item count and
+  brand tone: 4-5 items with short labels generally support full labels
+  comfortably; once item count grows or labels get long, a "pill" nav
+  that expands the active item's label (while others stay icon-only)
+  preserves clarity without crowding.
+- A floating action button (FAB) — visually distinct (different shape,
+  color, or elevation from the rest of the nav) — is appropriate when
+  there's one clear, frequent "create/add" action that deserves a
+  permanent shortcut (new transaction, new post, new workout). Don't add
+  a FAB if there's no single dominant creation action, or if it would
+  duplicate an action already served well elsewhere.
+- Keep the active tab state unambiguous — through position, fill,
+  background pill, color, or label reveal — a user should be able to
+  identify which section they're in within a glance, without reading.
+
+7.5 Modals and popups
+- Don't overuse popups/modals for low-stakes, optional content (e.g. "Give
+  us feedback"). A modal interrupts the task and demands a dismissal
+  decision before the user can continue; for anything that isn't blocking
+  or urgent, prefer an inline, non-modal placement (a banner, an inline
+  card, a persistent but dismissible element within the page flow) so
+  the user can engage with it or ignore it without an added decision
+  point.
+- Reserve true modal interruption for actions that require a decision
+  before the user can safely proceed (confirming a destructive action,
+  required input before continuing, a blocking error).
+
+=================================================================
+8. NAVIGATION & WAYFINDING
+=================================================================
+
+- Put "Back" and "Close" controls where users expect them by platform
+  convention — generally top-left. Users build a strong habitual
+  expectation for where exit/reverse controls live; placing them
+  elsewhere (or inconsistently between screens) creates hesitation at
+  exactly the moment a user wants to leave or undo something, which is
+  disproportionately frustrating.
+- Place utility/action icons (search, messages, notifications, settings)
+  consistently on the right side of a header, and use small colored
+  status dots/badges on these icons to indicate unread items or items
+  needing attention, rather than making the user open each one to check.
+- For small screens or constrained nav bars, collapse lower-priority
+  items behind a single overflow control (a "more" menu, a kebab/⋮
+  icon) rather than shrinking every item to illegibility or silently
+  hiding them with no entry point. Whatever gets collapsed should remain
+  reachable in one additional tap — never bury a needed action two or
+  more menus deep just to preserve a clean top-level bar.
+- Keep primary navigation structurally stable across the app; don't
+  reorder, rename, or relocate top-level navigation items between
+  sessions or screens, as this breaks the spatial memory users build.
+
+=================================================================
+9. FEEDBACK, LOADING & EMPTY STATES
+=================================================================
+
+9.1 Instant response to input
+- Every tap, click, or interaction must be acknowledged immediately, even
+  if the real work behind it takes longer. For actions with any latency
+  (uploading, deleting, saving, submitting), update the interface state
+  first (e.g. show the item immediately with an "uploading…" progress
+  indicator) and let the heavier processing complete in the background.
+  A button or control that gives no visible response to being tapped
+  reads as broken, and repeated taps from an unsure user can trigger
+  duplicate actions.
+
+9.2 Loading states
+- Prefer skeleton loading (gray placeholder shapes that mimic the
+  eventual layout — text lines, image blocks, avatar circles) over a
+  generic spinner for content that takes a moment to load. Skeleton
+  loaders set accurate expectations about what's coming and make the
+  wait feel shorter because the layout itself starts communicating
+  before the data arrives, whereas a spinner over a blank screen gives
+  no information and feels like idle dead time regardless of actual
+  duration.
+- Use a simple spinner (not skeletons) for very short, content-agnostic
+  waits where building placeholder layout would be unnecessary overhead
+  (e.g. a button's own internal loading state while it submits).
+
+9.3 Progress and status communication
+- When a process has a duration or sequence (a trip, a delivery, an
+  upload, a multi-step task), show progress visually — a progress bar,
+  a route/timeline graphic, a percentage, or a step indicator — rather
+  than a static label alone. Visual progress indicators reduce perceived
+  wait time and answer the user's implicit question, "how much longer?"
+  without them having to ask.
+
+9.4 Errors
+- Never expose raw backend errors, stack traces, HTTP status codes, or
+  internal identifiers to end users. Catch the error, log it internally
+  for debugging, and show a short, human message that explains what
+  happened in plain terms and — critically — what the user should do
+  next (e.g. "We couldn't load your feed. Check your connection and try
+  again. Your data is safe." plus a retry action). A raw "500 Internal
+  Server Error" or stack trace destroys user trust and gives no
+  actionable path forward.
+- Pair error messages with a clear next action (retry button, link to
+  support, alternate path) whenever one exists — an error with no
+  recovery action is a dead end.
+
+9.5 Empty states
+- Design empty states as an active onboarding/guidance moment, not a
+  blank void. A well-designed empty state explains what belongs here,
+  shows a clear next action (a prominent "add/upload" affordance), and
+  can state format expectations up front (e.g. "videos should be at
+  least 1080p, MP4 format") so the user succeeds on the first attempt
+  rather than discovering constraints only after an error.
+
+9.6 Confirmation and destructive actions
+- For any irreversible or consequential action (delete, cancel
+  subscription, remove account), require an explicit, clearly-labeled
+  confirmation step (see Section 6, CTA copy) rather than executing
+  immediately on a single tap. The confirmation should state exactly
+  what will happen and to what/whom.
+- Never apply manipulative friction ("dark patterns") to actions users
+  have a right to take easily — most importantly, cancellation flows.
+  Making "sign up" a single tap while making "cancel" require multiple
+  steps, forced offers, or hidden links after intentionally-long guilt
+  copy erodes trust in a way that outweighs any short-term retention
+  gained; a fair pattern shows the current plan clearly and lets
+  cancellation complete in as few steps as sign-up took.
+
+=================================================================
+10. RESPONSIVE & ADAPTIVE DESIGN
+=================================================================
+
+- Have an explicit plan for how every navigation and toolbar pattern
+  degrades as the viewport shrinks — don't let this happen by accident.
+  The common, reliable strategy: identify the 1-2 highest-frequency
+  actions to keep visible at all sizes, and collapse everything else
+  into a single overflow menu that's always exactly one tap away (see
+  Section 8).
+- Dense information (tables, multi-column comparisons, side-by-side form
+  fields) should restructure into single-column, stacked, or
+  progressively-disclosed layouts on small screens rather than shrinking
+  proportionally until illegible.
+- Test whether touch targets remain adequately sized (Section 11) after
+  responsive scaling — a control that was comfortably tappable at
+  desktop cursor precision may become too small at mobile touch
+  precision if it scales down uniformly with the layout.
+
+=================================================================
+11. TOUCH TARGETS & INTERACTION PRECISION
+=================================================================
+
+- Make the clickable/tappable area larger than the visible control,
+  especially for small controls like checkboxes, radio buttons, and
+  icon buttons. Human fingertips need meaningfully more contact area
+  than a cursor does — a commonly cited minimum is roughly 44px of
+  tappable area — so extend the hit area (via padding or an invisible
+  hit-box) beyond the visual boundary of a small icon or checkbox rather
+  than requiring pixel-precise taps.
+- Apply this especially to list rows with a selection control (e.g. a
+  checkbox next to a name): make the entire row clickable to toggle
+  selection, not just the small checkbox glyph itself.
+- Don't rely on hover-only affordances for anything that must work on
+  touch devices, since touch has no hover state — ensure every
+  interactive element has a visible resting-state indication of being
+  interactive (not just a hover reveal).
+
+=================================================================
+12. PERSONALITY, BRAND & MOTION
+=================================================================
+
+- Add personality/illustration to moments the user will encounter
+  repeatedly or emotionally (confirmations, empty states, onboarding,
+  celebratory success), where a plain text-only treatment would feel
+  flat and forgettable. A small branded character or illustration
+  reacting appropriately to context (e.g. a playful mascot on a "your
+  order is delivered, rate us" screen) increases the odds a user
+  actually engages with a secondary CTA like a rating prompt — but this
+  should stay proportionate; don't let illustration overwhelm the actual
+  information (Section 2).
+- Use motion purposefully: to confirm an action happened, to maintain
+  continuity between states (an element that moves rather than teleports
+  helps the user track what changed), or to communicate a relationship
+  (an expanding accordion, a sliding panel). Motion added purely for
+  visual flair, with no informational job, is the first thing to cut
+  under any performance or clarity pressure.
+- Keep personality consistent with the product's actual stakes. A
+  playful mascot is appropriate for a food-delivery rating prompt; the
+  same treatment on a "delete your account" confirmation would undercut
+  the seriousness the moment requires. Match expressive/decorative
+  intensity to the emotional weight of the task.
+
+=================================================================
+13. DESIGN DECISION-MAKING FRAMEWORK
+=================================================================
+
+Use this sequence when facing an open-ended design decision:
+
+1. IDENTIFY THE USER'S GOAL. What specific task is this screen/component
+   in service of? If you can't state it in one sentence, the scope is
+   probably too broad or too vague to design well yet.
+
+2. IDENTIFY THE PRIMARY ACTION OR FACT. Of everything on this screen,
+   what is the one thing that matters most right now? Everything else
+   is secondary or tertiary — assign visual weight accordingly
+   (Section 2).
+
+3. CHOOSE STRUCTURE BASED ON CONTENT, NOT DEFAULT HABIT. Ask: does this
+   content represent a coherent glanceable group (→ card)? A sequence
+   with progress (→ stepper/timeline)? A comparison across similar items
+   (→ table or column layout)? A single dominant choice (→ prominent
+   button, not a menu)? Don't default to a card, modal, or carousel out
+   of habit — justify the container by what the content actually is.
+
+4. CHOOSE DENSITY BASED ON USE FREQUENCY AND EXPERTISE. A tool used many
+   times a day by trained users (admin panels, developer tools,
+   professional dashboards) can tolerate — and often benefits from —
+   higher information density, smaller touch/click targets, and fewer
+   confirmations, because users have built expertise and speed matters
+   more than hand-holding. A tool used rarely, or by first-time/general
+   consumers (onboarding, checkout, marketing sites), should favor lower
+   density, larger targets, more guidance, and more confirmation, because
+   users are actively learning the interface as they use it.
+
+5. DECIDE WHETHER ANIMATION/ILLUSTRATION EARNS ITS PLACE. Ask whether it
+   improves feedback, continuity, orientation, or emotional
+   appropriateness (Section 12). If removing it would make the interface
+   equally clear and equally fast, it's optional polish — fine to include
+   if resources allow, but never required and never a substitute for
+   getting the hierarchy and content right first.
+
+6. CHECK FOR CONSISTENCY WITH EXISTING PATTERNS IN THE PRODUCT. Before
+   introducing a new component, pattern, or color usage, check whether an
+   existing one already solves this problem. Reuse existing patterns
+   unless there's a specific, articulable reason this case is different.
+
+7. STRESS-TEST AGAINST EDGE CASES. What does this look like with an
+   empty state, a loading state, an error state, a very long text value,
+   a very short one, and on the smallest supported screen? A design that
+   only accounts for the "happy path" with ideal content is incomplete.
+
+=================================================================
+14. DESIGN REVIEW FRAMEWORK
+=================================================================
+
+When reviewing an existing interface, work through these lenses in
+order. For each issue found, state: what's wrong, which principle
+(section reference) it violates, why it matters for the user, and a
+concrete fix — not just "this looks off."
+
+1. HIERARCHY CHECK — Can you identify the single primary action/fact on
+   this screen in under one second? If multiple elements compete for
+   that role, or the actually-important fact is visually subordinate to
+   a decorative or secondary element, flag it (Section 2).
+
+2. SPACING & ALIGNMENT CHECK — Does spacing correctly signal which
+   elements are grouped together? Is there one consistent alignment edge
+   for labels/text blocks, or does it drift line to line (Section 3)?
+
+3. COLOR CHECK — Is there a clear, limited accent color reserved for
+   primary actions, or does saturated color appear everywhere (diluting
+   its signal)? Is semantic color (red/green/yellow) used consistently
+   for error/success/warning throughout, with no contradictory usage?
+   In dark mode, is saturation appropriately reduced and is pure
+   black/white avoided (Section 5)?
+
+4. FORM CHECK — Are labels persistent (not placeholder-only)? Is
+   placeholder text visually distinct from real entered text? Are
+   optional fields marked rather than required fields asterisked? Is the
+   layout single-column? Do controls match their semantics (checkbox vs.
+   radio vs. toggle) (Sections 6-7)?
+
+5. FEEDBACK CHECK — Does every interactive element respond immediately
+   on interaction? Do longer operations show progress or skeleton
+   loading rather than a blank wait or bare spinner? Are errors
+   human-readable with a next step, never raw system errors? Are
+   destructive actions confirmed with unambiguous button copy
+   (Section 9)?
+
+6. NAVIGATION CHECK — Are back/close controls where users expect them?
+   Is the active nav state unambiguous? On small screens, is there a
+   clear, one-tap-away overflow path for anything collapsed (Section 8)?
+
+7. TOUCH TARGET CHECK — Are small interactive controls (checkboxes,
+   icon buttons) given a tap/click area larger than their visible size,
+   particularly on touch-oriented layouts (Section 11)?
+
+8. CONSISTENCY CHECK — Do repeated components (buttons, cards, nav
+   items) look and behave identically everywhere they appear? Does a
+   primary CTA stay in a predictable position across a linear flow?
+
+9. PRIORITIZE FIXES BY IMPACT, NOT VOLUME. Rank findings by how directly
+   they block or confuse the user's core task versus how much they
+   affect visual polish alone. A hierarchy or feedback problem that
+   causes task failure or user distrust (Sections 2, 9) generally
+   outranks a typography or spacing refinement (Sections 3, 4) in
+   priority, even if the latter is easier to fix.
+
+=================================================================
+15. IDEA GENERATION FRAMEWORK
+=================================================================
+
+When a user provides a vague product or feature request ("build me a
+dashboard," "design a profile page," "I need a settings screen"), do not
+jump to a single generic layout. Reason through these dimensions first,
+and offer 2-3 genuinely different directions grounded in the answers,
+rather than one default solution:
+
+- USER GOAL: Is the user here to monitor (glance and leave), to act
+  (complete a specific task), to explore (browse without a fixed goal),
+  or to configure (set up once, rarely return)? Monitoring favors
+  glanceable cards/metrics (Section 7.2); acting favors a focused,
+  single-path flow with minimal distraction; exploring favors browsable
+  grids/lists with filtering; configuring favors clearly grouped,
+  well-labeled forms (Section 6).
+
+- CONTENT TYPE & VOLUME: Is the core content numeric/data (favors charts,
+  tables, compact data views — Section 7.2), textual (favors list/card
+  layouts with strong typographic hierarchy — Section 4), visual/media
+  (favors larger imagery, immersive layouts — Section 7.2), or a mix?
+  How much of it is there — a handful of items (can show everything) or
+  hundreds (needs filtering, search, pagination, or progressive
+  disclosure)?
+
+- INTERACTION FREQUENCY: Will this be opened once, occasionally, or many
+  times a day? High-frequency tools should minimize steps, clicks, and
+  confirmations for the primary path once the user is trained; low-
+  frequency tools should optimize for immediate comprehension by someone
+  who may not remember how it works from last time.
+
+- PRODUCT TYPE & CONTEXT: A consumer app can lean into personality,
+  illustration, and emotional design (Section 12) more than enterprise
+  software, where density, speed, and predictability usually matter
+  more than delight. A developer tool or admin panel should assume
+  technical fluency and can expose more raw configuration than a
+  consumer-facing settings screen, which should favor plain language and
+  progressive disclosure of advanced options.
+
+- DEVICE: Mobile-first content should assume single-column,
+  thumb-reachable primary actions, and collapsed secondary navigation
+  (Sections 8, 10); desktop/large-screen layouts can use multi-column
+  arrangements and persistent (non-collapsed) navigation more safely.
+
+- COMPLEXITY & RISK: Does this feature involve a destructive,
+  financial, or irreversible action? If so, bias toward more
+  confirmation, clearer semantic color (Section 5.3), and slower,
+  more explicit flows, even at some cost to speed. Low-risk, easily
+  reversible actions can and should be optimized for speed and minimal
+  friction instead.
+
+Present resulting direction(s) as concrete layout/structure choices tied
+back to these answers (e.g. "Because this is a high-frequency
+data-monitoring tool for trained users, I'd default to a dense,
+single-screen dashboard with compact metric cards and no confirmation
+dialogs on filters — versus, if this were a rarely-used setup wizard, a
+single-column guided step flow would serve the same data better") rather
+than producing a generic UI and labeling it with the user's product name.
+
+=================================================================
+16. ANTI-PATTERNS QUICK REFERENCE
+=================================================================
+
+- Flat hierarchy: every element the same size/weight/color; no clear
+  point of entry (Section 2).
+- Placeholder-as-label: a field's only label vanishes once the user
+  types (Section 6).
+- Indistinguishable placeholder vs. entered text: users can't tell at a
+  glance whether a field is actually filled in (Section 6).
+- Asterisk-per-required-field noise instead of marking the (usually
+  fewer) optional fields (Section 6).
+- Mismatched input semantics: radio button used for a single yes/no
+  agreement; toggle used where a submitted form field was meant (Section
+  6).
+- Ambiguous confirmation copy: generic "Yes / No" on a destructive
+  action instead of restating the action in the button (Sections 6, 9).
+- Dark patterns in cancellation/opt-out flows: multi-step friction,
+  guilt copy, or hidden exits that aren't mirrored by equal friction on
+  sign-up (Section 9.6).
+- Silent interactions: a tap/click with no visible feedback at all
+  (Section 9.1).
+- Bare spinner over blank screen for non-trivial load times, instead of
+  skeleton loading that previews layout (Section 9.2).
+- Raw system errors (stack traces, status codes, internal IDs) shown
+  directly to end users (Section 9.4).
+- Dead-end errors with no suggested next action (Section 9.4).
+- Empty states that are just blank space with no guidance or next
+  action (Section 9.5).
+- Primary action controls that relocate between steps of a linear flow,
+  forcing the user to re-search for them each screen (Section 7.1).
+- Carousels with dot-only indicators and no item labels, forcing blind
+  browsing (Section 7.3).
+- Overuse of modal popups for low-stakes, skippable content (Section
+  7.5).
+- Misaligned label/field left edges drifting line to line (Section 3).
+- Inconsistent spacing that fails to group related elements or
+  separate unrelated ones (Section 3).
+- Unbalanced/arbitrary nested corner radii between a container and its
+  inner elements (Section 3).
+- All-caps button and label text used pervasively, reducing legibility
+  and adding unintended tonal aggression (Section 4).
+- Oversaturated color used everywhere, so no single element reads as
+  "the important one" (Sections 2, 5).
+- Pure black/pure white surfaces, especially stacked with heavy dark-mode
+  contrast, causing unnecessary eye strain (Section 5.1).
+- Colors ported directly from light mode to dark mode (or vice versa)
+  without adjusting saturation, reading as either washed out or
+  overly neon (Section 5.1).
+- Inconsistent semantic color usage — red/green/yellow not reliably
+  mapped to error/success/warning across the product (Section 5.3).
+- Small checkboxes/icon buttons with a tappable area identical to their
+  tiny visible size, causing missed taps (Section 11).
+- Navigation controls (back/close, primary utility icons) placed
+  inconsistently or against platform convention, breaking habitual
+  wayfinding (Section 8).
+- Responsive layouts that shrink dense tables/multi-column content
+  proportionally until illegible, instead of restructuring (Section 10).
+- Decoration or motion with no functional job (no feedback, continuity,
+  or orientation benefit), added purely for visual flair (Section 12).

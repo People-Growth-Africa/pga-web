@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { ContourPanel } from '../components/ContourPattern';
+import AuthComingSoon from '../components/AuthComingSoon';
 import Select from '../components/Select';
+import { accountScreensOpen } from '../lib/accountGate';
 import SEO from '../components/SEO';
 import { COUNTRIES, TALENT_FIELDS } from '../data/options';
 import { useAuth } from '../hooks/useAuth';
@@ -86,6 +88,14 @@ export default function Auth() {
 
   if (status === 'signedIn' && user) {
     return <Navigate to={dashboardPath(user.role)} replace />;
+  }
+
+  // The public site shows a coming soon page here until the launch is a
+  // deliberate decision; every environment the work happens in keeps the real
+  // forms. A signed in session never reaches this line, so existing accounts are
+  // unaffected (src/lib/accountGate.ts has the whole rule).
+  if (!accountScreensOpen(window.location.hostname)) {
+    return <AuthComingSoon />;
   }
 
   const isSignup = tab === 'signup';

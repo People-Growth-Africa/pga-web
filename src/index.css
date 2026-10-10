@@ -6,6 +6,11 @@
   --color-brand-green: #1D9E75;
   --color-mint: #E1F5EE;
   --color-terracotta: #C4773B;
+  /* The deeper terracotta, for fills that carry text. Plain terracotta is the
+     warning and error tone across the product, but white on it is only 3.5:1,
+     so a destructive action that has to be read clearly uses this instead
+     (5.3, and the AA requirement for the label). */
+  --color-terracotta-deep: #9B4F1C;
   --color-cream: #F2EDE4;
   --color-charcoal: #1A1E1B;
 

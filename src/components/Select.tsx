@@ -154,7 +154,7 @@ export function Select({
           {error}
         </p>
       ) : hint ? (
-        <p id={messageId} className="mt-1.5 text-xs font-[family-name:var(--font-body)] text-charcoal/60">
+        <p id={messageId} className="mt-1.5 text-xs font-[family-name:var(--font-body)] text-charcoal/65">
           {hint}
         </p>
       ) : null}

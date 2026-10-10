@@ -87,6 +87,29 @@ export const signupSchema = z.discriminatedUnion('role', [
   employerSignupSchema,
 ]);
 
+/**
+ * The two fields the talent dashboard owns, and only these two.
+ *
+ * Availability is the signal an employer acts on and the one thing the signup
+ * form lets a talent skip, so it is editable after signup. Country rides along
+ * because it is the other optional answer from signup and the dashboard already
+ * prints it. Both keys are optional so a caller can change one without
+ * resending the other, and at least one has to be present: an empty save is a
+ * no-op the client should not be sending. `strictObject` refuses anything else,
+ * so no other column can be reached from a request.
+ *
+ * An empty country is accepted on purpose: it is how a talent clears an answer
+ * they no longer want on their profile.
+ */
+export const talentProfileSchema = z
+  .strictObject({
+    availability: z.enum(AVAILABILITY_OPTIONS).optional(),
+    country: optionalText(COUNTRY_MAX, 'country'),
+  })
+  .refine((value) => value.availability !== undefined || value.country !== undefined, {
+    message: 'Choose an availability or add your country.',
+  });
+
 export type SignupInput = z.infer<typeof signupSchema>;
 
 export const loginSchema = z.strictObject({
@@ -209,6 +232,8 @@ export const emptyBodySchema = z.strictObject({});
 export const deleteAccountSchema = z.strictObject({
   password: z.string().min(1, 'Enter your password to confirm.').max(PASSWORD_MAX),
 });
+
+export type TalentProfileInput = z.infer<typeof talentProfileSchema>;
 
 /**
  * Turns a schema result into either validated data or a 400 carrying the exact

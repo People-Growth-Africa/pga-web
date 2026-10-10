@@ -161,6 +161,35 @@ export async function getEmployerProfile(userId: string): Promise<EmployerProfil
   );
 }
 
+/**
+ * Saves the two talent fields the dashboard owns. Each column is written only
+ * when the caller supplied it, so changing availability cannot blank a country
+ * the talent set earlier, and an undefined value is not the same instruction as
+ * an empty one: an empty country clears the column (see talentProfileSchema).
+ * The user id always comes from the session, never from a request body. Returns
+ * the row as it now stands, or null when the account has no talent profile.
+ */
+export async function updateTalentProfile(input: {
+  userId: string;
+  availability?: string;
+  country?: string;
+}): Promise<TalentProfile | null> {
+  return queryOne<TalentProfile>(
+    `UPDATE talent_profiles
+        SET availability = CASE WHEN $2::boolean THEN $3 ELSE availability END,
+            country = CASE WHEN $4::boolean THEN $5 ELSE country END
+      WHERE user_id = $1
+      RETURNING name, field, country, availability`,
+    [
+      input.userId,
+      input.availability !== undefined,
+      input.availability ?? null,
+      input.country !== undefined,
+      input.country ? input.country : null,
+    ],
+  );
+}
+
 export type TokenType = 'verify' | 'reset';
 
 export async function insertAuthToken(input: {
@@ -289,6 +318,43 @@ export async function insertConsultationBooking(
     ],
   );
   return row?.id ?? null;
+}
+
+/**
+ * The signed in employer's own most recent consultation request.
+ *
+ * Matched on the address the account signed up with, so a caller cannot name a
+ * row: the only input is the session's own email. There is no status column on
+ * consultation_bookings and nothing here reads the team's diary, so the caller
+ * presents this as a request the team confirms by email, never as a booked
+ * meeting. The date is formatted in SQL so it arrives as a plain calendar day
+ * rather than as a driver-specific Date.
+ */
+const CONSULTATION_SUMMARY = `SELECT organisation,
+         meeting_format,
+         to_char(preferred_date, 'YYYY-MM-DD') AS preferred_date,
+         preferred_slot,
+         to_char(created_at, 'YYYY-MM-DD') AS requested_on`;
+
+export type ConsultationRequestRow = {
+  organisation: string;
+  meeting_format: string;
+  preferred_date: string;
+  preferred_slot: string;
+  requested_on: string;
+};
+
+export async function findLatestConsultationByEmail(
+  email: string,
+): Promise<ConsultationRequestRow | null> {
+  return queryOne<ConsultationRequestRow>(
+    `${CONSULTATION_SUMMARY}
+       FROM consultation_bookings
+      WHERE email = $1
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [email],
+  );
 }
 
 export async function insertEnquiry(input: {

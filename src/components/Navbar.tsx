@@ -45,6 +45,17 @@ export default function Navbar() {
   const accountLink = signedIn && user
     ? { to: dashboardPath(user.role), label: 'Your dashboard' }
     : { to: '/auth#signup', label: 'Sign up or log in' };
+  // The account entry doubles as the way into the dashboard, so while a
+  // dashboard is on screen it carries the same "you are here" treatment as the
+  // page links above it (8: the active state has to be readable at a glance).
+  const onDashboard = signedIn && location.pathname === accountLink.to;
+
+  // The dot on the account icon means "something here needs you", not "you are
+  // signed in". It reads the same session field the dashboard's notice and its
+  // journey strip read, so it appears on every page and clears itself the
+  // moment the address is confirmed (5, 8). Amber is the pending colour (5.3).
+  const emailUnconfirmed = signedIn && user ? !user.emailVerified : false;
+  const attentionLabel = emailUnconfirmed ? 'Email not confirmed yet' : null;
 
   // Include "Home" link when user is on any other page
   const currentNavLinks = [
@@ -240,8 +251,15 @@ export default function Navbar() {
           {AUTH_ENABLED ? (
           <Link
             to={accountLink.to}
-            aria-label={accountLink.label}
-            className="group relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/30 text-white/90 transition-colors hover:border-white hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-mint focus-visible:ring-offset-2 focus-visible:ring-offset-deep-green"
+            aria-label={
+              attentionLabel ? `${accountLink.label}, ${attentionLabel}` : accountLink.label
+            }
+            aria-current={onDashboard ? 'page' : undefined}
+            className={`group relative inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors hover:border-white hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-mint focus-visible:ring-offset-2 focus-visible:ring-offset-deep-green ${
+              onDashboard
+                ? 'border-mint bg-white/15 text-white'
+                : 'border-white/30 text-white/90'
+            }`}
           >
             <svg
               className="h-5 w-5 stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"
@@ -251,8 +269,11 @@ export default function Navbar() {
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
               <circle cx="12" cy="7" r="4" />
             </svg>
-            {signedIn && (
-              <span className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-brand-green ring-2 ring-deep-green" />
+            {emailUnconfirmed && (
+              <span
+                className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-terracotta ring-2 ring-deep-green"
+                aria-hidden="true"
+              />
             )}
             <HoverPill label={accountLink.label} align="right" />
           </Link>
@@ -345,9 +366,20 @@ export default function Navbar() {
                 <Link
                   to={accountLink.to}
                   onClick={() => setMobileOpen(false)}
-                  className="text-lg font-medium font-[family-name:var(--font-body)] py-1 text-white/85"
+                  aria-current={onDashboard ? 'page' : undefined}
+                  className={`flex min-h-[44px] items-center gap-2 text-lg font-medium font-[family-name:var(--font-body)] py-1 ${
+                    onDashboard ? 'text-mint font-semibold' : 'text-white/85'
+                  }`}
                 >
                   {signedIn ? 'Dashboard' : 'Sign up / Log in'}
+                  {/* Phones never see the icon, so the same flag has to be said in
+                      words in the menu. */}
+                  {emailUnconfirmed && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-terracotta/25 px-2.5 py-0.5 text-xs font-semibold text-mint">
+                      <span className="h-1.5 w-1.5 rounded-full bg-terracotta" aria-hidden="true" />
+                      Email not confirmed
+                    </span>
+                  )}
                 </Link>
               ) : (
                 <>
