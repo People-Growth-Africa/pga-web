@@ -2,6 +2,8 @@ import { useState, useEffect, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Select from './Select';
 import { useConsultation } from '../hooks/useConsultation';
+import { useFormsAvailability } from '../hooks/useFormsAvailability';
+import FormsUnavailableNotice, { FormAvailabilityPending } from './FormsUnavailableNotice';
 import {
   leadFailureMessage,
   localIsoDate,
@@ -82,6 +84,9 @@ export default function ConsultationModal() {
   const [isBooked, setIsBooked] = useState(false);
   const [isMessageSent, setIsMessageSent] = useState(false);
   const [error, setError] = useState('');
+  // Asked once on open, so neither tab asks someone to fill a form it will
+  // refuse to accept.
+  const formsAvailability = useFormsAvailability();
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -304,7 +309,9 @@ export default function ConsultationModal() {
           </div>
         </div>
 
-        {/* Tab Controls */}
+        {/* Tab Controls. Hidden while the forms are shut: a tab that switches
+            between two things that are both unavailable is noise. */}
+        {formsAvailability !== 'unavailable' && (
         <div className="flex border-b border-charcoal/10 bg-cream/30 px-6 pt-2 gap-3">
           <button
             type="button"
@@ -335,10 +342,25 @@ export default function ConsultationModal() {
             Send a written enquiry
           </button>
         </div>
+        )}
 
         <div className="p-6 md:p-8">
           <AnimatePresence mode="wait">
-            {activeTab === 'calendar' ? (
+            {formsAvailability !== 'available' ? (
+              <motion.div
+                key="availability"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                className="py-6"
+              >
+                {formsAvailability === 'unavailable' ? (
+                  <FormsUnavailableNotice />
+                ) : (
+                  <FormAvailabilityPending className="text-center" />
+                )}
+              </motion.div>
+            ) : activeTab === 'calendar' ? (
               isBooked ? (
                 <motion.div
                   key="confirmed"

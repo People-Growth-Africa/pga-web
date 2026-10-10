@@ -46,6 +46,11 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/employer/consultation': gatedAuth(async () => (await import('./employer/consultation.js')).default),
   '/talent/profile': gatedAuth(async () => (await import('./talent/profile.js')).default),
 
+  // --- A probe the forms read on load, so a missing database is known before
+  //     a visitor fills anything in rather than after they press send. It is
+  //     not gated: it exists to report the gate, and it touches nothing.
+  '/forms/availability': lazy(async () => (await import('./forms/availability.js')).default),
+
   // --- Public forms that store submissions, up only when a database is set --
   '/leads/consultation-booking': requiresDatabase(async () => (await import('./leads/consultation-booking.js')).default),
   '/leads/enquiry': requiresDatabase(async () => (await import('./leads/enquiry.js')).default),

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import SEO from '../components/SEO';
+import FormsUnavailableNotice, { FormAvailabilityPending } from '../components/FormsUnavailableNotice';
+import { useFormsAvailability } from '../hooks/useFormsAvailability';
 import { authRequest } from '../lib/authClient';
 import { blogPosts, categories, getFeaturedPost, type BlogPost } from '../data/posts';
 
@@ -18,6 +20,9 @@ export default function BlogList() {
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [newsletterState, setNewsletterState] = useState<NewsletterState>('idle');
   const [newsletterNotice, setNewsletterNotice] = useState('');
+  // The newsletter writes to the same database the lead forms do, so it asks
+  // the same question on load and says so before anyone types an address.
+  const formsAvailability = useFormsAvailability();
 
   const featured = getFeaturedPost();
 
@@ -287,6 +292,13 @@ export default function BlogList() {
             <p className="font-[family-name:var(--font-body)] text-[1.05rem] text-charcoal/60 leading-relaxed mb-9 max-w-[500px] mx-auto">
               Join 2,000+ business leaders across Africa receiving practical people management tips, regulatory updates, and growth strategies every two weeks.
             </p>
+            {formsAvailability !== 'available' ? (
+              formsAvailability === 'unavailable' ? (
+                <FormsUnavailableNotice className="max-w-[480px] mx-auto text-left" />
+              ) : (
+                <FormAvailabilityPending className="text-center" />
+              )
+            ) : (
             <form onSubmit={handleSubscribe} className="flex flex-col sm:flex-row gap-3 max-w-[480px] mx-auto">
               <input
                 type="email"
@@ -312,6 +324,7 @@ export default function BlogList() {
                 {newsletterState === 'sending' ? 'Sending…' : newsletterState === 'sent' ? 'Thanks ✓' : 'Subscribe'}
               </button>
             </form>
+            )}
             <p className="font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/40 mt-4">No spam. The newsletter and nothing else, every two weeks.</p>
             {/* Mounted from the start so a screen reader announces the server's answer when it lands. */}
             <p

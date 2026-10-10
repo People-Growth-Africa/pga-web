@@ -2,6 +2,8 @@ import { useState, useEffect, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { EventItem } from '../data/events';
 import { leadFailureMessage, submitEventRegistration } from '../lib/leadClient';
+import { useFormsAvailability } from '../hooks/useFormsAvailability';
+import FormsUnavailableNotice, { FormAvailabilityPending } from './FormsUnavailableNotice';
 
 interface EventRegistrationModalProps {
   event: EventItem | null;
@@ -21,6 +23,9 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [error, setError] = useState('');
+  // Asked once on open, so the form is not put in front of someone only to
+  // refuse their submission afterwards.
+  const formsAvailability = useFormsAvailability();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -131,7 +136,20 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
         {/* Content Body */}
         <div className="p-6 md:p-8">
           <AnimatePresence mode="wait">
-            {isConfirmed ? (
+            {formsAvailability !== 'available' ? (
+              <motion.div
+                key="availability"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+              >
+                {formsAvailability === 'unavailable' ? (
+                  <FormsUnavailableNotice />
+                ) : (
+                  <FormAvailabilityPending className="py-4 text-center" />
+                )}
+              </motion.div>
+            ) : isConfirmed ? (
               <motion.div
                 key="confirmed"
                 initial={{ opacity: 0, y: 10 }}
