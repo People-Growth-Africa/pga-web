@@ -167,12 +167,12 @@ export default function BlogPostPage() {
               {post.title}
             </h1>
             <div className="flex items-center justify-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center font-[family-name:var(--font-heading)] font-semibold text-terracotta text-sm">
+              <div className="w-12 h-12 rounded-full bg-white/15 flex items-center justify-center font-[family-name:var(--font-heading)] font-semibold text-terracotta text-base">
                 {post.author.initials}
               </div>
               <div className="text-left">
-                <div className="font-[family-name:var(--font-body)] font-semibold text-sm text-white">{post.author.name}</div>
-                <div className="font-[family-name:var(--font-body)] text-[0.8rem] text-white/60">{post.author.role}</div>
+                <div className="font-[family-name:var(--font-body)] font-semibold text-base text-white">{post.author.name}</div>
+                <div className="font-[family-name:var(--font-body)] text-[0.9rem] text-white/65">{post.author.role}</div>
               </div>
             </div>
           </AnimateOnScroll>

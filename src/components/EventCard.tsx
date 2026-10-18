@@ -23,12 +23,15 @@ function EventCard({ event, onRegister, featured = false }: EventCardProps) {
     }
   };
 
+  /* h-full so every card in a grid row ends level with the tallest one, and no
+     lift on hover: the cards are dense enough that the movement read as the row
+     wobbling rather than as feedback. */
   return (
     <div
-      className={`bg-white rounded-[20px] p-7 md:p-8 flex flex-col justify-between transition-all duration-300 border ${
+      className={`h-full bg-white rounded-[20px] p-6 flex flex-col justify-between border ${
         featured
           ? 'border-brand-green/40 shadow-card-hover relative ring-1 ring-brand-green/20'
-          : 'border-charcoal/10 shadow-card hover:shadow-card-hover hover:-translate-y-1'
+          : 'border-charcoal/10 shadow-card'
       }`}
     >
       <div>
@@ -58,7 +61,7 @@ function EventCard({ event, onRegister, featured = false }: EventCardProps) {
         </div>
 
         {/* Title & Subtitle */}
-        <h3 className="font-[family-name:var(--font-heading)] text-xl md:text-2xl font-semibold text-charcoal leading-snug mb-2.5">
+        <h3 className="font-[family-name:var(--font-heading)] text-lg md:text-xl font-semibold text-charcoal leading-snug mb-2.5">
           {event.title}
         </h3>
         <p className="font-[family-name:var(--font-body)] text-sm text-charcoal/70 leading-relaxed mb-5">
@@ -96,7 +99,7 @@ function EventCard({ event, onRegister, featured = false }: EventCardProps) {
       </div>
 
       {/* Footer / CTA */}
-      <div className="flex items-center justify-between gap-3 pt-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <span className="text-xs font-semibold text-charcoal/80 bg-cream/60 px-3 py-1.5 rounded-full">
           {event.price}
         </span>

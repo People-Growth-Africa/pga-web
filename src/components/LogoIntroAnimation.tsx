@@ -9,8 +9,10 @@ export interface LogoPart {
 }
 
 export interface LogoIntroAnimationProps {
-  /** Source URL of flat logo image (PNG/SVG) */
+  /** Source URL of flat logo image (PNG/SVG), used in dark mode */
   logoSrc: string;
+  /** The same mark for light mode. Omit it and `logoSrc` is used everywhere. */
+  lightLogoSrc?: string;
   /** Optional precomputed part sampling list from build time */
   precomputedParts?: LogoPart[];
   /** Optional separate wordmark text to animate in Phase D */
@@ -39,6 +41,62 @@ const MOBILE_REVEAL_MS = 620;
 /** Grace on top of the reveal before it is recorded as finished. */
 const MOBILE_SETTLE_GRACE_MS = 200;
 const FULL_START_SCALE = 3.2;
+
+/**
+ * icon-black.png and icon-white.png are trimmed, centred square marks now: the
+ * leaf fills 97% of the height and 85% of the width of a 512x512 canvas.
+ *
+ * Was 1.5. The old 683x512 files carried the leaf at only 40% of their width
+ * and 61% of their height, so the frame had to scale the image up and clip the
+ * empty margin to stop the mark looking lost in its own file. The files fill
+ * their canvas themselves now, so the image is shown at its own size. The
+ * factor stays named because it is still the one knob for the mark's scale.
+ */
+const MARK_FRAME_SCALE = 1;
+
+/** The square a header mark sits in: the leaf reads about 97% of its height. */
+export const MARK_FRAME_SIZE = 'h-10 w-10 md:h-12 md:w-12';
+
+/**
+ * The brand mark in its square frame, in whichever brand file suits the surface
+ * it is on: icon-black.png on a light page, icon-white.png on a dark one. The
+ * `dark:` variant follows the operating system preference, the same rule the tab
+ * icon uses in index.html.
+ *
+ * Exported so the account pages carry the identical lockup rather than their own
+ * copy of the sizing rules.
+ */
+export function BrandMark({
+  darkSrc,
+  lightSrc,
+  frameClassName = '',
+  frameExtraClassName = '',
+}: {
+  darkSrc: string;
+  lightSrc?: string;
+  frameClassName?: string;
+  frameExtraClassName?: string;
+}) {
+  const frame = `items-center justify-center overflow-hidden shrink-0 ${frameClassName} ${frameExtraClassName}`;
+  const imgClassName = 'h-full w-auto max-w-none object-contain';
+  const style = { transform: `scale(${MARK_FRAME_SCALE})` };
+
+  return (
+    <>
+      <span className={`${frame} hidden dark:flex`}>
+        <img src={darkSrc} alt="People Growth Africa" className={imgClassName} style={style} />
+      </span>
+      <span className={`${frame} flex dark:hidden`}>
+        <img
+          src={lightSrc ?? darkSrc}
+          alt="People Growth Africa"
+          className={imgClassName}
+          style={style}
+        />
+      </span>
+    </>
+  );
+}
 
 /** Grace period after the intro should have finished before it is assumed
  *  stalled and landed on its final frame. */
@@ -164,6 +222,7 @@ function sampleLogoImage(
 
 export function LogoIntroAnimation({
   logoSrc,
+  lightLogoSrc,
   precomputedParts,
   wordmarkText,
   density = 32,
@@ -174,7 +233,9 @@ export function LogoIntroAnimation({
 }: LogoIntroAnimationProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stippleGroupRef = useRef<SVGGElement>(null);
-  const realLogoRef = useRef<HTMLImageElement>(null);
+  // The settled logo sits in its own clipped frame now, so this points at the
+  // frame rather than at the <img> inside it: the crossfade fades the frame.
+  const realLogoRef = useRef<HTMLDivElement>(null);
   const wordmarkRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   // Only the mark scales during the intro. Scaling the wrapper used to drag the
@@ -340,7 +401,7 @@ export function LogoIntroAnimation({
           repeat: 1,
           yoyo: true,
           ease: 'sine.inOut',
-          // (0,0) is the logo centre in viewBox space — no getBBox() read.
+          // (0,0) is the logo centre in viewBox space, so no getBBox() read.
           transformOrigin: '0px 0px',
         },
         phaseBTime
@@ -483,11 +544,8 @@ export function LogoIntroAnimation({
   if (!shouldAnimate || parts.length === 0) {
     return (
       <div className={`inline-flex items-center gap-1.5 md:gap-2 ${className}`}>
-        <img
-          src={logoSrc}
-          alt="People Growth Africa"
-          className="h-8 md:h-10 w-auto object-contain shrink-0"
-        />
+        {/* Was: <img src={logoSrc} className="h-8 md:h-10 w-auto object-contain shrink-0" /> */}
+        <BrandMark darkSrc={logoSrc} lightSrc={lightLogoSrc} frameClassName={MARK_FRAME_SIZE} />
         {wordmarkText && (
           // Hidden below lg: on mid-size screens the wordmark and the nav links
           // cannot both fit, and it used to wrap onto three lines and sit on top
@@ -507,10 +565,13 @@ export function LogoIntroAnimation({
   if (mobileReveal) {
     return (
       <div className={`inline-flex items-center ${className}`}>
-        <img
-          src={logoSrc}
-          alt="People Growth Africa"
-          className="h-8 md:h-10 w-auto object-contain shrink-0 animate-logo-reveal motion-reduce:animate-none"
+        {/* Was: <img src={logoSrc} className="h-8 md:h-10 w-auto object-contain shrink-0
+            animate-logo-reveal motion-reduce:animate-none" /> */}
+        <BrandMark
+          darkSrc={logoSrc}
+          lightSrc={lightLogoSrc}
+          frameClassName={MARK_FRAME_SIZE}
+          frameExtraClassName="animate-logo-reveal motion-reduce:animate-none"
         />
       </div>
     );
@@ -529,15 +590,21 @@ export function LogoIntroAnimation({
           back to the start. Baking them into the markup means the first frame
           painted already is the first frame of the animation. */}
       <div ref={wrapperRef} className="relative flex items-center gap-1.5 md:gap-2">
+        {/* Was: className="relative w-9 h-9 md:w-11 md:h-11 ...". The mark box
+            now matches the square the static lockup uses, so the intro and the
+            everypage logo are the same size. */}
         <div
           ref={markRef}
-          className="relative w-9 h-9 md:w-11 md:h-11 flex items-center justify-center"
+          className={`relative flex items-center justify-center ${MARK_FRAME_SIZE}`}
           style={{ transform: `scale(${FULL_START_SCALE})`, willChange: 'transform' }}
         >
+          {/* Was: style={{ width: '40px', height: '40px' }}. The hardcoded size
+              was smaller than the box it sat in, so the dot layer and the
+              settled logo did not line up. It follows the box now. */}
           <svg
             className="w-full h-full overflow-visible"
             viewBox="-110 -110 220 220"
-            style={{ width: '40px', height: '40px' }}
+            style={{ overflow: 'visible' }}
           >
             <g ref={stippleGroupRef}>
               {parts.map((part, idx) => (
@@ -552,12 +619,28 @@ export function LogoIntroAnimation({
             </g>
           </svg>
 
+          {/* Was:
           <img
             ref={realLogoRef}
             src={logoSrc}
             alt="People Growth Africa"
             className="absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0"
           />
+          `object-contain` letterboxed the wide 683x512 file inside a square
+          box, which drew the leaf at about 40% of the box and made the mark
+          shrink on the crossfade. The clipped frame below is the same one the
+          static lockup uses, so the intro lands on the size it settles at. */}
+          <div
+            ref={realLogoRef}
+            className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none opacity-0"
+          >
+            <img
+              src={logoSrc}
+              alt="People Growth Africa"
+              className="h-full w-auto max-w-none object-contain"
+              style={{ transform: `scale(${MARK_FRAME_SCALE})` }}
+            />
+          </div>
         </div>
 
         {wordmarkText && (

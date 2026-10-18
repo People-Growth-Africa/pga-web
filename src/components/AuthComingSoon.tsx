@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import SEO from './SEO';
 import { ContourPanel } from './ContourPattern';
+import { BrandMark, MARK_FRAME_SIZE } from './LogoIntroAnimation';
 import { useConsultation } from '../hooks/useConsultation';
 
 /**
@@ -41,14 +42,19 @@ export default function AuthComingSoon() {
                 className="flex h-full flex-col justify-start px-6 py-7 min-[820px]:px-10 min-[820px]:py-12"
               >
                 <div className="mb-5 inline-flex items-center gap-2.5">
+                  {/* Was:
                   <img
-                    src="/images/icon-white.png"
+                    src="/images/mark-white.png"
                     alt=""
                     width={36}
                     height={36}
-                    className="h-9 w-9"
+                    className="h-9 w-9 object-contain"
                     loading="lazy"
                   />
+                  No derived square mark any more: this panel is a dark surface,
+                  so it carries the brand's own white icon, in the same clipped
+                  square frame and at the same size as the header lockup. */}
+                  <BrandMark darkSrc="/images/icon-white.png" frameClassName={MARK_FRAME_SIZE} />
                   <span className="font-[family-name:var(--font-body)] text-sm font-semibold tracking-wide">
                     People Growth Africa
                   </span>

@@ -41,6 +41,32 @@ const SATURDAY_SLOTS: TimeSlot[] = [
   { time: '03:00 PM', hour: 15 },
 ];
 
+/** Same calendar day, whatever the time on either. */
+const isSameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/**
+ * The slots still open on a given day. Today is the special case: only slots
+ * that have not started yet count, so once the last one has begun the day
+ * carries nothing and drops off the strip below. Sundays are closed.
+ */
+function bookableSlots(day: Date, now: Date): TimeSlot[] {
+  if (day.getDay() === 0) return [];
+  const slots = day.getDay() === 6 ? SATURDAY_SLOTS : WEEKDAY_SLOTS;
+  if (!isSameDay(day, now)) return slots;
+  return slots.filter((slot) => slot.hour > now.getHours());
+}
+
+/** The next two weeks, today first, each day still carrying at least one slot. */
+function bookableDays(now: Date, count = 14): Date[] {
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(now);
+    d.setDate(now.getDate() + i);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }).filter((d) => bookableSlots(d, now).length > 0);
+}
+
 const serviceOptions = [
   'HR Advisory & Consulting',
   'Learning & Development',
@@ -49,6 +75,7 @@ const serviceOptions = [
   'Performance Management',
   'HR Audits & Compliance',
   'Agribusiness Workforce Development',
+  'Agribusiness People Strategy',
   'Career Development Programmes',
   'Recruitment & Talent Management',
   'HR Retainerships',
@@ -83,9 +110,10 @@ export default function BookingCalendar() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'direct'>('calendar');
 
   // Booking state
+  /* The previous default, kept for reference: tomorrow, or Monday when
+     tomorrow was Sunday.
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     const today = new Date();
-    // Default to tomorrow or next business day
     const nextDay = new Date(today);
     nextDay.setDate(today.getDate() + 1);
     if (nextDay.getDay() === 0) {
@@ -93,8 +121,19 @@ export default function BookingCalendar() {
     }
     return nextDay;
   });
-
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('10:00 AM');
+  */
+
+  // Start on the first bookable day, today included while it still has slots,
+  // and on the first slot that day offers.
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    return bookableDays(new Date())[0] ?? new Date();
+  });
+
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>(() => {
+    const firstDay = bookableDays(new Date())[0] ?? new Date();
+    return bookableSlots(firstDay, new Date())[0]?.time ?? '10:00 AM';
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isBooked, setIsBooked] = useState(false);
   const [isMessageSent, setIsMessageSent] = useState(false);
@@ -124,21 +163,29 @@ export default function BookingCalendar() {
     message: '',
   });
 
+  const now = new Date();
   const isSunday = selectedDate.getDay() === 0;
-  const isSaturday = selectedDate.getDay() === 6;
+  // Kept for reference; bookableSlots() now decides Saturday's hours.
+  // const isSaturday = selectedDate.getDay() === 6;
 
+  /* The fixed slot lists this used to pick from, kept for reference:
   const currentSlots = isSunday
     ? []
     : isSaturday
     ? SATURDAY_SLOTS
     : WEEKDAY_SLOTS;
 
-  // Generate upcoming 14 available days for fast selection
   const upcomingDays = Array.from({ length: 14 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() + i + 1);
     return d;
   }).filter((d) => d.getDay() !== 0); // exclude Sundays
+  */
+
+  // Slots still open on the chosen day, and the next two weeks of days that
+  // still have one. Today stays on the strip until its last slot has started.
+  const currentSlots = bookableSlots(selectedDate, now);
+  const upcomingDays = bookableDays(now);
 
   const formatDateLabel = (d: Date) => {
     return d.toLocaleDateString('en-GB', {
@@ -267,7 +314,8 @@ export default function BookingCalendar() {
             Let&apos;s talk about your people setup
           </h3>
           <p className="font-[family-name:var(--font-body)] text-white/80 text-sm md:text-base max-w-[700px] leading-relaxed">
-            Pick a time that suits you, or send us a written enquiry. An advisor will review it and come back with clear next steps.
+            {/* Old wording, kept for reference: ... An advisor will review it and come back with clear next steps. */}
+            Pick a time that suits you, or send us a written enquiry. An advisor will review it and get back to you with clear next steps.
           </p>
 
           {/* Operating Hours Summary */}
@@ -447,7 +495,9 @@ export default function BookingCalendar() {
                   </div>
 
                   {/* Horizontal date selector */}
-                  <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-thin">
+                  {/* The row still scrolls sideways on small screens, without the
+                      scrollbar chrome that used to sit under it. */}
+                  <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {upcomingDays.map((d, i) => {
                       const isSelected =
                         d.toDateString() === selectedDate.toDateString();
@@ -462,10 +512,14 @@ export default function BookingCalendar() {
                           type="button"
                           onClick={() => {
                             setSelectedDate(d);
-                            // Adjust default time if switching between weekday and saturday
-                            if (d.getDay() === 6) {
-                              setSelectedTimeSlot('11:00 AM');
-                            }
+                            // Keep the chosen time when the new day still offers
+                            // it, otherwise fall back to that day's first slot.
+                            const daySlots = bookableSlots(d, new Date());
+                            setSelectedTimeSlot((current) =>
+                              daySlots.some((slot) => slot.time === current)
+                                ? current
+                                : daySlots[0]?.time ?? '',
+                            );
                           }}
                           className={`flex-shrink-0 flex flex-col items-center justify-center w-[84px] py-3 px-2 rounded-[14px] border transition-all cursor-pointer ${
                             isSelected
@@ -497,9 +551,12 @@ export default function BookingCalendar() {
                     <span className="text-xs text-charcoal/50">West Africa Time (WAT)</span>
                   </div>
 
-                  {isSunday ? (
-                    <div className="p-4 rounded-[12px] bg-charcoal/5 text-charcoal/70 text-sm border border-charcoal/10">
+                  {isSunday || currentSlots.length === 0 ? (
+                    /* The Sunday-only wording this used to show, kept for reference:
                       Our office is closed on Sundays. Please select any weekday (8:00 AM &ndash; 6:00 PM) or Saturday (11:00 AM &ndash; 4:00 PM).
+                    */
+                    <div className="p-4 rounded-[12px] bg-charcoal/5 text-charcoal/70 text-sm border border-charcoal/10">
+                      Our office is closed on Sundays, and a slot leaves the list once it has started. Please pick another day above; weekdays run 8:00 AM &ndash; 6:00 PM and Saturdays 11:00 AM &ndash; 4:00 PM.
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
