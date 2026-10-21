@@ -1,35 +1,64 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import SEO from '../components/SEO';
+import { staticPageMeta } from '../lib/pageMeta';
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import EventCard from '../components/EventCard';
 import EventRegistrationModal from '../components/EventRegistrationModal';
-import { eventsList, eventCategories, type EventItem } from '../data/events';
+import { eventCategories, type EventItem } from '../data/events';
+import { useContent } from '../hooks/useContent';
+import { mergeEvents, splitEvents, type EventView } from '../lib/contentMerge';
 
+/**
+ * /events - the built-in programme catalogue, with events from the sheet added.
+ *
+ * The split into Upcoming and Past is about the event's own date, not about
+ * whether it is published: an event is never hidden because its date has passed
+ * or is far away. Built-in events keep the status they were written with, which
+ * is why they still appear as upcoming; sheet events get their status from
+ * event_date, so a finished one moves itself into Past events.
+ */
 export default function Events() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
+  const { entries } = useContent();
+
+  const allEvents = useMemo(() => mergeEvents(entries), [entries]);
 
   const filteredEvents = useMemo(() => {
-    return eventsList.filter((event) => {
-      const matchesCategory =
-        selectedCategory === 'all' || event.type === selectedCategory;
+    const query = searchQuery.trim().toLowerCase();
+    return allEvents.filter((event) => {
+      const matchesCategory = selectedCategory === 'all' || event.type === selectedCategory;
       const matchesSearch =
-        event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        event.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        event.speaker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        event.targetAudience.toLowerCase().includes(searchQuery.toLowerCase());
+        !query ||
+        event.title.toLowerCase().includes(query) ||
+        event.subtitle.toLowerCase().includes(query) ||
+        event.speaker.name.toLowerCase().includes(query) ||
+        event.targetAudience.toLowerCase().includes(query);
       return matchesCategory && matchesSearch;
     });
-  }, [selectedCategory, searchQuery]);
+  }, [allEvents, selectedCategory, searchQuery]);
+
+  // Upcoming soonest first; past newest first.
+  const { upcoming, past } = useMemo(() => splitEvents(filteredEvents), [filteredEvents]);
+
+  const renderCard = (event: EventView) => (
+    <AnimateOnScroll key={event.id} className="h-full">
+      <EventCard
+        event={event}
+        featured={event.featured}
+        detailHref={event.detailHref}
+        isPast={event.isPast}
+        registrationUrl={event.registrationUrl}
+        onRegister={(ev) => setSelectedEvent(ev)}
+      />
+    </AnimateOnScroll>
+  );
 
   return (
     <>
-      <SEO
-        title="Webinars & Mentorship Programmes | People Growth Africa"
-        description="Join practical webinars, masterclasses and small mentorship cohorts built to strengthen people systems and HR leadership across Africa."
-      />
+      <SEO meta={staticPageMeta('/events')} />
 
       {/* Hero Banner */}
       <section className="bg-deep-green text-white pt-[140px] pb-[80px] relative overflow-hidden">
@@ -125,21 +154,37 @@ export default function Events() {
             </div>
           </div>
 
-          {/* Events Grid */}
           {filteredEvents.length > 0 ? (
-            // Four cards across on a large screen, giving three rows for the
-            // twelve programmes; tablets and phones keep two and one column.
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-              {filteredEvents.map((event) => (
-                <AnimateOnScroll key={event.id} className="h-full">
-                  <EventCard
-                    event={event}
-                    featured={event.featured}
-                    onRegister={(ev) => setSelectedEvent(ev)}
-                  />
-                </AnimateOnScroll>
-              ))}
-            </div>
+            <>
+              {/* Upcoming Events */}
+              {upcoming.length > 0 && (
+                <div className="mb-16">
+                  <h2 className="font-[family-name:var(--font-heading)] text-2xl md:text-3xl font-semibold text-charcoal mb-6">
+                    Upcoming events
+                  </h2>
+                  {/* Four cards across on a large screen; tablets and phones keep
+                      two and one column. */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                    {upcoming.map(renderCard)}
+                  </div>
+                </div>
+              )}
+
+              {/* Past Events */}
+              {past.length > 0 && (
+                <div>
+                  <h2 className="font-[family-name:var(--font-heading)] text-2xl md:text-3xl font-semibold text-charcoal mb-2">
+                    Past events
+                  </h2>
+                  <p className="text-sm text-charcoal/55 mb-6">
+                    Sessions that have already run. Each page keeps the details and any recording link.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                    {past.map(renderCard)}
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <div className="text-center py-20 bg-white rounded-[20px] border border-charcoal/10 p-8">
               <h3 className="font-[family-name:var(--font-heading)] text-xl font-semibold text-charcoal mb-2">

@@ -1,4 +1,4 @@
-import { useState, useId } from 'react';
+import { useEffect, useState, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Select from './Select';
 import { useFormsAvailability } from '../hooks/useFormsAvailability';
@@ -142,6 +142,22 @@ export default function BookingCalendar() {
   // the server will refuse to accept.
   const formsAvailability = useFormsAvailability();
 
+  // The calendar is built from *today* and the current clock, so the markup it
+  // produces depends on when it renders. The build renders pages on one day and
+  // a visitor opens them on another, which would make the hydrating client
+  // disagree with the static HTML at the first frame. The prerendered page
+  // therefore carries this neutral placeholder and the real calendar mounts a
+  // moment later.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    // The next task, not the same commit: the prerendered placeholder gets the
+    // first paint, and the date-dependent calendar replaces it immediately
+    // after. A timer rather than requestAnimationFrame so a background tab
+    // still swaps it in.
+    const id = window.setTimeout(() => setMounted(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
   // Form Fields
   const [formData, setFormData] = useState<BookingFormData>({
     fullName: '',
@@ -162,6 +178,26 @@ export default function BookingCalendar() {
     subject: '',
     message: '',
   });
+
+  if (!mounted) {
+    return (
+      <div
+        className="rounded-[24px] border border-charcoal/10 bg-white p-6 shadow-card md:p-8"
+        aria-busy="true"
+      >
+        <p role="status" className="sr-only">
+          Loading the booking calendar…
+        </p>
+        <div className="h-5 w-44 rounded-full bg-charcoal/10" aria-hidden="true" />
+        <div className="mt-6 grid grid-cols-4 gap-2 sm:grid-cols-7" aria-hidden="true">
+          {Array.from({ length: 14 }, (_, index) => (
+            <div key={index} className="h-16 rounded-xl bg-cream" />
+          ))}
+        </div>
+        <div className="mt-6 h-11 w-full rounded-full bg-cream" aria-hidden="true" />
+      </div>
+    );
+  }
 
   const now = new Date();
   const isSunday = selectedDate.getDay() === 0;

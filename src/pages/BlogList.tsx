@@ -3,12 +3,20 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import SEO from '../components/SEO';
+import { staticPageMeta } from '../lib/pageMeta';
 import FormsUnavailableNotice, { FormAvailabilityPending } from '../components/FormsUnavailableNotice';
 import { useFormsAvailability } from '../hooks/useFormsAvailability';
 import { authRequest } from '../lib/authClient';
-import { blogPosts, categories, getFeaturedPost, type BlogPost } from '../data/posts';
+import ContentImage from '../components/ContentImage';
+import { getFeaturedPost } from '../data/posts';
+import { useContent } from '../hooks/useContent';
+import { isFirstPaint } from '../lib/firstPaint';
+import { mergeBlogCategories, mergeBlogPosts, type BlogView } from '../lib/contentMerge';
 
-const POSTS_PER_PAGE = 6;
+/* Twelve, not six: every built-in article has to be reachable from the HTML the
+   build ships, and a crawler cannot press "Load More". The button stays for the
+   day the content sheet takes the list past this number. */
+const POSTS_PER_PAGE = 12;
 
 /** 'sent' only ever means the server answered; nothing is faked here. */
 type NewsletterState = 'idle' | 'sending' | 'sent' | 'error';
@@ -24,10 +32,17 @@ export default function BlogList() {
   // the same question on load and says so before anyone types an address.
   const formsAvailability = useFormsAvailability();
 
+  // The built-in posts plus anything new in the sheet, deduped by slug.
+  const { entries } = useContent();
+  const allPosts = useMemo(() => mergeBlogPosts(entries), [entries]);
+  const categories = useMemo(() => mergeBlogCategories(allPosts), [allPosts]);
+
+  // Featured stays the hand-picked built-in article; a sheet row never becomes
+  // the hero at the top of the page.
   const featured = getFeaturedPost();
 
   const filteredPosts = useMemo(() => {
-    let posts = blogPosts.filter((p) => p.id !== featured.id);
+    let posts = allPosts.filter((p) => p.id !== featured.id);
     if (activeCategory !== 'all') {
       posts = posts.filter((p) => p.category === activeCategory);
     }
@@ -41,7 +56,7 @@ export default function BlogList() {
       );
     }
     return posts;
-  }, [activeCategory, searchQuery, featured.id]);
+  }, [activeCategory, searchQuery, featured.id, allPosts]);
 
   const visiblePosts = filteredPosts.slice(0, visibleCount);
   const hasMore = visibleCount < filteredPosts.length;
@@ -121,10 +136,7 @@ export default function BlogList() {
 
   return (
     <>
-      <SEO
-        title="Blog | People Growth Africa"
-        description="Insights, guides, and expert perspectives on HR, people management, and building high-performing teams across African businesses."
-      />
+      <SEO meta={staticPageMeta('/blog')} />
 
       {/* ── Hero ─────────────────────────────────────── */}
       <section className="relative bg-deep-green pt-[160px] pb-[100px] overflow-hidden">
@@ -250,7 +262,13 @@ export default function BlogList() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
             <AnimatePresence mode="popLayout">
               {visiblePosts.map((post, i) => (
-                <BlogCard key={post.id} post={post} index={i} onTagClick={handleFilterByTag} />
+                <BlogCard
+                  key={post.id}
+                  post={post}
+                  index={i}
+                  onTagClick={handleFilterByTag}
+                  categoryLabel={categories.find((category) => category.id === post.category)?.label ?? post.category}
+                />
               ))}
             </AnimatePresence>
           </div>
@@ -346,24 +364,31 @@ export default function BlogList() {
 
 /* ── Blog Card ──────────────────────────────────────────────────── */
 
-function BlogCard({ post, index, onTagClick }: { post: BlogPost; index: number; onTagClick?: (tag: string) => void }) {
-  const categoryLabel = categories.find((c) => c.id === post.category)?.label ?? post.category;
-
+function BlogCard({
+  post,
+  index,
+  onTagClick,
+  categoryLabel,
+}: {
+  post: BlogView;
+  index: number;
+  onTagClick?: (tag: string) => void;
+  categoryLabel: string;
+}) {
   return (
     <motion.article
       layout
-      initial={{ opacity: 0, y: 30 }}
+      initial={isFirstPaint() ? false : { opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20, scale: 0.95 }}
       transition={{ duration: 0.4, delay: index * 0.06 }}
     >
       <Link to={`/blog/${post.slug}`} className="block bg-white rounded-[20px] overflow-hidden shadow-card hover:-translate-y-1.5 hover:shadow-elevated transition-all duration-300 group">
         <div className="relative aspect-[16/10] overflow-hidden bg-mint">
-          <img
-            src={post.image}
+          <ContentImage
+            src={post.image || null}
             alt={post.title}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-            loading="lazy"
+            className="w-full h-full transition-transform duration-500 group-hover:scale-105"
           />
         </div>
         <div className="p-7">

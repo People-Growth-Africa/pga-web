@@ -3,7 +3,10 @@
 // Caching strategy (production):
 // - Navigations and hashed build assets (/assets/*) are NETWORK-FIRST, so a
 //   deploy reaches returning visitors on their very next load. The cache is
-//   only used as an offline fallback.
+//   only used as an offline fallback. Each public route now ships its own HTML
+//   (scripts/prerender.mjs), and because that HTML is fetched network-first and
+//   the cache name changes with every deploy, the worker can never hand a
+//   visitor yesterday's page for a URL that has since been prerendered.
 // - Other static files (images, fonts, icons, manifest) use
 //   stale-while-revalidate: served instantly from cache, refreshed in the
 //   background for the next visit.
@@ -61,6 +64,12 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // leave cross-origin requests (analytics, etc.) untouched
+
+  // Crawler files bypass the worker completely. A sitemap or robots.txt served
+  // from a cache (or, worse, replaced by an HTML shell) is a wrong answer to a
+  // machine that cannot tell it is looking at a stale copy, so these always go
+  // to the network.
+  if (url.pathname === '/sitemap.xml' || url.pathname === '/robots.txt') return;
 
   // Network-first: pages and Vite's hashed bundles, so a deploy is picked up
   // on the very next load even for returning visitors.

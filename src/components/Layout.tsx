@@ -5,6 +5,7 @@ import Footer from './Footer';
 import ConsultationModal from './ConsultationModal';
 import WhatsAppConcierge from './WhatsAppConcierge';
 import { ConsultationProvider } from '../context/ConsultationContext';
+import { finishFirstPaint } from '../lib/firstPaint';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -17,6 +18,13 @@ export default function Layout({ children }: LayoutProps) {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
+
+  // Runs after the tree that hydrated has rendered, so everything that was
+  // already in the prerendered HTML kept its finished state. Anything mounted
+  // from here on - a navigation to another page - animates normally.
+  useEffect(() => {
+    finishFirstPaint();
+  }, []);
 
   return (
     <ConsultationProvider>

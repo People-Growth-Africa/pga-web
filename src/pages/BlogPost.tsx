@@ -2,19 +2,55 @@ import { useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 
 import AnimateOnScroll from '../components/AnimateOnScroll';
+import ContentImage from '../components/ContentImage';
+import SafeContent from '../components/SafeContent';
 import SEO from '../components/SEO';
-import { getPostBySlug, getRelatedPosts, categories } from '../data/posts';
+import { useContent } from '../hooks/useContent';
+import { blogMeta } from '../lib/pageMeta';
+import {
+  findBlog,
+  mergeBlogCategories,
+  mergeBlogPosts,
+} from '../lib/contentMerge';
 
 export default function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>();
+  const { status: contentStatus, entries } = useContent();
 
-  const post = slug ? getPostBySlug(slug) : undefined;
+  const allPosts = useMemo(() => mergeBlogPosts(entries), [entries]);
+  const categories = useMemo(() => mergeBlogCategories(allPosts), [allPosts]);
+  const post = useMemo(() => (slug ? findBlog(slug, entries) : undefined), [slug, entries]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [slug]);
 
-  const related = useMemo(() => (post ? getRelatedPosts(post, 3) : []), [post]);
+  const related = useMemo(() => {
+    if (!post) return [];
+    const others = allPosts.filter((candidate) => candidate.slug !== post.slug);
+    const sameCategory = others.filter((candidate) => candidate.category === post.category);
+    const rest = others.filter((candidate) => candidate.category !== post.category);
+    return [...sameCategory, ...rest].slice(0, 3);
+  }, [post, allPosts]);
+
+  // A sheet post is only known once /api/content answers, so a deep link waits
+  // instead of showing the 404 page first. Built-in posts never wait.
+  if (!post && contentStatus === 'loading') {
+    return (
+      <>
+        <SEO title="Article | People Growth Africa" description="An article from People Growth Africa." />
+        <section className="min-h-[60vh] bg-deep-green pb-[80px] pt-[160px]">
+          <div className="mx-auto max-w-[800px] px-6" aria-busy="true">
+            <p role="status" className="sr-only">
+              Loading article…
+            </p>
+            <div className="mx-auto h-4 w-32 rounded-full bg-white/20" aria-hidden="true" />
+            <div className="mx-auto mt-6 h-9 w-4/5 rounded-full bg-white/15" aria-hidden="true" />
+          </div>
+        </section>
+      </>
+    );
+  }
 
   if (!post) {
     return (
@@ -131,24 +167,20 @@ export default function BlogPostPage() {
 
   return (
     <>
-      <SEO
-        title={post.title}
-        description={post.excerpt}
-        image={post.image}
-        url={`/blog/${post.slug}`}
-        type="article"
-      />
+      <SEO meta={blogMeta(post)} />
 
       {/* ── Hero ─────────────────────────────────────── */}
       <section className="relative bg-deep-green pt-[140px] pb-[80px] overflow-hidden">
-        <div className="absolute inset-0 z-0">
-          <img
-            src={post.image}
-            alt=""
-            className="w-full h-full object-cover opacity-20"
-            loading="eager"
-          />
-        </div>
+        {post.image && (
+          <div className="absolute inset-0 z-0">
+            <img
+              src={post.image}
+              alt=""
+              className="w-full h-full object-cover opacity-20"
+              loading="eager"
+            />
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-b from-deep-green/80 to-deep-green z-[1]" />
         <div className="relative z-[2] max-w-[800px] mx-auto px-6 text-center">
           <AnimateOnScroll>
@@ -185,11 +217,11 @@ export default function BlogPostPage() {
           <AnimateOnScroll>
             {/* Featured image on larger screens */}
             <div className="rounded-[20px] overflow-hidden mb-10 aspect-[16/9] bg-mint">
-              <img
-                src={post.image}
+              <ContentImage
+                src={post.image || null}
                 alt={post.title}
-                className="w-full h-full object-cover"
-                loading="eager"
+                className="w-full h-full"
+                eager
               />
             </div>
           </AnimateOnScroll>
@@ -204,9 +236,14 @@ export default function BlogPostPage() {
               ))}
             </div>
 
-            {/* Article body */}
+            {/* Article body. Built-in posts go through the existing renderer;
+                sheet bodies are rendered as React nodes, never as HTML. */}
             <article className="prose-custom">
-              {renderContent(post.content)}
+              {post.origin === 'sheet' ? (
+                <SafeContent body={post.content} />
+              ) : (
+                renderContent(post.content)
+              )}
             </article>
           </AnimateOnScroll>
 
@@ -285,7 +322,7 @@ export default function BlogPostPage() {
                 <AnimateOnScroll key={rel.id} delay={i * 0.1}>
                   <Link to={`/blog/${rel.slug}`} className="block bg-white rounded-[20px] overflow-hidden shadow-card hover:-translate-y-1.5 hover:shadow-elevated transition-all duration-300 group">
                     <div className="aspect-[16/10] overflow-hidden bg-mint">
-                      <img src={rel.image} alt={rel.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                      <ContentImage src={rel.image || null} alt={rel.title} className="w-full h-full transition-transform duration-500 group-hover:scale-105" />
                     </div>
                     <div className="p-6">
                       <span className="inline-flex px-3 py-1 bg-mint text-deep-green font-[family-name:var(--font-body)] text-[0.72rem] font-semibold rounded-full uppercase tracking-wider mb-3">

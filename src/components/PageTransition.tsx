@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { isFirstPaint } from '../lib/firstPaint';
 
 /**
  * The cross-fade between pages.
@@ -17,10 +18,17 @@ import { motion, useReducedMotion } from 'framer-motion';
  *   still at opacity 0, so the first frame anyone sees is the new page in the
  *   right place. A URL with a hash is left alone: that scroll belongs to the
  *   browser.
- * - Reduced motion. Under `prefers-reduced-motion` the pages simply swap.
+ * - Reduced motion. Under `prefers-reduced-motion` the pages simply swap. The
+ *   wrapper element stays in both cases: the prerendered HTML contains it, and
+ *   a fragment for some visitors would make the hydration markup disagree.
+ *
+ * The first paint of a prerendered page skips the entry animation for the same
+ * reason as AnimateOnScroll: that markup is already visible, and fading it in
+ * from nothing would hide the content the build just shipped.
  */
 export default function PageTransition({ children }: { children: ReactNode }) {
   const reduceMotion = useReducedMotion();
+  const skipEntry = isFirstPaint() || Boolean(reduceMotion);
 
   useEffect(() => {
     if (window.location.hash) return;
@@ -31,14 +39,12 @@ export default function PageTransition({ children }: { children: ReactNode }) {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, []);
 
-  if (reduceMotion) return <>{children}</>;
-
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={skipEntry ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6, transition: { duration: 0.14, ease: 'easeIn' } }}
-      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      exit={reduceMotion ? undefined : { opacity: 0, y: -6, transition: { duration: 0.14, ease: 'easeIn' } }}
+      transition={reduceMotion ? { duration: 0 } : { duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
     >
       {children}
     </motion.div>

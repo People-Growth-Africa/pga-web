@@ -51,6 +51,15 @@ export const ROUTES: Record<string, RouteHandler> = {
   //     not gated: it exists to report the gate, and it touches nothing.
   '/forms/availability': lazy(async () => (await import('./forms/availability.js')).default),
 
+  // --- Sheet content: blog rows and event rows from the published CSV. It is
+  //     public and cacheable and trades in nothing that belongs to a visitor,
+  //     so it is not gated. Revalidate is the only one that changes state: it
+  //     is protected by its own secret, not by AUTH_ENABLED. ------------------
+  //     (There is no sitemap endpoint: /sitemap.xml is one static urlset written
+  //     at build time by scripts/prerender.mjs.) ------------------------------
+  '/content': lazy(async () => (await import('./content.js')).default),
+  '/revalidate': lazy(async () => (await import('./revalidate.js')).default),
+
   // --- Public forms that store submissions, up only when a database is set --
   '/leads/consultation-booking': requiresDatabase(async () => (await import('./leads/consultation-booking.js')).default),
   '/leads/enquiry': requiresDatabase(async () => (await import('./leads/enquiry.js')).default),

@@ -73,6 +73,35 @@ export function sendJson(res: VercelResponse, status: number, body: unknown): vo
   res.send(JSON.stringify(body));
 }
 
+/**
+ * A public JSON answer the CDN may keep.
+ *
+ * sendJson above is for anything that belongs to a signed in visitor and is
+ * never stored. The updates feed is the other case: the same answer for
+ * everyone, read from a sheet that changes rarely. `s-maxage` is the closest
+ * thing this deployment has to ISR - Vercel serves the stored copy for `seconds`
+ * without invoking the function, then serves one stale copy while the next is
+ * built for up to `staleSeconds` more. `max-age=0` keeps browsers out of it, so
+ * a visitor never sits on an old copy of a page they are actively reading.
+ */
+export function sendPublicJson(
+  res: VercelResponse,
+  status: number,
+  body: unknown,
+  seconds: number,
+  staleSeconds: number = seconds * 2,
+): void {
+  if (res.headersSent) return;
+  res.status(status);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader(
+    'Cache-Control',
+    `public, max-age=0, s-maxage=${seconds}, stale-while-revalidate=${staleSeconds}`,
+  );
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.send(JSON.stringify(body));
+}
+
 export function parseJsonBody(req: VercelRequest): unknown {
   const raw =
     typeof req.body === 'string'

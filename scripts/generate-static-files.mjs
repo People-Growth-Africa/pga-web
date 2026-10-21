@@ -1,80 +1,43 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.join(__dirname, '..');
+/**
+ * The text files that still have to exist before the build: robots.txt and the
+ * two llms.txt indexes.
+ *
+ * The sitemap used to be written here, as an index of a static child and an API
+ * child. Both children were dead ends (a 404 and a JSON 404), so the sitemap is
+ * now one urlset written by scripts/prerender.mjs from the same route list that
+ * produces the HTML - the only way for it to list what the build actually ships.
+ */
 
-// The apex domain redirects to www, so www is the canonical origin for every
-// URL we publish here (sitemap, robots.txt, llms.txt).
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(here, '..');
+const publicDir = path.join(root, 'public');
+
+/** The apex redirects to www, so www is the canonical origin for every URL. */
 const DOMAIN = 'https://www.peoplegrowthafrica.com';
 
-const staticRoutes = [
-  '/',
-  '/blog',
-  '/events',
-  '/consultation',
-];
+// Extract post slugs, titles and excerpts from src/data/posts.ts. Kept as a
+// regex read rather than an import so this file stays plain JavaScript that any
+// Node version on the build image can run.
+const postsContent = fs.readFileSync(path.join(root, 'src', 'data', 'posts.ts'), 'utf-8');
 
-// Extract post slugs, titles, and excerpts from src/data/posts.ts
-const postsFilePath = path.join(projectRoot, 'src', 'data', 'posts.ts');
-const postsContent = fs.readFileSync(postsFilePath, 'utf-8');
+const collect = (field) =>
+  [...postsContent.matchAll(new RegExp(`${field}:\\s*['"]([^'"]+)['"]`, 'g'))].map((m) => m[1]);
 
-const slugRegex = /slug:\s*['"]([^'"]+)['"]/g;
-const titleRegex = /title:\s*['"]([^'"]+)['"]/g;
-const excerptRegex = /excerpt:\s*['"]([^'"]+)['"]/g;
+const slugs = collect('slug');
+const titles = collect('title');
+const excerpts = collect('excerpt');
 
-const slugs = [];
-const titles = [];
-const excerpts = [];
+fs.mkdirSync(publicDir, { recursive: true });
 
-let match;
-while ((match = slugRegex.exec(postsContent)) !== null) {
-  slugs.push(match[1]);
-}
-while ((match = titleRegex.exec(postsContent)) !== null) {
-  titles.push(match[1]);
-}
-while ((match = excerptRegex.exec(postsContent)) !== null) {
-  excerpts.push(match[1]);
-}
+/* ── robots.txt ───────────────────────────────────────────────────────────── */
 
-const currentDate = new Date().toISOString().split('T')[0];
-
-// 1. Generate sitemap.xml
-let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
-
-staticRoutes.forEach((route) => {
-  xml += `  <url>\n`;
-  xml += `    <loc>${DOMAIN}${route}</loc>\n`;
-  xml += `    <lastmod>${currentDate}</lastmod>\n`;
-  xml += `    <changefreq>${route === '/' ? 'weekly' : 'monthly'}</changefreq>\n`;
-  xml += `    <priority>${route === '/' ? '1.0' : '0.8'}</priority>\n`;
-  xml += `  </url>\n`;
-});
-
-slugs.forEach((slug) => {
-  xml += `  <url>\n`;
-  xml += `    <loc>${DOMAIN}/blog/${slug}</loc>\n`;
-  xml += `    <lastmod>${currentDate}</lastmod>\n`;
-  xml += `    <changefreq>monthly</changefreq>\n`;
-  xml += `    <priority>0.7</priority>\n`;
-  xml += `  </url>\n`;
-});
-
-xml += `</urlset>`;
-
-const publicDir = path.join(projectRoot, 'public');
-if (!fs.existsSync(publicDir)) {
-  fs.mkdirSync(publicDir, { recursive: true });
-}
-
-fs.writeFileSync(path.join(publicDir, 'sitemap.xml'), xml, 'utf-8');
-console.log(`Generated sitemap.xml with ${staticRoutes.length + slugs.length} routes.`);
-
-// 2. Generate robots.txt with explicit AI crawler permissions
+// Private routes are deliberately NOT disallowed here: a crawler that is kept
+// out cannot read their noindex (vercel.json sends X-Robots-Tag, and their HTML
+// carries a robots meta tag).
 const robotsTxt = `# Standard web crawlers
 User-agent: *
 Allow: /
@@ -107,7 +70,8 @@ Sitemap: ${DOMAIN}/sitemap.xml
 fs.writeFileSync(path.join(publicDir, 'robots.txt'), robotsTxt, 'utf-8');
 console.log('Generated robots.txt with AI crawler permissions.');
 
-// 3. Generate llms.txt (AI Model Overview & Directory Standard)
+/* ── llms.txt ─────────────────────────────────────────────────────────────── */
+
 let llmsTxt = `# People Growth Africa (PGA)
 
 > Practical HR and people systems for growing African businesses.
@@ -150,7 +114,8 @@ llmsTxt += `\n## Contact Information
 fs.writeFileSync(path.join(publicDir, 'llms.txt'), llmsTxt, 'utf-8');
 console.log('Generated llms.txt standard file for AI web crawlers.');
 
-// 4. Generate llms-full.txt (Full Text Index for AI Context Windows)
+/* ── llms-full.txt ────────────────────────────────────────────────────────── */
+
 let llmsFullTxt = `# People Growth Africa (PGA) - Full Knowledge & Services Index\n\n`;
 llmsFullTxt += llmsTxt;
 llmsFullTxt += `\n---\n\n## Full Article Index\n\n`;

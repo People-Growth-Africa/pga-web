@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import SEO from '../components/SEO';
+import { staticPageMeta } from '../lib/pageMeta';
 import EventsCarousel from '../components/EventsCarousel';
 import EventRegistrationModal from '../components/EventRegistrationModal';
 import ServiceDetailModal from '../components/ServiceDetailModal';
@@ -138,10 +139,7 @@ export default function Home() {
 
   return (
     <>
-      <SEO
-        title="People Growth Africa | HR & Organisational Consulting"
-        description="People Growth Africa helps growing businesses across Nigeria and Africa build the HR systems and cultures that make growth sustainable."
-      />
+      <SEO meta={staticPageMeta('/')} />
 
       {/* ── Hero ─────────────────────────────────────── */}
       <section className="relative min-h-screen flex items-center bg-deep-green overflow-hidden">

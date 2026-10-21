@@ -243,18 +243,32 @@ export function LogoIntroAnimation({
   // nodes at 3.2x on every frame and was the main source of the jank here.
   const markRef = useRef<HTMLDivElement>(null);
 
-  const [shouldAnimate] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const hasSeen = sessionStorage.getItem('pga_logo_animated') === 'true';
-    return !prefersReducedMotion && (!hasSeen || forceRun);
-  });
+  /*
+   * Both of these are decided after mount rather than in a state initialiser.
+   *
+   * The header is part of every prerendered page, and the build writes the
+   * static lockup into it. Reading sessionStorage or the viewport while
+   * rendering would make the browser's first pass disagree with that markup,
+   * and React answers a disagreement by discarding the server HTML and
+   * re-rendering the whole tree - exactly the waste prerendering avoids. So the
+   * first pass on both sides is the static lockup, and the intro is armed a
+   * moment later if this visitor should see it.
+   */
+  const [shouldAnimate, setShouldAnimate] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(false);
 
-  // Read once: the intro is a one-shot on mount, so a later rotation should not
-  // swap the shape of an animation that has already played.
-  const [isNarrow] = useState(
-    () => typeof window !== 'undefined' && window.innerWidth < MOBILE_MAX_WIDTH,
-  );
+  useEffect(() => {
+    // Armed on the next task so the prerendered static lockup gets the first
+    // paint; the intro then takes over if this visitor should see it.
+    const id = window.setTimeout(() => {
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const hasSeen = sessionStorage.getItem('pga_logo_animated') === 'true';
+      setIsNarrow(window.innerWidth < MOBILE_MAX_WIDTH);
+      setShouldAnimate(!prefersReducedMotion && (!hasSeen || forceRun));
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [forceRun]);
+
   const mobileReveal = shouldAnimate && isNarrow;
 
   const [parts, setParts] = useState<LogoPart[]>(() => {

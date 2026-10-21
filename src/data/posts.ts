@@ -11,6 +11,14 @@ export interface BlogPost {
   slug: string;
   title: string;
   excerpt: string;
+  /**
+   * The search-result description, when the excerpt is too long to show whole.
+   * Optional so a post added from the content sheet, which has no such cell,
+   * simply falls back to its summary.
+   */
+  metaDescription?: string;
+  /** `YYYY-MM-DD` of the last real edit, when one is recorded. */
+  updated?: string;
   content: string;
   category: string;
   tags: string[];
@@ -55,6 +63,8 @@ export const blogPosts: BlogPost[] = [
     slug: 'from-whatsapp-groups-to-world-class-hr',
     title: 'From WhatsApp Groups to World-Class HR: A Roadmap for African SMEs',
     excerpt: 'Most growing businesses in Nigeria start with informal people management. Here\'s a practical, phased roadmap to formalise your HR without losing the agility that got you here.',
+    metaDescription:
+      'A phased roadmap for African SMEs formalising HR: contracts, handbooks, role clarity and performance systems, without losing agility.',
     content: `
 ## The Reality of HR in Growing African Businesses
 
@@ -111,6 +121,8 @@ People Growth Africa helps businesses at every stage of this journey. Whether yo
     slug: 'understanding-nigerias-labour-act',
     title: "Understanding Nigeria's Labour Act: What Every Employer Must Know in 2026",
     excerpt: "Nigeria's employment landscape is evolving. Here is a clear breakdown of what the law requires and how to stay compliant without overcomplicating your operations.",
+    metaDescription:
+      "What Nigeria's Labour Act requires on contracts, hours, leave, termination and statutory deductions, and how to stay compliant as you grow.",
     content: `
 ## Why Labour Law Compliance Matters
 
@@ -170,6 +182,8 @@ Our HR Audits & Compliance service provides a thorough review of your current pe
     slug: 'first-time-managers-survival-guide',
     title: "The First-Time Manager's Survival Guide for African Startups",
     excerpt: "Being promoted to manager because you were the best performer is the most common and most dangerous path in African startups. Here is how to build real leadership skills.",
+    metaDescription:
+      'Why promoting your best performer into management so often fails, and the habits, feedback and support that make a first-time manager succeed.',
     content: `
 ## The Peter Principle in African Startups
 
@@ -221,6 +235,8 @@ Our Leadership Development programme is specifically designed for the African bu
     slug: 'building-culture-that-survives-growth',
     title: 'Building a Company Culture That Survives Rapid Growth',
     excerpt: "Your culture got you to 20 people. Will it survive 100? Here is why intentional culture development is not optional for scaling businesses.",
+    metaDescription:
+      'Why intentional culture work matters between 20 and 100 employees, and how to keep what got you here as headcount and pressure grow.',
     content: `
 ## The Culture Crisis at Scale
 
@@ -268,6 +284,8 @@ Our Culture Development service helps businesses define, document, and embed the
     slug: 'why-best-employees-are-leaving',
     title: 'Why Your Best Employees Are Leaving (And What to Do About It)',
     excerpt: "Employee turnover in Nigerian businesses often has the same root cause: people outgrow their roles faster than the organisation can create new ones.",
+    metaDescription:
+      'Turnover in Nigerian businesses usually traces back to people outgrowing their roles. How to build paths that keep your best people.',
     content: `
 ## The Retention Paradox
 
@@ -325,6 +343,8 @@ Our Talent Management and Retention strategies are built specifically for the Af
     slug: 'how-to-conduct-hr-audit',
     title: 'How to Conduct an HR Audit Without Overwhelming Your Team',
     excerpt: "An HR audit doesn't have to be a month-long nightmare. We break down a streamlined approach that delivers the insights you need to fix what matters most.",
+    metaDescription:
+      'A streamlined HR audit: what to review, who to involve, and how to turn the findings into a short list of fixes your team can deliver.',
     content: `
 ## What Is an HR Audit?
 
@@ -380,6 +400,8 @@ Our HR Audits & Compliance service provides a thorough, practical review that go
     slug: 'ten-to-hundred-employee-inflection-point',
     title: 'The 10-to-100 Employee Inflection Point: Why HR Can\'t Wait',
     excerpt: "The jump from 10 to 100 employees is where most businesses either build the right people systems or create problems that take years to untangle.",
+    metaDescription:
+      'Why the jump from 10 to 100 employees decides whether you build real people systems or inherit problems that take years to untangle.',
     content: `
 ## The Critical Window
 
@@ -430,6 +452,8 @@ We specialise in exactly this inflection point. Our services are designed for bu
     slug: 'performance-management-for-african-startups',
     title: 'Performance Management That Actually Works for African Startups',
     excerpt: "Traditional performance reviews don't work in fast-moving African startups. Here's a practical alternative that drives results without killing your culture.",
+    metaDescription:
+      'Why annual reviews stall fast-moving African startups, and a practical performance approach built on short cycles, clear goals and honest feedback.',
     content: `
 ## The Problem with Traditional Performance Management
 
@@ -487,6 +511,8 @@ Our Performance Management service helps startups implement lightweight, effecti
     slug: 'recruitment-best-practices-african-market',
     title: 'Recruitment Best Practices for the African Market',
     excerpt: "Hiring in Africa requires a different playbook. From sourcing channels to interview design, here's what actually works in practice.",
+    metaDescription:
+      'Hiring in Africa needs its own playbook: sourcing channels, structured interviews, scorecards and offers that hold up in the local market.',
     content: `
 ## The Unique Challenges of African Recruitment
 

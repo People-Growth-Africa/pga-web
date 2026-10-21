@@ -121,6 +121,7 @@ export default function Footer() {
           <div>
             <h4 className="text-sm font-semibold uppercase tracking-wider text-white mb-5 font-[family-name:var(--font-body)]">Contact &amp; Hours</h4>
             <ul className="flex flex-col gap-3">
+              <li><Link to="/consultation" className="text-[0.9rem] text-white/60 hover:text-brand-green transition-colors">Book a free consultation</Link></li>
               <li>
                 <a href="mailto:hello@peoplegrowthafrica.com" className="text-[0.9rem] text-white/60 hover:text-brand-green transition-colors">
                   hello@peoplegrowthafrica.com

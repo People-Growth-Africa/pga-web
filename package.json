@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/generate-sitemap.js && tsc -b && vite build",
+    "build": "node scripts/generate-static-files.mjs && tsc -b && vite build && vite build --config vite.ssr.config.ts && node scripts/prerender.mjs",
     "lint": "oxlint",
     "images": "node scripts/optimize-images.js",
     "setup:auth": "node scripts/setup-auth.mjs",
@@ -15,6 +15,8 @@
     "test:auth:ui": "node scripts/test-auth-ui.mjs",
     "test:newsletter": "node scripts/test-newsletter.mjs",
     "test:leads": "node scripts/test-leads.mjs",
+    "test:content": "node scripts/test-content.mjs",
+    "test:seo": "node scripts/test-seo.mjs",
     "test:dashboard:rules": "node scripts/test-dashboard-rules.mjs",
     "test:dashboard": "npm run test:dashboard:rules && node scripts/test-dashboard.mjs",
     "check:api": "node scripts/check-api-imports.mjs",
@@ -29,6 +31,7 @@
     "framer-motion": "^13.4.4",
     "gsap": "^3.15.0",
     "jose": "6.2.12",
+    "papaparse": "^5.5.3",
     "pngjs": "^7.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -39,6 +42,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.4",
+    "@types/papaparse": "^5.3.16",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vercel/node": "20.0.0",

@@ -1,15 +1,12 @@
 import SEO from '../components/SEO';
+import { staticPageMeta } from '../lib/pageMeta';
 import BookingCalendar from '../components/BookingCalendar';
 import AnimateOnScroll from '../components/AnimateOnScroll';
 
 export default function BookConsultation() {
   return (
     <>
-      <SEO
-        title="Book a Free HR Consultation | People Growth Africa"
-        description="Book a free 30-minute people systems diagnostic with People Growth Africa. Available Mon–Fri 8am–6pm and Sat 11am–4pm WAT."
-        url="/consultation"
-      />
+      <SEO meta={staticPageMeta('/consultation')} />
 
       {/* Hero Header */}
       <section className="bg-deep-green text-white pt-[140px] pb-[80px] relative overflow-hidden">
