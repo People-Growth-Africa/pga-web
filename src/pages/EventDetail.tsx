@@ -6,12 +6,14 @@ import ContentImage from '../components/ContentImage';
 import EventCard from '../components/EventCard';
 import EventRegistrationModal from '../components/EventRegistrationModal';
 import SafeContent from '../components/SafeContent';
+import PostBody from '../components/PostBody';
 import SEO from '../components/SEO';
 import NotFound from './NotFound';
 import type { EventItem } from '../data/events';
 import { isSafeHttpUrl } from '../lib/content';
 import { findEvent, mergeEvents, splitEvents } from '../lib/contentMerge';
 import { useContent } from '../hooks/useContent';
+import { useLivePosts } from '../hooks/useLivePosts';
 import { eventMeta } from '../lib/pageMeta';
 
 /**
@@ -29,6 +31,7 @@ import { eventMeta } from '../lib/pageMeta';
 export default function EventDetail() {
   const { slug } = useParams<{ slug: string }>();
   const { status, entries } = useContent();
+  const live = useLivePosts();
   // The modal still takes an EventItem; an EventView is one, with extra facts.
   const [registering, setRegistering] = useState<EventItem | null>(null);
 
@@ -36,10 +39,10 @@ export default function EventDetail() {
     window.scrollTo(0, 0);
   }, [slug]);
 
-  const event = slug ? findEvent(slug, entries) : undefined;
+  const event = slug ? findEvent(slug, entries, live.posts) : undefined;
 
   if (!event) {
-    if (status === 'loading') {
+    if (status === 'loading' || live.status === 'loading') {
       return (
         <>
           <SEO title="Event | People Growth Africa" description="A programme from People Growth Africa." />
@@ -85,7 +88,7 @@ export default function EventDetail() {
   const registrationUrl = isSafeHttpUrl(event.registrationUrl) ? event.registrationUrl : null;
   const detail = event.format;
   const related = splitEvents(
-    mergeEvents(entries).filter((candidate) => candidate.slug !== event.slug),
+    mergeEvents(entries, live.posts).filter((candidate) => candidate.slug !== event.slug),
   );
   const relatedEvents = [...related.upcoming, ...related.past].slice(0, 3);
 
@@ -177,6 +180,12 @@ export default function EventDetail() {
             {event.origin === 'sheet' ? (
               <AnimateOnScroll delay={0.05}>
                 <SafeContent body={event.description} />
+              </AnimateOnScroll>
+            ) : event.origin === 'live' ? (
+              // A manager writes this body in the same markup the editor
+              // previews; the sheet and built-in renderers do not know it.
+              <AnimateOnScroll delay={0.05}>
+                <PostBody body={event.description} />
               </AnimateOnScroll>
             ) : (
               <AnimateOnScroll delay={0.05}>
@@ -272,11 +281,11 @@ export default function EventDetail() {
         </div>
       </section>
 
-      {event.imageUrl && (
+      {(event.detailImageUrl ?? event.imageUrl) && (
         <section className="bg-white pb-14">
           <div className="mx-auto max-w-[720px] px-6">
             <ContentImage
-              src={event.imageUrl}
+              src={event.detailImageUrl ?? event.imageUrl}
               alt={event.title}
               className="aspect-[16/9] w-full rounded-[20px]"
               eager

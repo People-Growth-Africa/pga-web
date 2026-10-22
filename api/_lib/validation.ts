@@ -267,7 +267,8 @@ const POST_ID_MAX = 40;
 /**
  * Slugs are the public URL, so they are kept to lowercase words joined by
  * single hyphens: no slashes, no dots, no percent signs. That rules out a slug
- * that could escape /updates/ into another path or read as an escape sequence.
+ * that could escape /blog/ or /events/ into another path or read as an escape
+ * sequence.
  */
 const slug = z
   .string()
@@ -318,33 +319,139 @@ const linkLabel = z
   .optional();
 
 const POST_STATUS = ['draft', 'published'] as const;
+const POST_TYPES = ['blog', 'event'] as const;
+
+export type PostTypeInput = (typeof POST_TYPES)[number];
+
+const LOCATION_MAX = 160;
+
+/**
+ * An instant the manager picked, normalised to UTC.
+ *
+ * The form works in Africa/Lagos and the browser hands over an ISO string
+ * already converted, so all this has to do is refuse nonsense and fix the
+ * format. Storing UTC is what makes the same row print correctly for a reader
+ * anywhere, and the rendering side is the only place that knows Lagos exists.
+ */
+const eventInstant = z
+  .string()
+  .trim()
+  .max(40, 'That date is not valid.')
+  .refine(
+    (value) => value === '' || !Number.isNaN(Date.parse(value)),
+    'Enter a valid date and time.',
+  )
+  .transform((value) => (value === '' ? null : new Date(value).toISOString()))
+  .nullable()
+  .optional();
+
+/** An optional line of text: empty becomes null so the column stays clean. */
+const optionalLine = (max: number, label: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, `${label} must be ${max} characters or fewer.`)
+    .transform((value) => (value === '' ? null : value))
+    .nullable()
+    .optional();
 
 const postFields = {
+  type: z.enum(POST_TYPES),
   slug,
   title: requiredText(TITLE_MAX, 'title'),
   excerpt: z.string().trim().max(EXCERPT_MAX, `Excerpt must be ${EXCERPT_MAX} characters or fewer.`),
   body: z.string().max(BODY_MAX, `Body must be ${BODY_MAX} characters or fewer.`),
-  categoryId: id,
+  /** Required for a blog post, absent from an event. */
+  categoryId: id.nullable().optional(),
   coverImageUrl,
+  coverImageThumbUrl: coverImageUrl,
   linkLabel,
   linkUrl,
+  eventStart: eventInstant,
+  eventEnd: eventInstant,
+  locationText: optionalLine(LOCATION_MAX, 'Location'),
+  isOnline: z.boolean().optional(),
+  registrationUrl: linkUrl,
   status: z.enum(POST_STATUS),
 };
 
-export const postCreateSchema = z.strictObject({
-  ...postFields,
-});
+type PostValues = {
+  type: PostTypeInput;
+  categoryId?: string | null;
+  eventStart?: string | null;
+  eventEnd?: string | null;
+  locationText?: string | null;
+  isOnline?: boolean;
+};
+
+/**
+ * The rules that only make sense across two fields.
+ *
+ * These are here rather than in the handler so a bad request is answered with a
+ * message under the field that caused it, the same shape every other endpoint
+ * returns, instead of a 500 from a database constraint the manager cannot read.
+ * The database enforces the same rules as a backstop.
+ */
+function checkPostType(value: PostValues, ctx: z.RefinementCtx): void {
+  if (value.type === 'event') {
+    if (!value.eventStart) {
+      ctx.addIssue({ code: 'custom', path: ['eventStart'], message: 'Enter when the event starts.' });
+    } else if (value.eventEnd && value.eventEnd <= value.eventStart) {
+      ctx.addIssue({ code: 'custom', path: ['eventEnd'], message: 'The end must be after the start.' });
+    }
+    if (!value.isOnline && !value.locationText) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['locationText'],
+        message: 'Enter a venue, or mark the event as online.',
+      });
+    }
+    return;
+  }
+
+  if (!value.categoryId) {
+    ctx.addIssue({ code: 'custom', path: ['categoryId'], message: 'Choose a category.' });
+  }
+}
+
+/**
+ * Fields belonging to the other type are cleared, not refused.
+ *
+ * Switching a post from Event to Blog and back is a normal thing to do in the
+ * form, and every one of those switches would otherwise fail on a leftover
+ * field the manager can no longer see. Clearing is the only behaviour that
+ * makes the switcher feel like one form.
+ */
+function normalisePost<T extends PostValues>(value: T): T {
+  if (value.type === 'event') {
+    return { ...value, categoryId: null, linkLabel: null, linkUrl: null, isOnline: Boolean(value.isOnline) };
+  }
+  return {
+    ...value,
+    eventStart: null,
+    eventEnd: null,
+    locationText: null,
+    isOnline: false,
+    registrationUrl: null,
+  };
+}
+
+export const postCreateSchema = z
+  .strictObject({ ...postFields })
+  .superRefine(checkPostType)
+  .transform(normalisePost);
 
 /** The id is the one field an edit carries that a create does not. */
-export const postUpdateSchema = z.strictObject({
-  id,
-  ...postFields,
-});
+export const postUpdateSchema = z
+  .strictObject({ id, ...postFields })
+  .superRefine(checkPostType)
+  .transform(normalisePost);
 
 export const postByIdSchema = z.strictObject({ id });
 
 /** The query string of the admin list. Everything optional, all values capped. */
 export const postListQuerySchema = z.strictObject({
+  type: z.enum(POST_TYPES).optional(),
   status: z.enum(POST_STATUS).optional(),
   categoryId: id.optional(),
   search: z.string().trim().max(120).optional(),
@@ -383,4 +490,5 @@ export const postStatusSchema = z.strictObject({
 
 export type PostCreateInput = z.infer<typeof postCreateSchema>;
 export type PostUpdateInput = z.infer<typeof postUpdateSchema>;
+export type PostListQuery = z.infer<typeof postListQuerySchema>;
 export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;

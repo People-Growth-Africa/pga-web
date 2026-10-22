@@ -62,7 +62,7 @@ for (const loc of locs) {
   }
   check(!loc.includes('/auth'), `no account URLs: ${loc}`);
   check(!loc.includes('/api/'), `no API URLs: ${loc}`);
-  check(!loc.includes('/updates'), `the static sitemap carries no database-backed /updates URLs: ${loc}`);
+  check(!loc.includes('/updates'), `the sitemap carries no retired /updates URL: ${loc}`);
 }
 
 /* ── The dynamic sitemap's static half ──────────────────────────────── */
@@ -180,7 +180,7 @@ for (const file of postFiles) {
 
   if (pageSchema) {
     const node = JSON.parse(pageSchema);
-    check(node['@type'] === 'Article', `${route} schema is an Article`);
+    check(node['@type'] === 'BlogPosting', `${route} schema is a BlogPosting`);
     check(Boolean(node.headline), `${route} schema has a headline`);
     check(/^\d{4}-\d{2}-\d{2}$/.test(node.datePublished ?? ''), `${route} schema has datePublished`);
     check(/^\d{4}-\d{2}-\d{2}$/.test(node.dateModified ?? ''), `${route} schema has dateModified`);
@@ -257,11 +257,23 @@ check(
   'vercel.json rewrites /sitemap.xml to the API route',
 );
 
-// /updates is a live section again: the redirects that sent it to /blog are gone.
+// /updates is retired: no redirect keeps the URL alive, and neither public
+// section pretends to be it.
 check(
   !(vercel.redirects ?? []).some((rule) => rule.source.startsWith('/updates')),
-  'vercel.json no longer redirects /updates to /blog',
+  'vercel.json has no /updates redirect',
 );
+
+// A slug no static file matched has to be answered by the page handler, which
+// supplies that post's head tags and a real status code. Without these two
+// rewrites a manager-published page would be served the empty SPA shell.
+for (const [section, type] of [['blog', 'blog'], ['events', 'event']]) {
+  const rule = (vercel.rewrites ?? []).find((entry) => entry.source === `/${section}/:slug`);
+  check(
+    rule?.destination === `/api/[...path]?path=post&type=${type}&slug=:slug`,
+    `vercel.json rewrites /${section}/:slug to the page handler`,
+  );
+}
 
 const cspHeader = (vercel.headers ?? [])
   .flatMap((rule) => rule.headers ?? [])

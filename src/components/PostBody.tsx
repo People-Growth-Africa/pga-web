@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * Renders a post body written in the admin panel.
+ * Renders a manager-written post or event body.
  *
  * The same job as `SafeContent`, with two more block types. `SafeContent` is
  * also the renderer for sheet content that predates this feature, and widening
@@ -122,7 +122,7 @@ function toBlocks(body: string): Block[] {
   return blocks;
 }
 
-export default function UpdateBody({ body, className = '' }: { body: string; className?: string }) {
+export default function PostBody({ body, className = '' }: { body: string; className?: string }) {
   const blocks = toBlocks(body);
 
   if (blocks.length === 0) return null;

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
-import { updatePath } from '../../lib/updates';
+import { livePostPath } from '../../lib/published';
 import CategoriesDialog from './CategoriesDialog';
 import PostEditor from './PostEditor';
 import {
@@ -42,6 +42,17 @@ const STATUS_OPTIONS = [
   { value: 'published', label: 'Published' },
 ] as const;
 
+/**
+ * The type switcher replaces the old category filter: a category is a topic on
+ * a blog post now, not a content type, so filtering the list by one would answer
+ * a question nobody is asking any more.
+ */
+const TYPE_OPTIONS = [
+  { value: '', label: 'All' },
+  { value: 'blog', label: 'Blog' },
+  { value: 'event', label: 'Events' },
+] as const;
+
 export default function AdminContent() {
   const [posts, setPosts] = useState<AdminPost[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
@@ -50,7 +61,7 @@ export default function AdminContent() {
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
-  const [categoryId, setCategoryId] = useState('');
+  const [type, setType] = useState('');
 
   const [view, setView] = useState<View>('list');
   const [editing, setEditing] = useState<AdminPost | null>(null);
@@ -97,13 +108,13 @@ export default function AdminContent() {
         const result = await listContent({
           search: searchRef.current || undefined,
           status: status || undefined,
-          categoryId: categoryId || undefined,
+          type: type || undefined,
         });
         if (result.ok) setPosts(result.data.posts);
       })();
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [search, status, categoryId]);
+  }, [search, status, type]);
 
   const categoryById = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
@@ -186,7 +197,7 @@ export default function AdminContent() {
     <>
       <SEO
         title="Content Admin | People Growth Africa"
-        description="Publish and manage updates on peoplegrowthafrica.com."
+        description="Publish blog posts and events on peoplegrowthafrica.com."
       />
 
       <section className="min-h-screen bg-cream/50 pt-[130px] pb-20">
@@ -201,7 +212,7 @@ export default function AdminContent() {
                 Content
               </h1>
               <p className="font-[family-name:var(--font-body)] text-charcoal/60 mt-2">
-                Publish news, events, articles, resources, announcements and opportunities without a
+                Write a blog post or list an event, and publish it straight to the site without a
                 developer.
               </p>
             </div>
@@ -304,22 +315,33 @@ export default function AdminContent() {
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="admin-category" className="sr-only">
-                      Filter by category
-                    </label>
-                    <select
-                      id="admin-category"
-                      value={categoryId}
-                      onChange={(event) => setCategoryId(event.target.value)}
-                      className={inputClass}
+                    <span className="sr-only" id="admin-type-label">
+                      Filter by type
+                    </span>
+                    <div
+                      role="group"
+                      aria-labelledby="admin-type-label"
+                      className="flex h-full rounded-xl bg-cream/80 p-1"
                     >
-                      <option value="">All categories</option>
-                      {categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
+                      {TYPE_OPTIONS.map((option) => {
+                        const active = type === option.value;
+                        return (
+                          <button
+                            key={option.value || 'all'}
+                            type="button"
+                            onClick={() => setType(option.value)}
+                            aria-pressed={active}
+                            className={`flex-1 rounded-lg px-3 py-2 font-[family-name:var(--font-body)] text-[0.85rem] font-semibold transition-colors cursor-pointer border-none ${
+                              active
+                                ? 'bg-deep-green text-white shadow-card'
+                                : 'bg-transparent text-charcoal/60 hover:text-deep-green'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -347,20 +369,20 @@ export default function AdminContent() {
               ) : posts.length === 0 ? (
                 <div className="bg-white rounded-[20px] shadow-card p-10 text-center">
                   <h2 className="font-[family-name:var(--font-heading)] text-xl font-semibold text-charcoal mb-2">
-                    {search || status || categoryId ? 'No posts match those filters' : 'No posts yet'}
+                    {search || status || type ? 'No posts match those filters' : 'No posts yet'}
                   </h2>
                   <p className="font-[family-name:var(--font-body)] text-charcoal/60 mb-6">
-                    {search || status || categoryId
+                    {search || status || type
                       ? 'Try clearing the search or filters.'
-                      : 'Create your first update and it will appear on /updates when you publish it.'}
+                      : 'Write your first post and it will appear on /blog or /events when you publish it.'}
                   </p>
-                  {search || status || categoryId ? (
+                  {search || status || type ? (
                     <button
                       type="button"
                       onClick={() => {
                         setSearch('');
                         setStatus('');
-                        setCategoryId('');
+                        setType('');
                       }}
                       className="px-6 py-3 bg-white border border-charcoal/15 rounded-full font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal hover:bg-cream transition-colors cursor-pointer"
                     >
@@ -379,7 +401,9 @@ export default function AdminContent() {
               ) : (
                 <ul className="space-y-3">
                   {posts.map((post) => {
-                    const category = categoryById.get(post.category_id);
+                    const category = post.category_id
+                      ? categoryById.get(post.category_id)
+                      : undefined;
                     const published = post.status === 'published';
                     return (
                       <li
@@ -395,9 +419,14 @@ export default function AdminContent() {
                             >
                               {published ? 'Published' : 'Draft'}
                             </span>
-                            <span className="inline-flex px-3 py-1 bg-mint text-deep-green font-[family-name:var(--font-body)] text-[0.7rem] font-semibold rounded-full uppercase tracking-wider">
-                              {category?.name ?? 'Uncategorised'}
+                            <span className="inline-flex px-3 py-1 bg-terracotta/10 text-terracotta font-[family-name:var(--font-body)] text-[0.7rem] font-semibold rounded-full uppercase tracking-wider">
+                              {post.type === 'event' ? 'Event' : 'Blog'}
                             </span>
+                            {category && (
+                              <span className="inline-flex px-3 py-1 bg-mint text-deep-green font-[family-name:var(--font-body)] text-[0.7rem] font-semibold rounded-full uppercase tracking-wider">
+                                {category.name}
+                              </span>
+                            )}
                             <span className="font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
                               {formatDate(post.published_at ?? post.updated_at)}
                             </span>
@@ -406,7 +435,7 @@ export default function AdminContent() {
                             {post.title}
                           </h2>
                           <p className="font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45 mt-1 break-all">
-                            /updates/{post.slug}
+                            {livePostPath(post)}
                           </p>
                         </div>
 
@@ -432,7 +461,7 @@ export default function AdminContent() {
                           </ActionButton>
                           {published && (
                             <Link
-                              to={updatePath(post.slug)}
+                              to={livePostPath(post)}
                               className="px-4 py-2 rounded-full font-[family-name:var(--font-body)] text-[0.82rem] font-medium text-deep-green hover:bg-mint transition-colors border border-transparent"
                             >
                               View
@@ -477,7 +506,7 @@ export default function AdminContent() {
               Delete this post?
             </h2>
             <p className="font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal/65 mb-6">
-              “{pendingDelete.title}” will be removed from /updates and the sitemap. This cannot be
+              “{pendingDelete.title}” will be removed from the site and the sitemap. This cannot be
               undone.
             </p>
             <div className="flex gap-3">

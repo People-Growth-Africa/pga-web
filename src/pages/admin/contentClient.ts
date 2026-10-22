@@ -1,4 +1,5 @@
 import { authRequest, NETWORK_FAILURE, type ApiFailure } from '../../lib/authClient';
+import { compressCover, CoverError } from '../../lib/coverImage';
 
 /**
  * The admin panel's calls to /api/admin/*.
@@ -10,18 +11,28 @@ import { authRequest, NETWORK_FAILURE, type ApiFailure } from '../../lib/authCli
  * panel that hid a button would be a courtesy, not a check.
  */
 
+export type PostType = 'blog' | 'event';
+
 export type AdminPost = {
   id: string;
+  type: PostType;
   slug: string;
   title: string;
   excerpt: string;
   body: string;
-  category_id: string;
-  category_name: string;
-  category_slug: string;
+  /** Null on an event: a topic belongs to a written piece. */
+  category_id: string | null;
+  category_name: string | null;
+  category_slug: string | null;
   cover_image_url: string | null;
+  cover_image_thumb_url: string | null;
   link_label: string | null;
   link_url: string | null;
+  event_start: string | null;
+  event_end: string | null;
+  location_text: string | null;
+  is_online: boolean;
+  registration_url: string | null;
   status: 'draft' | 'published';
   published_at: string | null;
   created_at: string;
@@ -38,28 +49,36 @@ export type AdminCategory = {
 };
 
 export type PostDraft = {
+  type: PostType;
   slug: string;
   title: string;
   excerpt: string;
   body: string;
-  categoryId: string;
+  categoryId: string | null;
   coverImageUrl: string | null;
+  coverImageThumbUrl: string | null;
   linkLabel: string | null;
   linkUrl: string | null;
+  /** UTC ISO instants. The form works in Lagos and converts before sending. */
+  eventStart: string | null;
+  eventEnd: string | null;
+  locationText: string | null;
+  isOnline: boolean;
+  registrationUrl: string | null;
   status: 'draft' | 'published';
 };
 
 export type Result<T> = { ok: true; data: T } | { ok: false; failure: ApiFailure };
 
 export async function listContent(filters: {
+  type?: string;
   status?: string;
-  categoryId?: string;
   search?: string;
   signal?: AbortSignal;
 }): Promise<Result<{ posts: AdminPost[]; categories: AdminCategory[] }>> {
   const query = new URLSearchParams();
+  if (filters.type) query.set('type', filters.type);
   if (filters.status) query.set('status', filters.status);
-  if (filters.categoryId) query.set('categoryId', filters.categoryId);
   if (filters.search) query.set('search', filters.search);
   const suffix = query.toString() ? `?${query.toString()}` : '';
 
@@ -113,16 +132,66 @@ export async function deleteCategory(
 }
 
 /**
- * Uploads one cover image and returns its URL.
+ * Uploads a chosen image as a cover and returns the pair of URLs.
  *
- * This is the one call that does not go through `authRequest`: it posts a
- * multi-megabyte body and wants a real progress event, which `fetch` cannot
+ * The file is compressed here first (`src/lib/coverImage.ts`) into a full WebP
+ * and a thumbnail, then each is posted separately: grids use the thumbnail and
+ * the article page uses the full file, so a list of a hundred covers does not
+ * pull a hundred 1600px images.
+ *
+ * These are the only calls that do not go through `authRequest`: they post a
+ * multi-megabyte body and want a real progress event, which `fetch` cannot
  * report. The session cookie is still sent, the server still checks the role,
  * and a failure is turned into the same `ApiFailure` shape as everything else
  * so the form handles it identically.
  */
 export async function uploadCover(
   file: File,
+  onProgress: (percent: number) => void,
+): Promise<Result<{ url: string; thumbUrl: string }>> {
+  let pair: Awaited<ReturnType<typeof compressCover>>;
+  try {
+    // Preparing the pair is the quiet, CPU-bound part; it owns the first third
+    // of the bar so the two uploads that follow have something to fill.
+    pair = await compressCover(file, (percent) => onProgress(Math.round(percent * 0.3)));
+  } catch (error) {
+    return {
+      ok: false,
+      failure: {
+        error:
+          error instanceof CoverError
+            ? error.message
+            : 'That image could not be prepared. Try another one.',
+        code: 'image_failed',
+      },
+    };
+  }
+
+  const full = await postImage(pair.full, 'full', (percent) =>
+    onProgress(30 + Math.round(percent * 0.4)),
+  );
+  if (!full.ok) return full;
+
+  const thumb = await postImage(pair.thumb, 'thumb', (percent) =>
+    onProgress(70 + Math.round(percent * 0.3)),
+  );
+  if (!thumb.ok) {
+    return {
+      ok: false,
+      failure: {
+        error: `The image uploaded but its thumbnail did not. ${thumb.failure.error}`,
+        code: thumb.failure.code,
+      },
+    };
+  }
+
+  return { ok: true, data: { url: full.data.url, thumbUrl: thumb.data.url } };
+}
+
+/** One file to /api/admin/upload, reported as a share of its own progress. */
+async function postImage(
+  file: File,
+  variant: 'full' | 'thumb',
   onProgress: (percent: number) => void,
 ): Promise<Result<{ url: string }>> {
   const base64 = await readAsBase64(file, onProgress);
@@ -132,7 +201,12 @@ export async function uploadCover(
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename: file.name, contentType: file.type, data: base64 }),
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type,
+        variant,
+        data: base64,
+      }),
     });
 
     const text = await response.text();

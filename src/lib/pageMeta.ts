@@ -8,8 +8,11 @@ import { eventsList, type EventItem } from '../data/events';
  */
 export type EventMetaSource = EventItem & {
   imageUrl?: string | null;
+  /** The full-size cover, preferred over `imageUrl` for sharing. */
+  detailImageUrl?: string | null;
   startTime?: string | null;
   eventEndDate?: string | null;
+  isOnline?: boolean;
 };
 import { eventInstant } from './content';
 
@@ -61,7 +64,14 @@ export interface EventMeta {
   /** ISO 8601 instant, including Lagos' +01:00 offset. */
   startDate: string;
   endDate?: string;
+  /** The venue, for an in-person event. Never set on an online one. */
   location?: string;
+  /**
+   * A manager can publish an event as online, in which case the JSON-LD names a
+   * VirtualLocation instead of a Place. Built-in and sheet events are in-person
+   * unless their text says otherwise, so this is optional.
+   */
+  isOnline?: boolean;
 }
 
 export interface BreadcrumbItem {
@@ -122,7 +132,7 @@ export function clampDescription(text: string, limit = MAX_DESCRIPTION_LENGTH): 
  * descriptions are written once here so the sitemap, the static HTML and the
  * client-side head can never drift apart.
  */
-const STATIC_PAGES: Record<'/' | '/blog' | '/events' | '/consultation' | '/updates', PageMeta> = {
+const STATIC_PAGES: Record<'/' | '/blog' | '/events' | '/consultation', PageMeta> = {
   '/': {
     path: '/',
     title: 'People Growth Africa | HR Consulting for African Businesses',
@@ -155,23 +165,10 @@ const STATIC_PAGES: Record<'/' | '/blog' | '/events' | '/consultation' | '/updat
     image: DEFAULT_IMAGE,
     type: 'website',
   },
-  // Not prerendered: the posts it lists live in the database, so the page is
-  // served as a shell and filled in by the browser from /api/updates. The head
-  // is still set here so the client writes the same values the sitemap claims.
-  '/updates': {
-    path: '/updates',
-    title: 'Updates, News & Opportunities | People Growth Africa',
-    description:
-      'News, announcements, events, resources and opportunities from People Growth Africa, published by our team.',
-    image: DEFAULT_IMAGE,
-    type: 'website',
-  },
 };
 
 /** The metadata for a static public page. */
-export function staticPageMeta(
-  path: '/' | '/blog' | '/events' | '/consultation' | '/updates',
-): PageMeta {
+export function staticPageMeta(path: '/' | '/blog' | '/events' | '/consultation'): PageMeta {
   return STATIC_PAGES[path];
 }
 
@@ -210,66 +207,20 @@ export function blogMeta(post: BlogPost): PageMeta {
   };
 }
 
-/**
- * A manager-published post's page: /updates/<slug>.
- *
- * Shaped like `blogMeta` on purpose - same Article node, same publisher, same
- * author reference to the one Organization - so a search engine reads an update
- * and an article as the same site writing the same kind of thing. The fields
- * are declared structurally rather than by importing the feed's type, because * the feed is a client module and this one has to stay importable from the
- * build without pulling a fetch layer into it.
- */
-export function updateMeta(post: {
-  slug: string;
-  title: string;
-  excerpt: string;
-  coverImageUrl: string | null;
-  category: string;
-  publishedAt: string | null;
-  updatedAt: string;
-}): PageMeta {
-  const path = `/updates/${post.slug}`;
-  return {
-    path,
-    // Left exactly as written, the same reasoning as a blog headline: it is
-    // already the words a searcher would use.
-    title: post.title,
-    description: clampDescription(post.excerpt || post.title),
-    // A cover the manager uploaded, or the site's own card. Never the Unsplash
-    // artwork the blog uses: an update is not a blog post and should not borrow
-    // one of its pictures.
-    image: post.coverImageUrl || DEFAULT_IMAGE,
-    type: 'article',
-    article: {
-      publishedAt: (post.publishedAt ?? post.updatedAt).slice(0, 10),
-      modifiedAt: post.updatedAt.slice(0, 10),
-      author: {
-        '@type': 'Organization' as const,
-        '@id': ORG_ID,
-        name: SITE_NAME,
-      },
-      section: post.category,
-    },
-    breadcrumb: [
-      { name: 'Home', path: '/' },
-      { name: 'Updates', path: '/updates' },
-      { name: post.title, path },
-    ],
-  };
-}
-
 /** An event's page: /events/<slug>. */
 export function eventMeta(event: EventMetaSource): PageMeta {
   return {
     path: `/events/${event.slug}`,
     title: event.title,
     description: clampDescription(event.subtitle),
-    image: event.imageUrl ?? DEFAULT_IMAGE,
+    image: event.detailImageUrl ?? event.imageUrl ?? DEFAULT_IMAGE,
     type: 'website',
     event: {
       startDate: eventInstant(event.isoDate, event.startTime ?? null),
       ...(event.eventEndDate ? { endDate: eventInstant(event.eventEndDate, null) } : {}),
-      location: event.format,
+      // An online event has nowhere to be: a Place naming "Online" would be a
+      // lie to a calendar, so it gets a VirtualLocation instead.
+      ...(event.isOnline ? { isOnline: true } : { location: event.format }),
     },
   };
 }
@@ -330,9 +281,14 @@ export function buildPageSchema(meta: PageMeta): Record<string, unknown> | null 
       startDate: meta.event.startDate,
       ...(meta.event.endDate ? { endDate: meta.event.endDate } : {}),
       eventStatus: 'https://schema.org/EventScheduled',
-      ...(meta.event.location
-        ? { location: { '@type': 'Place', name: meta.event.location } }
-        : {}),
+      eventAttendanceMode: meta.event.isOnline
+        ? 'https://schema.org/OnlineEventAttendanceMode'
+        : 'https://schema.org/OfflineEventAttendanceMode',
+      ...(meta.event.isOnline
+        ? { virtualLocation: { '@type': 'VirtualLocation', url: canonicalUrl(meta.path) } }
+        : meta.event.location
+          ? { location: { '@type': 'Place', name: meta.event.location } }
+          : {}),
       image: absoluteUrl(meta.image),
       url: canonicalUrl(meta.path),
       organizer: { '@type': 'Organization', '@id': ORG_ID },
@@ -342,7 +298,9 @@ export function buildPageSchema(meta: PageMeta): Record<string, unknown> | null 
   if (meta.article) {
     return {
       '@context': 'https://schema.org',
-      '@type': 'Article',
+      // BlogPosting rather than a bare Article: it is the type that says what
+      // the page is, and manager-published posts emit the same one.
+      '@type': 'BlogPosting',
       headline: meta.title,
       description: meta.description,
       image: absoluteUrl(meta.image),

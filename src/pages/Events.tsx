@@ -7,6 +7,7 @@ import EventCard from '../components/EventCard';
 import EventRegistrationModal from '../components/EventRegistrationModal';
 import { eventCategories, type EventItem } from '../data/events';
 import { useContent } from '../hooks/useContent';
+import { useLivePosts } from '../hooks/useLivePosts';
 import { mergeEvents, splitEvents, type EventView } from '../lib/contentMerge';
 
 /**
@@ -23,8 +24,9 @@ export default function Events() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
   const { entries } = useContent();
+  const live = useLivePosts();
 
-  const allEvents = useMemo(() => mergeEvents(entries), [entries]);
+  const allEvents = useMemo(() => mergeEvents(entries, live.posts), [entries, live.posts]);
 
   const filteredEvents = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();

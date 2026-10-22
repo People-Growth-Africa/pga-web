@@ -19,6 +19,7 @@
     "test:leads": "node scripts/test-leads.mjs",
     "test:content": "node scripts/test-content.mjs",
     "test:content-admin": "node scripts/test-content-admin.mjs",
+    "test:published": "node scripts/test-published.mjs",
     "test:seo": "node scripts/test-seo.mjs",
     "test:dashboard:rules": "node scripts/test-dashboard-rules.mjs",
     "test:dashboard": "npm run test:dashboard:rules && node scripts/test-dashboard.mjs",

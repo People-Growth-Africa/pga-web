@@ -7,6 +7,7 @@ import {
 } from '../data/posts';
 import { eventsList, type EventItem, type EventType } from '../data/events';
 import { formatEventDate, formatTime, type FeedEntry } from './content';
+import { displayTime, formatEventDay, lagosDate, lagosTime, type LivePost } from './published';
 
 /**
  * How the sheet joins the content that already ships with the site.
@@ -39,12 +40,20 @@ export function todayInLagos(now: Date = new Date()): string {
   }
 }
 
-/** A built-in or sheet blog post, with where it came from. */
-export type BlogView = BlogPost & { origin: 'site' | 'sheet' };
+/** A built-in, sheet or manager-published blog post, with where it came from. */
+export type BlogView = BlogPost & {
+  origin: 'site' | 'sheet' | 'live';
+  /**
+   * The full-size cover, for the article page. `image` is what a grid uses, and
+   * for a manager-published post that is the thumbnail: a card never needs the
+   * 1600px file, and a reader who opens the article does.
+   */
+  detailImage?: string;
+};
 
 /** A built-in or sheet event, with the extra facts the cards and page need. */
 export type EventView = EventItem & {
-  origin: 'site' | 'sheet';
+  origin: 'site' | 'sheet' | 'live';
   detailHref: string;
   registrationUrl: string | null;
   /** Last day of a multi-day event, or null. Used by the Event JSON-LD. */
@@ -53,8 +62,12 @@ export type EventView = EventItem & {
   startTime: string | null;
   /** Sheet events can carry an image; built-in ones use the card design. */
   imageUrl: string | null;
+  /** The full-size cover for the event page; `imageUrl` is the thumbnail. */
+  detailImageUrl: string | null;
   /** Grouped into "Past events" rather than "Upcoming events". */
   isPast: boolean;
+  /** Online events say so instead of naming a venue, and the JSON-LD follows. */
+  isOnline: boolean;
 };
 
 function initials(name: string): string {
@@ -105,22 +118,79 @@ export function blogFromSheet(entry: FeedEntry): BlogView {
   };
 }
 
-/** Built-in posts first, then sheet posts whose slug is not already taken. */
-export function mergeBlogPosts(entries: FeedEntry[]): BlogView[] {
+/**
+ * A post a manager published from the admin panel.
+ *
+ * Its category arrives as a slug, so the readable name is carried in `tags` for
+ * `mergeBlogCategories` to use as the chip label. The thumbnail is preferred for
+ * the card: the grid never needs the full-size file.
+ */
+export function blogFromLive(post: LivePost): BlogView {
+  const author: Author = {
+    name: 'People Growth Africa',
+    initials: 'PGA',
+    role: 'People Growth Africa',
+    bio: AUTHOR_BIO,
+  };
+
+  return {
+    id: `live-blog-${post.slug}`,
+    slug: post.slug,
+    title: post.title,
+    excerpt: post.excerpt,
+    content: post.body,
+    // Every published blog post has a category (the database refuses one
+    // without), so the fallback only covers a malformed payload.
+    category: post.categorySlug ?? 'articles',
+    tags: post.category ? [post.category] : [],
+    image: post.coverImageThumbUrl ?? post.coverImageUrl ?? '',
+    // Shares get the full file: an og:image rendered from a 480px thumbnail
+    // looks soft in every client that shows it large.
+    shareImage: post.coverImageUrl ?? post.coverImageThumbUrl ?? undefined,
+    detailImage: post.coverImageUrl ?? post.coverImageThumbUrl ?? undefined,
+    date: (post.publishedAt ?? post.updatedAt).slice(0, 10),
+    author,
+    readTime: readTime(post.body),
+    featured: false,
+    origin: 'live',
+  };
+}
+
+/**
+ * Built-in posts first, then sheet posts, then manager-published ones, each
+ * skipped if its slug is already taken.
+ *
+ * The order is the rule: the hand-written pages that are already indexed keep
+ * their URL, and a manager publishing a slug that collides cannot displace one.
+ * The editor warns about that collision before saving.
+ */
+export function mergeBlogPosts(entries: FeedEntry[], live: LivePost[] = []): BlogView[] {
   const site: BlogView[] = blogPosts.map((post) => ({ ...post, origin: 'site' }));
   const taken = new Set(blogPosts.map((post) => post.slug));
   const sheet = entries
     .filter((entry) => entry.type === 'blog' && !taken.has(entry.slug))
     .map(blogFromSheet);
 
-  return [...site, ...sheet].sort((a, b) => b.date.localeCompare(a.date));
+  for (const row of sheet) taken.add(row.slug);
+
+  const published = live.filter((post) => post.type === 'blog' && !taken.has(post.slug));
+
+  return [...site, ...sheet, ...published.map(blogFromLive)].sort((a, b) =>
+    b.date.localeCompare(a.date),
+  );
 }
 
-export function findBlog(slug: string, entries: FeedEntry[]): BlogView | undefined {
+export function findBlog(
+  slug: string,
+  entries: FeedEntry[],
+  live: LivePost[] = [],
+): BlogView | undefined {
   const builtIn = blogPosts.find((post) => post.slug === slug);
   if (builtIn) return { ...builtIn, origin: 'site' };
   const sheet = entries.find((entry) => entry.type === 'blog' && entry.slug === slug);
-  return sheet ? blogFromSheet(sheet) : undefined;
+  if (sheet) return blogFromSheet(sheet);
+  const row = live.find((post) => post.type === 'blog' && post.slug === slug);
+  return row ? blogFromLive(row) : undefined;
 }
 
 /**
@@ -133,7 +203,9 @@ export function mergeBlogCategories(blogs: BlogView[]): Category[] {
   const extra = new Map<string, string>();
   for (const post of blogs) {
     if (!known.has(post.category) && !extra.has(post.category)) {
-      extra.set(post.category, post.category);
+      // The chip label: a manager's category arrives as a slug, and its readable
+      // name travels in tags rather than as a second identifier.
+      extra.set(post.category, post.tags[0] ?? post.category);
     }
   }
   return [...builtInCategories, ...[...extra].map(([id, label]) => ({ id, label }))];
@@ -192,6 +264,10 @@ export function eventFromSheet(entry: FeedEntry, today: string = todayInLagos())
     eventEndDate: entry.eventEndDate,
     startTime: entry.eventTime,
     imageUrl: entry.imageUrl,
+    detailImageUrl: entry.imageUrl,
+    // The sheet has a location column and no online flag; an empty location is
+    // already rendered as "Location to be announced".
+    isOnline: false,
     // Built-in events keep the status they were written with; sheet events get
     // it from event_date. An event dated in the future or the past is never
     // hidden by that date - only grouped - which is why this is a separate
@@ -200,8 +276,72 @@ export function eventFromSheet(entry: FeedEntry, today: string = todayInLagos())
   };
 }
 
-/** Built-in events first, then sheet events whose slug is not already taken. */
-export function mergeEvents(entries: FeedEntry[], today: string = todayInLagos()): EventView[] {
+/**
+ * An event a manager published from the admin panel.
+ *
+ * The row stores an instant in UTC; everything shown here is that instant read
+ * in Africa/Lagos, which is where the audience is and which has no daylight
+ * saving to complicate it. The `WAT` suffix is deliberate: a start time without
+ * a zone is ambiguous the moment a page is shared outside Nigeria.
+ */
+export function eventFromLive(post: LivePost, today: string = todayInLagos()): EventView {
+  const start = post.eventStart ?? post.updatedAt;
+  const startDate = lagosDate(start);
+  const startTime = lagosTime(start);
+
+  const endDate = post.eventEnd ? lagosDate(post.eventEnd) : null;
+  const sameDayEnd = endDate === startDate ? post.eventEnd : null;
+
+  const time = sameDayEnd
+    ? `${displayTime(startTime)} – ${displayTime(lagosTime(sameDayEnd))} WAT`
+    : `${displayTime(startTime)} WAT`;
+
+  const isPast = startDate < today;
+
+  return {
+    id: `live-event-${post.slug}`,
+    slug: post.slug,
+    title: post.title,
+    subtitle: post.excerpt,
+    type: 'workshop',
+    typeLabel: post.isOnline ? 'Online' : 'In person',
+    date: formatEventDay(start),
+    isoDate: startDate,
+    time,
+    duration: endDate && endDate !== startDate ? `Until ${formatEventDay(post.eventEnd!)}` : '',
+    format: post.isOnline ? 'Online' : (post.locationText ?? 'Location to be announced'),
+    description: post.body,
+    learningOutcomes: [],
+    targetAudience: '',
+    speaker: { name: 'People Growth Africa', title: '', organization: 'People Growth Africa' },
+    seatsTotal: 0,
+    seatsRemaining: 0,
+    price: '',
+    featured: false,
+    status: isPast ? 'completed' : 'upcoming',
+    origin: 'live',
+    detailHref: `/events/${post.slug}`,
+    registrationUrl: post.registrationUrl,
+    eventEndDate: endDate,
+    startTime,
+    imageUrl: post.coverImageThumbUrl ?? post.coverImageUrl,
+    detailImageUrl: post.coverImageUrl ?? post.coverImageThumbUrl,
+    isPast,
+    isOnline: post.isOnline,
+  };
+}
+
+/**
+ * Built-in events first, then sheet events, then manager-published ones.
+ *
+ * Same precedence as blog posts, for the same reason: an existing page keeps
+ * its URL, and a manager is warned in the editor before choosing one.
+ */
+export function mergeEvents(
+  entries: FeedEntry[],
+  live: LivePost[] = [],
+  today: string = todayInLagos(),
+): EventView[] {
   const site: EventView[] = eventsList.map((event) => ({
     ...event,
     origin: 'site',
@@ -210,31 +350,34 @@ export function mergeEvents(entries: FeedEntry[], today: string = todayInLagos()
     eventEndDate: null,
     startTime: null,
     imageUrl: null,
+    detailImageUrl: null,
     isPast: event.status === 'completed',
+    isOnline: false,
   }));
   const taken = new Set(eventsList.map((event) => event.slug));
   const sheet = entries
     .filter((entry) => entry.type === 'event' && !taken.has(entry.slug))
     .map((entry) => eventFromSheet(entry, today));
 
-  return [...site, ...sheet];
+  for (const row of sheet) taken.add(row.slug);
+
+  const published = live.filter((post) => post.type === 'event' && !taken.has(post.slug));
+
+  return [...site, ...sheet, ...published.map((post) => eventFromLive(post, today))];
 }
 
 export function findEvent(
   slug: string,
   entries: FeedEntry[],
+  live: LivePost[] = [],
   today: string = todayInLagos(),
 ): EventView | undefined {
-  return mergeEvents(entries, today).find((event) => event.slug === slug);
+  return mergeEvents(entries, live, today).find((event) => event.slug === slug);
 }
 
-/** Upcoming soonest first, past newest first. */
-export function splitEvents(events: EventView[]): { upcoming: EventView[]; past: EventView[] } {
-  const upcoming = events
-    .filter((event) => !event.isPast)
-    .sort((a, b) => a.isoDate.localeCompare(b.isoDate));
-  const past = events
-    .filter((event) => event.isPast)
-    .sort((a, b) => b.isoDate.localeCompare(a.isoDate));
-  return { upcoming, past };
-}
+/**
+ * Upcoming soonest first, past newest first. The rule lives in published.ts,
+ * next to the Lagos date helpers it depends on; this re-export is what the two
+ * event pages import.
+ */
+export { splitEvents } from './published';

@@ -69,18 +69,25 @@ export const ROUTES: Record<string, RouteHandler> = {
   //     public and cacheable and trades in nothing that belongs to a visitor,
   //     so it is not gated. Revalidate is the only one that changes state: it
   //     is protected by its own secret, not by AUTH_ENABLED. ------------------
-  //     (There is no sitemap endpoint: /sitemap.xml is one static urlset written
-  //     at build time by scripts/prerender.mjs.) ------------------------------
+  //     (/sitemap.xml is rewritten to /sitemap below, so the urlset is
+  //     assembled per request instead of only at build time.) -----------------
   '/content': lazy(async () => (await import('./content.js')).default),
   '/revalidate': lazy(async () => (await import('./revalidate.js')).default),
 
-  // --- The published posts feed and the sitemap that lists them. Public and
-  //     cacheable, and like /content they answer from the database rather than
-  //     from a build, so publishing does not need a deploy. Both are behind the
-  //     database gate for the same reason the forms are: with no DATABASE_URL
-  //     there is nothing to read. The sitemap is reached through a rewrite in
-  //     vercel.json that arrives as path=sitemap. ---------------------------
-  '/updates': requiresDatabase(async () => (await import('./updates.js')).default),
+  // --- The published posts feed, the pages that need a head at request time,
+  //     and the sitemap that lists them. Public and cacheable, and like
+  //     /content they answer from the database rather than from a build, so
+  //     publishing does not need a deploy. All three are behind the database
+  //     gate for the same reason the forms are: with no DATABASE_URL there is
+  //     nothing to read.
+  //
+  //     /post is not an API path anyone calls. It is the destination of the
+  //     rewrites for /blog/:slug and /events/:slug, and it arrives as
+  //     path=post&type=blog|event&slug=... so a manager-published page can be
+  //     answered with its own meta tags and a real 404. /sitemap arrives the
+  //     same way, from the /sitemap.xml rewrite. ---------------------------
+  '/posts': requiresDatabase(async () => (await import('./posts.js')).default),
+  '/post': requiresDatabase(async () => (await import('./post-page.js')).default),
   '/sitemap': requiresDatabase(async () => (await import('./sitemap.js')).default),
 
   // --- Public forms that store submissions, up only when a database is set --

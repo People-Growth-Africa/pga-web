@@ -1,7 +1,14 @@
 import { useMemo, useRef, useState } from 'react';
 
-import UpdateBody from '../../components/UpdateBody';
-import { slugify } from '../../lib/updates';
+import PostBody from '../../components/PostBody';
+import { eventsList } from '../../data/events';
+import { blogPosts } from '../../data/posts';
+import {
+  isoToLagosInput,
+  lagosInputToIso,
+  slugify,
+  type LivePostType,
+} from '../../lib/published';
 import {
   uploadCover,
   type AdminCategory,
@@ -12,24 +19,28 @@ import {
 /**
  * The create and edit form for one post.
  *
- * A few things are worth naming:
+ * A post is either a blog post or an event, and the form is one form with a
+ * switch rather than two forms. Choosing Event reveals the date, place and
+ * registration fields and hides the category and external link; choosing Blog
+ * does the reverse. The server clears whichever set does not belong, so a
+ * manager flicking between them cannot leave a field behind that later fails a
+ * constraint they cannot see.
+ *
+ * Times are collected as Lagos wall-clock and converted to UTC on submit (see
+ * `lagosInputToIso`). The database stores instants, every reader is shown them
+ * in Lagos, and the manager's own machine timezone never enters into it.
+ *
+ * A few other things worth naming:
  *
  * - The slug starts as a transliteration of the title and is then editable. The
  *   "title changed, slug did not" case is handled by keeping a flag rather than
  *   re-deriving on every keystroke: a manager who has corrected a slug once
  *   should not have it overwritten the next time they fix a typo in the title.
- * - The preview renders through `UpdateBody`, the same component the public
- *   page uses. A preview that disagreed with the published page would be worse
- *   than none, so there is only one renderer.
- * - The category select ends in "Add a new category…", which opens the field for
- *   a name and derives the slug. A manager never has to leave this form to
- *   invent a content type.
- * - Switching between "new" and a different post resets every field, because
- *   the parent gives this component a `key` of the post it is editing. Changing
- *   a key remounts, so the state starts from `toDraft` again and there is no
- *   effect copying one row's values over another's.
- * - Nothing here decides permissions. Every call is refused by the server for a
- *   non-manager, and this form just shows what it was told.
+ * - A slug that collides with a built-in page is flagged here, because the
+ *   built-in page wins the URL and the new post would be invisible. The server
+ *   cannot check this: `api/` cannot import `src/data`.
+ * - The preview renders through `PostBody`, the same component the public
+ *   pages use, so there is only one renderer to keep honest.
  */
 
 const ACTION_PHRASES = {
@@ -38,6 +49,12 @@ const ACTION_PHRASES = {
 } as const;
 
 export type EditorMode = 'create' | 'edit';
+
+/** Every slug the build already ships, so a new one cannot quietly shadow it. */
+const BUILT_IN_SLUGS = new Set<string>([
+  ...blogPosts.map((post) => `blog/${post.slug}`),
+  ...eventsList.map((event) => `events/${event.slug}`),
+]);
 
 export default function PostEditor({
   mode,
@@ -63,17 +80,29 @@ export default function PostEditor({
 }) {
   const initial = useMemo(() => toDraft(post), [post]);
 
+  const [type, setType] = useState<LivePostType>(initial.type);
   const [title, setTitle] = useState(initial.title);
   const [slug, setSlug] = useState(initial.slug);
   const [slugTouched, setSlugTouched] = useState(mode === 'edit');
-  const [categoryId, setCategoryId] = useState(initial.categoryId);
+  const [categoryId, setCategoryId] = useState(initial.categoryId ?? '');
   const [excerpt, setExcerpt] = useState(initial.excerpt);
   const [body, setBody] = useState(initial.body);
   const [coverImageUrl, setCoverImageUrl] = useState(initial.coverImageUrl);
+  const [coverImageThumbUrl, setCoverImageThumbUrl] = useState(initial.coverImageThumbUrl);
   const [linkLabel, setLinkLabel] = useState(initial.linkLabel ?? '');
   const [linkUrl, setLinkUrl] = useState(initial.linkUrl ?? '');
+  // The inputs hold `datetime-local` values, so an unset date is an empty
+  // string here rather than null; `lagosInputToIso` turns it back into null.
+  const [eventStart, setEventStart] = useState(initial.eventStart ?? '');
+  const [eventEnd, setEventEnd] = useState(initial.eventEnd ?? '');
+  const [locationText, setLocationText] = useState(initial.locationText ?? '');
+  const [isOnline, setIsOnline] = useState(initial.isOnline);
+  const [registrationUrl, setRegistrationUrl] = useState(initial.registrationUrl ?? '');
   const [status, setStatus] = useState<'draft' | 'published'>(initial.status);
   const [previewing, setPreviewing] = useState(false);
+  // Fields whose required-value message may be shown. Visiting one (or changing
+  // it) opts it in, so an untouched form stays quiet.
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -82,6 +111,11 @@ export default function PostEditor({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const chosenCategory = categories.find((category) => category.id === categoryId);
+  const section = type === 'blog' ? 'blog' : 'events';
+
+  function markTouched(field: string) {
+    setTouched((current) => (current[field] ? current : { ...current, [field]: true }));
+  }
 
   function handleTitle(value: string) {
     setTitle(value);
@@ -104,28 +138,67 @@ export default function PostEditor({
 
     if (result.ok) {
       setCoverImageUrl(result.data.url);
+      setCoverImageThumbUrl(result.data.thumbUrl);
       return;
     }
     setUploadProgress(0);
     setUploadError(result.failure.error);
   }
 
+  function clearCover() {
+    setCoverImageUrl(null);
+    setCoverImageThumbUrl(null);
+    setUploadError(null);
+  }
+
   function buildDraft(nextStatus: 'draft' | 'published'): PostDraft {
+    const isEvent = type === 'event';
     return {
+      type,
       slug: slug.trim(),
       title: title.trim(),
       excerpt: excerpt.trim(),
       body,
-      categoryId,
+      categoryId: isEvent ? null : categoryId || null,
       coverImageUrl: coverImageUrl || null,
-      linkLabel: linkLabel.trim() || null,
-      linkUrl: linkUrl.trim() || null,
+      coverImageThumbUrl: coverImageThumbUrl,
+      linkLabel: isEvent ? null : linkLabel.trim() || null,
+      linkUrl: isEvent ? null : linkUrl.trim() || null,
+      eventStart: isEvent ? lagosInputToIso(eventStart) : null,
+      eventEnd: isEvent ? lagosInputToIso(eventEnd) : null,
+      locationText: isEvent && !isOnline ? locationText.trim() || null : null,
+      isOnline: isEvent ? isOnline : false,
+      registrationUrl: isEvent ? registrationUrl.trim() || null : null,
       status: nextStatus,
     };
   }
 
+  // A fresh form is empty, so every required field is invalid the moment it
+  // opens. Saying so in four red lines before the manager has typed anything is
+  // noise; each message waits until that field has been visited (or its value
+  // changed) and the form is genuinely missing something.
+  const show = (field: string) => touched[field] === true;
+
+  const eventStartInvalid = type === 'event' && (!eventStart || !lagosInputToIso(eventStart));
+  const eventEndInvalid =
+    type === 'event' &&
+    eventEnd !== '' &&
+    (!lagosInputToIso(eventEnd) ||
+      (lagosInputToIso(eventStart) !== null &&
+        (lagosInputToIso(eventEnd) as string) <= (lagosInputToIso(eventStart) as string)));
+  const locationMissing = type === 'event' && !isOnline && locationText.trim() === '';
+  const categoryMissing = type === 'blog' && categoryId === '';
+
   const canSubmit =
-    title.trim().length > 0 && slug.trim().length > 0 && categoryId !== '' && !uploading;
+    title.trim().length > 0 &&
+    slug.trim().length > 0 &&
+    !uploading &&
+    !eventStartInvalid &&
+    !eventEndInvalid &&
+    !locationMissing &&
+    !categoryMissing;
+
+  const slugTaken = BUILT_IN_SLUGS.has(`${section}/${slug.trim()}`);
 
   return (
     <div className="bg-white rounded-[20px] shadow-card p-6 sm:p-8">
@@ -152,6 +225,27 @@ export default function PostEditor({
       )}
 
       <div className="space-y-6">
+        {/* ── Type ──────────────────────────────────── */}
+        <div>
+          <span className="block font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal mb-2">
+            Type
+          </span>
+          <div className="grid grid-cols-2 gap-3" role="group" aria-label="Post type">
+            <TypeCard
+              active={type === 'blog'}
+              title="Blog post"
+              description="An article, guide or announcement."
+              onClick={() => setType('blog')}
+            />
+            <TypeCard
+              active={type === 'event'}
+              title="Event"
+              description="Something with a date and a place."
+              onClick={() => setType('event')}
+            />
+          </div>
+        </div>
+
         <Field label="Title" htmlFor="post-title" hint="What the post is about, in one line.">
           <input
             id="post-title"
@@ -159,7 +253,7 @@ export default function PostEditor({
             value={title}
             onChange={(event) => handleTitle(event.target.value)}
             maxLength={160}
-            placeholder="e.g. New payroll guidance for 2026"
+            placeholder={type === 'event' ? 'e.g. HR Leaders Roundtable' : 'e.g. New payroll guidance for 2026'}
             className={inputClass}
           />
         </Field>
@@ -167,7 +261,7 @@ export default function PostEditor({
         <Field
           label="Slug"
           htmlFor="post-slug"
-          hint={`peoplegrowthafrica.com/updates/${slug || 'your-post'}`}
+          hint={`peoplegrowthafrica.com/${section}/${slug || 'your-post'}`}
         >
           <input
             id="post-slug"
@@ -179,43 +273,187 @@ export default function PostEditor({
             }}
             maxLength={120}
             placeholder="your-post"
+            aria-describedby={slugTaken ? 'slug-taken' : undefined}
             className={inputClass}
           />
-        </Field>
-
-        <Field label="Category" htmlFor="post-category">
-          <select
-            id="post-category"
-            value={categoryId}
-            onChange={(event) => {
-              if (event.target.value === '__add__') {
-                void handleAddCategory();
-                return;
-              }
-              setCategoryId(event.target.value);
-            }}
-            className={inputClass}
-          >
-            <option value="" disabled>
-              Choose a category…
-            </option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-                {category.post_count > 0 ? ` (${category.post_count})` : ''}
-              </option>
-            ))}
-            <option value="__add__">＋ Add a new category…</option>
-          </select>
-          {chosenCategory && (
-            <p className="mt-2 font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
-              Slug: {chosenCategory.slug}
+          {slugTaken && (
+            <p
+              id="slug-taken"
+              role="alert"
+              className="mt-2 font-[family-name:var(--font-body)] text-[0.82rem] text-amber-700"
+            >
+              /{section}/{slug.trim()} is already a page built into the site, and that page keeps
+              the URL. Choose a different slug or this post will not be reachable.
             </p>
           )}
         </Field>
 
+        {/* ── Event fields ──────────────────────────── */}
+        {type === 'event' && (
+          <div className="rounded-2xl bg-cream/50 p-4 sm:p-5 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field
+                label="Starts"
+                htmlFor="event-start"
+                hint="Lagos time. Stored as UTC."
+              >
+                <input
+                  id="event-start"
+                  type="datetime-local"
+                  value={eventStart}
+                  onChange={(event) => setEventStart(event.target.value)}
+                  onBlur={() => markTouched('eventStart')}
+                  aria-invalid={eventStartInvalid}
+                  aria-describedby={eventStartInvalid && show('eventStart') ? 'event-start-error' : undefined}
+                  className={inputClass}
+                />
+                {eventStartInvalid && show('eventStart') && (
+                  <p
+                    id="event-start-error"
+                    role="alert"
+                    className="mt-1.5 font-[family-name:var(--font-body)] text-[0.78rem] text-red-600"
+                  >
+                    Enter when the event starts.
+                  </p>
+                )}
+              </Field>
+              <Field label="Ends (optional)" htmlFor="event-end" hint="Must be after the start.">
+                <input
+                  id="event-end"
+                  type="datetime-local"
+                  value={eventEnd}
+                  onChange={(event) => setEventEnd(event.target.value)}
+                  onBlur={() => markTouched('eventEnd')}
+                  aria-invalid={eventEndInvalid}
+                  aria-describedby={eventEndInvalid && show('eventEnd') ? 'event-end-error' : undefined}
+                  className={inputClass}
+                />
+                {eventEndInvalid && show('eventEnd') && (
+                  <p
+                    id="event-end-error"
+                    role="alert"
+                    className="mt-1.5 font-[family-name:var(--font-body)] text-[0.78rem] text-red-600"
+                  >
+                    The end must be after the start.
+                  </p>
+                )}
+              </Field>
+            </div>
+
+            <div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isOnline}
+                  onChange={(event) => setIsOnline(event.target.checked)}
+                  className="h-4 w-4 accent-deep-green cursor-pointer"
+                />
+                <span className="font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal">
+                  This event is online
+                </span>
+              </label>
+              <p className="mt-1 ml-7 font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
+                No venue is needed, and the page shows an online badge.
+              </p>
+            </div>
+
+            {!isOnline && (
+              <Field
+                label="Location"
+                htmlFor="event-location"
+                hint="Where people should go, e.g. Apapa, Lagos."
+              >
+                <input
+                  id="event-location"
+                  type="text"
+                  value={locationText}
+                  onChange={(event) => setLocationText(event.target.value)}
+                  onBlur={() => markTouched('location')}
+                  maxLength={160}
+                  placeholder="Apapa, Lagos"
+                  aria-invalid={locationMissing}
+                  aria-describedby={locationMissing && show('location') ? 'event-location-error' : undefined}
+                  className={inputClass}
+                />
+                {locationMissing && show('location') && (
+                  <p
+                    id="event-location-error"
+                    role="alert"
+                    className="mt-1.5 font-[family-name:var(--font-body)] text-[0.78rem] text-red-600"
+                  >
+                    Enter a venue, or mark the event as online.
+                  </p>
+                )}
+              </Field>
+            )}
+
+            <Field
+              label="Registration link (optional)"
+              htmlFor="event-registration"
+              hint="Shown as a button. Leave empty and the page simply has no button."
+            >
+              <input
+                id="event-registration"
+                type="url"
+                value={registrationUrl}
+                onChange={(event) => setRegistrationUrl(event.target.value)}
+                placeholder="https://example.com/register"
+                className={inputClass}
+              />
+            </Field>
+          </div>
+        )}
+
+        {/* ── Category, blog only ───────────────────── */}
+        {type === 'blog' && (
+          <Field label="Category" htmlFor="post-category" hint="The topic the post is filed under.">
+            <select
+              id="post-category"
+              value={categoryId}
+              onChange={(event) => {
+                if (event.target.value === '__add__') {
+                  void handleAddCategory();
+                  return;
+                }
+                setCategoryId(event.target.value);
+                markTouched('category');
+              }}
+              onBlur={() => markTouched('category')}
+              aria-describedby={
+                categoryMissing && show('category') ? 'post-category-error' : undefined
+              }
+              className={inputClass}
+            >
+              <option value="" disabled>
+                Choose a category…
+              </option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                  {category.post_count > 0 ? ` (${category.post_count})` : ''}
+                </option>
+              ))}
+              <option value="__add__">＋ Add a new category…</option>
+            </select>
+            {chosenCategory && (
+              <p className="mt-2 font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
+                Slug: {chosenCategory.slug}
+              </p>
+            )}
+            {categoryMissing && show('category') && (
+              <p
+                id="post-category-error"
+                role="alert"
+                className="mt-1.5 font-[family-name:var(--font-body)] text-[0.78rem] text-red-600"
+              >
+                Choose a category.
+              </p>
+            )}
+          </Field>
+        )}
+
         <Field
-          label="Excerpt"
+          label={type === 'event' ? 'Summary' : 'Excerpt'}
           htmlFor="post-excerpt"
           hint="One or two sentences shown on the list and in search results."
         >
@@ -258,7 +496,7 @@ export default function PostEditor({
           {previewing ? (
             <div className={`${inputClass} min-h-[260px] bg-cream/30`}>
               {body.trim() ? (
-                <UpdateBody body={body} />
+                <PostBody body={body} />
               ) : (
                 <p className="font-[family-name:var(--font-body)] text-charcoal/40 italic">
                   Nothing to preview yet.
@@ -283,15 +521,15 @@ export default function PostEditor({
             Cover image
           </span>
           <p className="mb-3 font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
-            Optional. JPG, PNG or WebP up to 5 MB. Used as the preview image when the update is
-            shared.
+            Optional. JPG, PNG or WebP up to 5 MB. Converted to WebP in your browser and stored at
+            two sizes: the grid uses the thumbnail, the page uses the full one.
           </p>
 
           {coverImageUrl ? (
             <div className="rounded-2xl overflow-hidden border border-charcoal/10 bg-cream/40">
               <div className="aspect-[16/9] bg-mint">
                 <img
-                  src={coverImageUrl}
+                  src={coverImageThumbUrl ?? coverImageUrl}
                   alt="Cover image preview"
                   className="w-full h-full object-cover"
                 />
@@ -306,10 +544,7 @@ export default function PostEditor({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setCoverImageUrl(null);
-                    setUploadError(null);
-                  }}
+                  onClick={clearCover}
                   className="px-4 py-2 bg-white border border-red-200 rounded-full font-[family-name:var(--font-body)] text-[0.82rem] font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                 >
                   Remove
@@ -370,47 +605,56 @@ export default function PostEditor({
           />
         </div>
 
-        {/* ── External link ─────────────────────────── */}
-        <fieldset className="border-0 p-0 m-0">
-          <legend className="font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal mb-1">
-            External link <span className="font-normal text-charcoal/45">(optional)</span>
-          </legend>
-          <p className="mb-3 font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
-            Shown as a button at the end of the post.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <input
-              type="text"
-              value={linkLabel}
-              onChange={(event) => setLinkLabel(event.target.value)}
-              maxLength={80}
-              placeholder="Button label (e.g. Register here)"
-              className={inputClass}
-              aria-label="Link label"
-            />
-            <input
-              type="url"
-              value={linkUrl}
-              onChange={(event) => setLinkUrl(event.target.value)}
-              placeholder="https://example.com"
-              className={inputClass}
-              aria-label="Link URL"
-            />
-          </div>
-        </fieldset>
+        {/* ── External link, blog only ──────────────── */}
+        {type === 'blog' && (
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal mb-1">
+              External link <span className="font-normal text-charcoal/45">(optional)</span>
+            </legend>
+            <p className="mb-3 font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
+              Shown as a button at the end of the post.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <input
+                type="text"
+                value={linkLabel}
+                onChange={(event) => setLinkLabel(event.target.value)}
+                maxLength={80}
+                placeholder="Button label (e.g. Read the report)"
+                className={inputClass}
+                aria-label="Link label"
+              />
+              <input
+                type="url"
+                value={linkUrl}
+                onChange={(event) => setLinkUrl(event.target.value)}
+                placeholder="https://example.com"
+                className={inputClass}
+                aria-label="Link URL"
+              />
+            </div>
+          </fieldset>
+        )}
       </div>
 
       {/* ── Actions ───────────────────────────────────── */}
       <div className="mt-8 pt-6 border-t border-charcoal/8 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-[family-name:var(--font-body)] text-sm text-charcoal/55">Status:</span>
-          <span
-            className={`inline-flex px-3 py-1 rounded-full font-[family-name:var(--font-body)] text-[0.72rem] font-semibold uppercase tracking-wider ${
-              status === 'published' ? 'bg-deep-green text-white' : 'bg-cream text-charcoal/60'
-            }`}
-          >
-            {status === 'published' ? 'Published' : 'Draft'}
-          </span>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <span className="font-[family-name:var(--font-body)] text-sm text-charcoal/55">Status:</span>
+            <span
+              className={`inline-flex px-3 py-1 rounded-full font-[family-name:var(--font-body)] text-[0.72rem] font-semibold uppercase tracking-wider ${
+                status === 'published' ? 'bg-deep-green text-white' : 'bg-cream text-charcoal/60'
+              }`}
+            >
+              {status === 'published' ? 'Published' : 'Draft'}
+            </span>
+          </div>
+          {!canSubmit && (title.trim() !== '' || slug.trim() !== '') && (
+            <p className="font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/50">
+              Fill in the required fields to save.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-3">
@@ -444,6 +688,38 @@ export default function PostEditor({
 
 const inputClass =
   'w-full rounded-xl border border-charcoal/15 bg-white px-4 py-3 font-[family-name:var(--font-body)] text-[0.92rem] text-charcoal placeholder:text-charcoal/35 focus:outline-none focus:border-brand-green focus:ring-2 focus:ring-brand-green/25 transition-colors';
+
+function TypeCard({
+  active,
+  title,
+  description,
+  onClick,
+}: {
+  active: boolean;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`text-left rounded-xl border px-4 py-3 transition-colors cursor-pointer ${
+        active
+          ? 'border-brand-green bg-mint/40 ring-2 ring-brand-green/20'
+          : 'border-charcoal/15 bg-white hover:border-brand-green/60'
+      }`}
+    >
+      <span className="block font-[family-name:var(--font-body)] text-[0.92rem] font-semibold text-charcoal">
+        {title}
+      </span>
+      <span className="block mt-0.5 font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/50">
+        {description}
+      </span>
+    </button>
+  );
+}
 
 function Field({
   label,
@@ -500,26 +776,41 @@ function Toggle({
 function toDraft(post: AdminPost | null): PostDraft {
   if (!post) {
     return {
+      type: 'blog',
       slug: '',
       title: '',
       excerpt: '',
       body: '',
-      categoryId: '',
+      categoryId: null,
       coverImageUrl: null,
+      coverImageThumbUrl: null,
       linkLabel: null,
       linkUrl: null,
+      eventStart: null,
+      eventEnd: null,
+      locationText: null,
+      isOnline: false,
+      registrationUrl: null,
       status: 'draft',
     };
   }
+
   return {
+    type: post.type,
     slug: post.slug,
     title: post.title,
     excerpt: post.excerpt,
     body: post.body,
     categoryId: post.category_id,
     coverImageUrl: post.cover_image_url,
+    coverImageThumbUrl: post.cover_image_thumb_url,
     linkLabel: post.link_label,
     linkUrl: post.link_url,
+    eventStart: isoToLagosInput(post.event_start),
+    eventEnd: isoToLagosInput(post.event_end),
+    locationText: post.location_text,
+    isOnline: post.is_online,
+    registrationUrl: post.registration_url,
     status: post.status,
   };
 }

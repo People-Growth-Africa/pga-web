@@ -10,6 +10,7 @@ import { authRequest } from '../lib/authClient';
 import ContentImage from '../components/ContentImage';
 import { getFeaturedPost } from '../data/posts';
 import { useContent } from '../hooks/useContent';
+import { useLivePosts } from '../hooks/useLivePosts';
 import { isFirstPaint } from '../lib/firstPaint';
 import { mergeBlogCategories, mergeBlogPosts, type BlogView } from '../lib/contentMerge';
 
@@ -32,9 +33,11 @@ export default function BlogList() {
   // the same question on load and says so before anyone types an address.
   const formsAvailability = useFormsAvailability();
 
-  // The built-in posts plus anything new in the sheet, deduped by slug.
+  // The built-in posts, anything new in the sheet, and everything a manager has
+  // published, deduped by slug with the built-in page winning.
   const { entries } = useContent();
-  const allPosts = useMemo(() => mergeBlogPosts(entries), [entries]);
+  const live = useLivePosts();
+  const allPosts = useMemo(() => mergeBlogPosts(entries, live.posts), [entries, live.posts]);
   const categories = useMemo(() => mergeBlogCategories(allPosts), [allPosts]);
 
   // Featured stays the hand-picked built-in article; a sheet row never becomes

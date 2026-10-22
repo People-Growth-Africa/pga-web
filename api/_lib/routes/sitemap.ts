@@ -14,8 +14,8 @@ import { STATIC_SITEMAP_PATHS } from '../static-sitemap.js';
  * asked for - the static pages from the committed constant, plus the slug of
  * every published post.
  *
- * Drafts cannot appear here for the same reason they cannot appear on /updates:
- * the only query involved filters on status in SQL.
+ * Drafts cannot appear here for the same reason they cannot appear on /blog or
+ * /events: the only query involved filters on status in SQL.
  *
  * The response is cached at the edge. A new post is in the sitemap once that
  * copy turns over, which is the same window the feed itself uses.
@@ -45,9 +45,11 @@ export default endpoint({ methods: ['GET'] }, async (_req: VercelRequest, res: V
   };
 
   for (const path of STATIC_SITEMAP_PATHS) add(path);
-  // The feed page itself is not prerendered, so it is not in the constant.
-  add('/updates');
-  for (const slug of slugs) add(`/updates/${slug}`);
+  // A post lives under the section its type names, so the same slug can never
+  // appear at two paths.
+  for (const { slug, type } of slugs) {
+    add(`/${type === 'blog' ? 'blog' : 'events'}/${slug}`);
+  }
 
   const entries = locations
     .map(({ path, lastmod }) =>

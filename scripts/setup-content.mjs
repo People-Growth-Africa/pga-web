@@ -111,6 +111,99 @@ const STATEMENTS = [
   ['posts updated index', 'CREATE INDEX IF NOT EXISTS posts_updated_idx ON posts (updated_at DESC)'],
 ];
 
+/* ── Post types ─────────────────────────────────────────────────────────── */
+
+/**
+ * Every post is now one of two things: a blog post or an event.
+ *
+ * Added rather than restated: the columns arrive with `ADD COLUMN IF NOT
+ * EXISTS`, the constraints are dropped and recreated so running this twice is
+ * the same as running it once, and no row is rewritten except the backfill that
+ * exists precisely to give old rows a type.
+ *
+ * `category_id` loses NOT NULL here and is instead required of blog posts by a
+ * check constraint. That keeps the rule in one place - a category is a topic on
+ * a written piece, and an event has none - while the foreign key keeps refusing
+ * to delete a category that still has posts.
+ */
+async function migratePostTypes(sql) {
+  const columns = [
+    ['posts.type', `ALTER TABLE posts ADD COLUMN IF NOT EXISTS type text NOT NULL DEFAULT 'blog'`],
+    ['posts.event_start', 'ALTER TABLE posts ADD COLUMN IF NOT EXISTS event_start timestamptz'],
+    ['posts.event_end', 'ALTER TABLE posts ADD COLUMN IF NOT EXISTS event_end timestamptz'],
+    ['posts.location_text', 'ALTER TABLE posts ADD COLUMN IF NOT EXISTS location_text text'],
+    [
+      'posts.is_online',
+      'ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_online boolean NOT NULL DEFAULT false',
+    ],
+    ['posts.registration_url', 'ALTER TABLE posts ADD COLUMN IF NOT EXISTS registration_url text'],
+    ['posts.cover_image_thumb_url', 'ALTER TABLE posts ADD COLUMN IF NOT EXISTS cover_image_thumb_url text'],
+  ];
+
+  for (const [label, statement] of columns) {
+    await sql.query(statement);
+    console.log(`  ok  ${label}`);
+  }
+
+  // The default exists only so the ADD COLUMN above could fill in old rows.
+  // Dropping it means a future insert that forgets `type` is refused instead
+  // of quietly becoming a blog post.
+  await sql.query('ALTER TABLE posts ALTER COLUMN type DROP DEFAULT');
+
+  // Existing rows predate the type column, so they are blog posts by definition:
+  // the old /updates feed was the only place they could appear.
+  const backfilled = await sql.query(
+    `UPDATE posts SET type = 'blog' WHERE type IS NULL OR type = '' RETURNING id`,
+  );
+  if (backfilled.length > 0) console.log(`  ok  backfilled ${backfilled.length} existing post(s) to blog`);
+
+  // A topic is optional on an event and required on a written piece.
+  await sql.query('ALTER TABLE posts ALTER COLUMN category_id DROP NOT NULL');
+
+  const constraints = [
+    [
+      'posts_type_check',
+      `ALTER TABLE posts ADD CONSTRAINT posts_type_check CHECK (type IN ('blog', 'event'))`,
+    ],
+    [
+      'posts_category_by_type_check',
+      // One rule, stated once: a written piece has a topic, an event does not.
+      `ALTER TABLE posts ADD CONSTRAINT posts_category_by_type_check
+         CHECK ((type = 'blog' AND category_id IS NOT NULL)
+             OR (type = 'event' AND category_id IS NULL))`,
+    ],
+    [
+      'posts_event_start_check',
+      `ALTER TABLE posts ADD CONSTRAINT posts_event_start_check
+         CHECK (type <> 'event' OR event_start IS NOT NULL)`,
+    ],
+    [
+      'posts_event_time_check',
+      `ALTER TABLE posts ADD CONSTRAINT posts_event_time_check
+         CHECK (event_end IS NULL OR event_start IS NULL OR event_end > event_start)`,
+    ],
+    [
+      'posts_event_location_check',
+      // An online event has nowhere to be; an in-person one must say where.
+      `ALTER TABLE posts ADD CONSTRAINT posts_event_location_check
+         CHECK (type <> 'event' OR is_online OR location_text IS NOT NULL)`,
+    ],
+  ];
+
+  for (const [name, statement] of constraints) {
+    await sql.query(`ALTER TABLE posts DROP CONSTRAINT IF EXISTS ${name}`);
+    await sql.query(statement);
+    console.log(`  ok  ${name}`);
+  }
+
+  // The public pages ask for one type at a time, published only.
+  await sql.query(
+    `CREATE INDEX IF NOT EXISTS posts_type_published_idx
+       ON posts (type, published_at DESC) WHERE status = 'published'`,
+  );
+  console.log('  ok  posts_type_published_idx');
+}
+
 /** The six content types managers start with. Added on conflict do nothing. */
 const DEFAULT_CATEGORIES = [
   ['News', 'news'],
@@ -262,8 +355,8 @@ async function verify(sql) {
     if (!blocked) throw new Error('Self test: the manager guard let a public signup through.');
 
     const post = await sql.query(
-      `INSERT INTO posts (slug, title, excerpt, body, category_id, status, author_id)
-       VALUES ($1, $2, $3, $4, $5, 'draft', $6) RETURNING id, status, published_at`,
+      `INSERT INTO posts (type, slug, title, excerpt, body, category_id, status, author_id)
+       VALUES ('blog', $1, $2, $3, $4, $5, 'draft', $6) RETURNING id, status, published_at`,
       ['smoke-test-post', 'Smoke Test Post', 'An excerpt.', 'Body text.', insertedA.id, managerRows[0].id],
     );
     if (post.length !== 1 || post[0].published_at !== null) {
@@ -282,7 +375,7 @@ async function verify(sql) {
 
     // A slug collision is refused rather than silently suffixed.
     const duplicateSlug = await sql
-      .query(`INSERT INTO posts (slug, title, category_id) VALUES ($1, $2, $3)`, [
+      .query(`INSERT INTO posts (type, slug, title, category_id) VALUES ('blog', $1, $2, $3)`, [
         'smoke-test-post',
         'Another',
         insertedB.id,
@@ -316,8 +409,78 @@ async function verify(sql) {
       .catch((error) => error.code === '23001' || error.code === '23503');
     if (!restricted) throw new Error('Self test: a category with posts could be deleted.');
 
+    /* ── Post types ───────────────────────────────────────────────────────── */
+
+    // A constraint is working only if it refuses the bad row for its own
+    // reason: a 23514 from a different check would otherwise pass silently.
+    const refusedBy = async (promise, why) => {
+      try {
+        await promise;
+      } catch (error) {
+        if (error.code === '23514') return;
+        throw new Error(`Self test: ${why} was refused for another reason (${error.code ?? error.message}).`);
+      }
+      throw new Error(`Self test: ${why} was accepted.`);
+    };
+
+    // An unknown type is refused outright.
+    await refusedBy(
+      sql.query(`UPDATE posts SET type = 'article' WHERE id = $1`, [post[0].id]),
+      'an unknown post type',
+    );
+
+    // An event needs a start time...
+    await refusedBy(
+      sql.query(`UPDATE posts SET type = 'event', category_id = NULL WHERE id = $1`, [post[0].id]),
+      'an event without event_start',
+    );
+
+    // ...somewhere to be, unless it is online...
+    await refusedBy(
+      sql.query(
+        `UPDATE posts SET type = 'event', category_id = NULL,
+           event_start = now() + interval '1 day'
+         WHERE id = $1`,
+        [post[0].id],
+      ),
+      'an event with neither a location nor the online flag',
+    );
+
+    // ...and an end that comes after the start.
+    await refusedBy(
+      sql.query(
+        `UPDATE posts SET event_start = now() + interval '2 days',
+           event_end = now() + interval '1 day', is_online = true
+         WHERE id = $1`,
+        [post[0].id],
+      ),
+      'an event that ends before it starts',
+    );
+
+    // A well formed online event is accepted, and carries no topic.
+    const validEvent = await sql.query(
+      `UPDATE posts SET type = 'event', category_id = NULL, event_start = now() + interval '2 days',
+         event_end = NULL, is_online = true
+        WHERE id = $1 RETURNING type, category_id, is_online`,
+      [post[0].id],
+    );
+    if (validEvent[0].type !== 'event' || validEvent[0].category_id !== null) {
+      throw new Error('Self test: a valid online event was not stored as expected.');
+    }
+
+    // ...while a written piece still needs its topic.
+    await refusedBy(
+      sql.query(`UPDATE posts SET type = 'blog' WHERE id = $1`, [post[0].id]),
+      'a blog post with no category',
+    );
+
+    await sql.query(`UPDATE posts SET type = 'blog', category_id = $2 WHERE id = $1`, [
+      post[0].id,
+      insertedB.id,
+    ]);
+
     console.log(
-      '  ok  content self test passed (manager guard, draft/publish, slug uniqueness, status check, reassign, delete restricted)',
+      '  ok  content self test passed (manager guard, draft/publish, slug uniqueness, status check, reassign, delete restricted, post types, event fields)',
     );
   } finally {
     await sql.query('DELETE FROM posts WHERE slug LIKE $1', ['smoke-test-%']);
@@ -337,6 +500,9 @@ for (const [label, statement] of STATEMENTS) {
   await sql.query(statement);
   console.log(`  ok  ${label}`);
 }
+
+console.log('Adding post types and event fields...');
+await migratePostTypes(sql);
 
 console.log('Adding the manager role...');
 await allowManagerRole(sql);

@@ -45,6 +45,13 @@ type UploadBody = {
   filename?: unknown;
   contentType?: unknown;
   data?: unknown;
+  /**
+   * Which half of the cover pair this file is. The browser compresses one image
+   * into two WebP files - the full one for the article and a thumbnail for the
+   * grids - and uploads each through this endpoint. The variant only decides the
+   * folder it lands in, so a human browsing the store can see the pairing.
+   */
+  variant?: unknown;
 };
 
 /** The extensions we will store, and the bytes that actually identify them. */
@@ -134,13 +141,14 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req: VercelReq
   }
 
   const extension = TYPES[type].extension;
+  const variant = body.variant === 'thumb' ? 'thumb' : 'full';
   const stem = slugStem(typeof body.filename === 'string' ? body.filename : '');
   // Random suffix plus the content hash: two managers uploading the same photo
   // get two files, and a re-upload of an edited image never serves the old one
   // from a browser or CDN cache.
   const name = `${stem}-${randomBytes(6).toString('hex')}-${createHash('sha256').update(buffer).digest('hex').slice(0, 8)}.${extension}`;
 
-  const blob = await put(`covers/${name}`, buffer, {
+  const blob = await put(`covers/${variant}/${name}`, buffer, {
     access: 'public',
     contentType: TYPES[type].contentType,
     allowOverwrite: false,
@@ -149,6 +157,7 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req: VercelReq
   sendJson(res, 201, {
     url: blob.url,
     pathname: blob.pathname,
+    variant,
     size: buffer.length,
     contentType: TYPES[type].contentType,
   });

@@ -19,8 +19,6 @@ import VerifyEmail from './pages/VerifyEmail';
 import NewsletterConfirm from './pages/NewsletterConfirm';
 import TalentDashboard from './pages/TalentDashboard';
 import EmployerDashboard from './pages/EmployerDashboard';
-import Updates from './pages/Updates';
-import UpdateDetail from './pages/UpdateDetail';
 import AdminContent from './pages/admin/AdminContent';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
@@ -64,15 +62,10 @@ function AnimatedRoutes() {
           <Route path="/events/:slug" element={<EventDetail />} />
           <Route path="/blog" element={<BlogList />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
-          {/* /updates was a short-lived section of its own; sheet content now
-              feeds the existing blog and events pages. Old links land on the
-              blog rather than on a 404 (vercel.json also redirects them
-              permanently, before this JS has a chance to run). */}
-          {/* Manager-published posts. /updates used to redirect to /blog; it is
-              a section of its own again, and the redirects that sent it to the
-              blog are gone from vercel.json too. */}
-          <Route path="/updates" element={<Updates />} />
-          <Route path="/updates/:slug" element={<UpdateDetail />} />
+          {/* /updates is gone. Every post is a blog post or an event, and both
+              sections render manager-published rows alongside the built-in and
+              sheet content. Old /updates URLs are simply not routes any more,
+              which is fine while nothing has shipped. */}
           <Route path="/consultation" element={<BookConsultation />} />
           <Route path="/book" element={<BookConsultation />} />
           {/* Accounts are off, so the sign up page shows the two Google Form

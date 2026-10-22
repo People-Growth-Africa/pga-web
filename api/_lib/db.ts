@@ -494,6 +494,8 @@ const isoTimestamp = (table: string, column: string): string =>
 
 export type PostStatus = 'draft' | 'published';
 
+export type PostType = 'blog' | 'event';
+
 export type CategoryRow = {
   id: string;
   name: string;
@@ -504,16 +506,24 @@ export type CategoryRow = {
 
 export type PostRow = {
   id: string;
+  type: PostType;
   slug: string;
   title: string;
   excerpt: string;
   body: string;
-  category_id: string;
-  category_name: string;
-  category_slug: string;
+  /** Null on an event: a category is a topic on a written piece. */
+  category_id: string | null;
+  category_name: string | null;
+  category_slug: string | null;
   cover_image_url: string | null;
+  cover_image_thumb_url: string | null;
   link_label: string | null;
   link_url: string | null;
+  event_start: string | null;
+  event_end: string | null;
+  location_text: string | null;
+  is_online: boolean;
+  registration_url: string | null;
   status: PostStatus;
   published_at: string | null;
   created_at: string;
@@ -521,15 +531,20 @@ export type PostRow = {
   author_id: string | null;
 };
 
-const POST_COLUMNS = `p.id, p.slug, p.title, p.excerpt, p.body, p.category_id,
+const POST_COLUMNS = `p.id, p.type, p.slug, p.title, p.excerpt, p.body, p.category_id,
          c.name AS category_name, c.slug AS category_slug,
-         p.cover_image_url, p.link_label, p.link_url, p.status,
+         p.cover_image_url, p.cover_image_thumb_url, p.link_label, p.link_url,
+         ${isoTimestamp('p', 'event_start')} AS event_start,
+         ${isoTimestamp('p', 'event_end')} AS event_end,
+         p.location_text, p.is_online, p.registration_url, p.status,
          ${isoTimestamp('p', 'published_at')} AS published_at,
          ${isoTimestamp('p', 'created_at')} AS created_at,
          ${isoTimestamp('p', 'updated_at')} AS updated_at,
          p.author_id`;
 
-const POST_FROM = `FROM posts p JOIN categories c ON c.id = p.category_id`;
+// LEFT JOIN, not JOIN: an event carries no category, and an inner join would
+// quietly drop every event from every list.
+const POST_FROM = `FROM posts p LEFT JOIN categories c ON c.id = p.category_id`;
 
 export async function listCategories(): Promise<CategoryRow[]> {
   return query<CategoryRow>(
@@ -595,6 +610,7 @@ export async function deleteCategory(id: string): Promise<boolean> {
 }
 
 export type PostListFilter = {
+  type?: PostType;
   status?: PostStatus;
   categoryId?: string;
   search?: string;
@@ -608,6 +624,10 @@ export async function listPostsForAdmin(filter: PostListFilter = {}): Promise<Po
   const where: string[] = [];
   const params: unknown[] = [];
 
+  if (filter.type) {
+    params.push(filter.type);
+    where.push(`p.type = $${params.length}`);
+  }
   if (filter.status) {
     params.push(filter.status);
     where.push(`p.status = $${params.length}`);
@@ -634,11 +654,13 @@ export async function listPostsForAdmin(filter: PostListFilter = {}): Promise<Po
  * out afterwards, so there is no code path that could forget: a draft row never
  * leaves the database through this function.
  */
-export async function listPublishedPosts(): Promise<PostRow[]> {
+export async function listPublishedPosts(type?: PostType): Promise<PostRow[]> {
   return query<PostRow>(
     `SELECT ${POST_COLUMNS} ${POST_FROM}
       WHERE p.status = 'published'
+      ${type ? 'AND p.type = $1' : ''}
       ORDER BY p.published_at DESC`,
+    type ? [type] : [],
   );
 }
 
@@ -655,33 +677,48 @@ export async function findPostById(id: string): Promise<PostRow | null> {
 }
 
 export async function insertPost(input: {
+  type: PostType;
   slug: string;
   title: string;
   excerpt: string;
   body: string;
-  categoryId: string;
+  categoryId: string | null;
   coverImageUrl: string | null;
+  coverImageThumbUrl: string | null;
   linkLabel: string | null;
   linkUrl: string | null;
+  eventStart: string | null;
+  eventEnd: string | null;
+  locationText: string | null;
+  isOnline: boolean;
+  registrationUrl: string | null;
   status: PostStatus;
   authorId: string;
 }): Promise<string | null> {
   const row = await queryOne<{ id: string }>(
     `INSERT INTO posts
-       (slug, title, excerpt, body, category_id, cover_image_url, link_label, link_url,
+       (type, slug, title, excerpt, body, category_id, cover_image_url, cover_image_thumb_url,
+        link_label, link_url, event_start, event_end, location_text, is_online, registration_url,
         status, published_at, author_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-             CASE WHEN $9 = 'published' THEN now() ELSE NULL END, $10)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+             $16, CASE WHEN $16 = 'published' THEN now() ELSE NULL END, $17)
      RETURNING id`,
     [
+      input.type,
       input.slug,
       input.title,
       input.excerpt,
       input.body,
       input.categoryId,
       input.coverImageUrl,
+      input.coverImageThumbUrl,
       input.linkLabel,
       input.linkUrl,
+      input.eventStart,
+      input.eventEnd,
+      input.locationText,
+      input.isOnline,
+      input.registrationUrl,
       input.status,
       input.authorId,
     ],
@@ -696,43 +733,64 @@ export async function insertPost(input: {
  */
 export async function updatePost(input: {
   id: string;
+  type: PostType;
   slug: string;
   title: string;
   excerpt: string;
   body: string;
-  categoryId: string;
+  categoryId: string | null;
   coverImageUrl: string | null;
+  coverImageThumbUrl: string | null;
   linkLabel: string | null;
   linkUrl: string | null;
+  eventStart: string | null;
+  eventEnd: string | null;
+  locationText: string | null;
+  isOnline: boolean;
+  registrationUrl: string | null;
   status: PostStatus;
 }): Promise<{ id: string } | null> {
   return queryOne<{ id: string }>(
     `UPDATE posts
-        SET slug = $2,
-            title = $3,
-            excerpt = $4,
-            body = $5,
-            category_id = $6,
-            cover_image_url = $7,
-            link_label = $8,
-            link_url = $9,
-            status = $10,
+        SET type = $2,
+            slug = $3,
+            title = $4,
+            excerpt = $5,
+            body = $6,
+            category_id = $7,
+            cover_image_url = $8,
+            cover_image_thumb_url = $9,
+            link_label = $10,
+            link_url = $11,
+            event_start = $12,
+            event_end = $13,
+            location_text = $14,
+            is_online = $15,
+            registration_url = $16,
+            status = $17,
             published_at = CASE
-              WHEN $10 = 'published' THEN coalesce(published_at, now())
+              WHEN $17 = 'published' THEN coalesce(published_at, now())
               ELSE NULL END,
             updated_at = now()
       WHERE id = $1
       RETURNING id`,
     [
       input.id,
+      input.type,
       input.slug,
       input.title,
       input.excerpt,
       input.body,
       input.categoryId,
       input.coverImageUrl,
+      input.coverImageThumbUrl,
       input.linkLabel,
       input.linkUrl,
+      input.eventStart,
+      input.eventEnd,
+      input.locationText,
+      input.isOnline,
+      input.registrationUrl,
       input.status,
     ],
   );
@@ -743,10 +801,14 @@ export async function deletePost(id: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** The published slugs, for the sitemap. No bodies, so this stays small. */
-export async function listPublishedSlugs(): Promise<string[]> {
-  const rows = await query<{ slug: string }>(
-    `SELECT slug FROM posts WHERE status = 'published' ORDER BY slug`,
+/**
+ * The published slugs, for the sitemap. No bodies, so this stays small.
+ *
+ * The type travels with each slug because the public path depends on it now:
+ * a blog post lives at /blog/<slug> and an event at /events/<slug>.
+ */
+export async function listPublishedSlugs(): Promise<{ slug: string; type: PostType }[]> {
+  return query<{ slug: string; type: PostType }>(
+    `SELECT slug, type FROM posts WHERE status = 'published' ORDER BY slug`,
   );
-  return rows.map((row) => row.slug);
 }

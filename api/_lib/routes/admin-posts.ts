@@ -8,7 +8,14 @@ import {
   sendJson,
 } from '../http.js';
 import { requireManager } from '../manager.js';
-import { parseInput, postByIdSchema, postCreateSchema, postListQuerySchema, postUpdateSchema } from '../validation.js';
+import {
+  parseInput,
+  postByIdSchema,
+  postCreateSchema,
+  postListQuerySchema,
+  postStatusSchema,
+  postUpdateSchema,
+} from '../validation.js';
 import {
   deletePost,
   findPostById,
@@ -20,6 +27,7 @@ import {
 } from '../db.js';
 import { enforceRateLimit } from '../ratelimit.js';
 import { markContentChanged } from '../content/version.js';
+import { deleteCoverBlobs } from '../cover-blobs.js';
 
 /**
  * POST /api/admin/posts        - list, with optional status/category/search filters
@@ -70,6 +78,7 @@ export default endpoint({ methods: ['GET', 'PUT', 'POST', 'DELETE'], csrf: true 
 async function listHandler(req: VercelRequest, res: VercelResponse): Promise<void> {
   const query = req.query ?? {};
   const filter = parseInput(postListQuerySchema, {
+    ...(typeof query.type === 'string' ? { type: query.type } : {}),
     ...(typeof query.status === 'string' ? { status: query.status } : {}),
     ...(typeof query.categoryId === 'string' ? { categoryId: query.categoryId } : {}),
     ...(typeof query.search === 'string' ? { search: query.search } : {}),
@@ -83,23 +92,60 @@ async function listHandler(req: VercelRequest, res: VercelResponse): Promise<voi
   sendJson(res, 200, { posts, categories });
 }
 
+/**
+ * The columns a write always carries, whichever handler is saving.
+ *
+ * Kept in one place so create and update cannot drift: an event field added to
+ * insertPost but forgotten in updatePost is the kind of bug that only shows up
+ * when someone edits the event they just made.
+ */
+function postColumnsFrom(data: {
+  type: 'blog' | 'event';
+  slug: string;
+  title: string;
+  excerpt: string;
+  body: string;
+  categoryId?: string | null;
+  coverImageUrl?: string | null;
+  coverImageThumbUrl?: string | null;
+  linkLabel?: string | null;
+  linkUrl?: string | null;
+  eventStart?: string | null;
+  eventEnd?: string | null;
+  locationText?: string | null;
+  isOnline?: boolean;
+  registrationUrl?: string | null;
+  status: 'draft' | 'published';
+}) {
+  return {
+    type: data.type,
+    slug: data.slug,
+    title: data.title,
+    excerpt: data.excerpt,
+    body: data.body,
+    categoryId: data.categoryId ?? null,
+    coverImageUrl: data.coverImageUrl ?? null,
+    coverImageThumbUrl: data.coverImageThumbUrl ?? null,
+    linkLabel: data.linkLabel ?? null,
+    linkUrl: data.linkUrl ?? null,
+    eventStart: data.eventStart ?? null,
+    eventEnd: data.eventEnd ?? null,
+    locationText: data.locationText ?? null,
+    isOnline: Boolean(data.isOnline),
+    registrationUrl: data.registrationUrl ?? null,
+    status: data.status,
+  };
+}
+
 async function createHandler(req: VercelRequest, res: VercelResponse, userId: string): Promise<void> {
   await writeRateLimit(userId, 'admin-post-write');
   const data = parseInput(postCreateSchema, parseJsonBody(req, MAX_ADMIN_BODY_BYTES));
 
-  await assertCategoryExists(data.categoryId);
+  await assertCategoryExists(data.categoryId ?? null);
 
   try {
     const id = await insertPost({
-      slug: data.slug,
-      title: data.title,
-      excerpt: data.excerpt,
-      body: data.body,
-      categoryId: data.categoryId,
-      coverImageUrl: data.coverImageUrl ?? null,
-      linkLabel: data.linkLabel ?? null,
-      linkUrl: data.linkUrl ?? null,
-      status: data.status,
+      ...postColumnsFrom(data),
       authorId: userId,
     });
     if (!id) throw new ApiError(500, 'not_saved', 'The post could not be saved. Try again.');
@@ -122,22 +168,24 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
   const existing = await findPostById(data.id);
   if (!existing) throw new ApiError(404, 'not_found', 'That post could not be found.');
 
-  await assertCategoryExists(data.categoryId);
+  await assertCategoryExists(data.categoryId ?? null);
 
   try {
     const updated = await updatePost({
       id: data.id,
-      slug: data.slug,
-      title: data.title,
-      excerpt: data.excerpt,
-      body: data.body,
-      categoryId: data.categoryId,
-      coverImageUrl: data.coverImageUrl ?? null,
-      linkLabel: data.linkLabel ?? null,
-      linkUrl: data.linkUrl ?? null,
-      status: data.status,
+      ...postColumnsFrom(data),
     });
     if (!updated) throw new ApiError(500, 'not_saved', 'The post could not be saved. Try again.');
+
+    // The two files a cover is made of are replaced together. Whatever the row
+    // used to point at and no longer does is deleted here: object storage has no
+    // cascade, and a replaced cover would otherwise sit in the store forever.
+    await deleteCoverBlobs([
+      existing.cover_image_url !== data.coverImageUrl ? existing.cover_image_url : null,
+      existing.cover_image_thumb_url !== data.coverImageThumbUrl
+        ? existing.cover_image_thumb_url
+        : null,
+    ]);
 
     markContentChanged();
     const post = await findPostById(data.id);
@@ -157,10 +205,9 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
  */
 async function statusHandler(req: VercelRequest, res: VercelResponse, userId: string): Promise<void> {
   await writeRateLimit(userId, 'admin-post-write');
-  const { id, status } = parseInput(
-    postUpdateSchema.pick({ id: true, status: true }),
-    parseJsonBody(req),
-  );
+  // The status schema rather than a `.pick` of the update one: that schema is
+  // now a refinement plus a transform, which has nothing left to pick from.
+  const { id, status } = parseInput(postStatusSchema, parseJsonBody(req));
 
   const existing = await findPostById(id);
   if (!existing) throw new ApiError(404, 'not_found', 'That post could not be found.');
@@ -171,10 +218,17 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
     title: existing.title,
     excerpt: existing.excerpt,
     body: existing.body,
+    type: existing.type,
     categoryId: existing.category_id,
     coverImageUrl: existing.cover_image_url,
+    coverImageThumbUrl: existing.cover_image_thumb_url,
     linkLabel: existing.link_label,
     linkUrl: existing.link_url,
+    eventStart: existing.event_start,
+    eventEnd: existing.event_end,
+    locationText: existing.location_text,
+    isOnline: existing.is_online,
+    registrationUrl: existing.registration_url,
     status,
   });
   if (!updated) throw new ApiError(500, 'not_saved', 'That change could not be saved. Try again.');
@@ -194,11 +248,20 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, userId: st
   const deleted = await deletePost(id);
   if (!deleted) throw new ApiError(404, 'not_found', 'That post could not be found.');
 
+  // Deleting the row is the point; the cover files go with it.
+  await deleteCoverBlobs([existing.cover_image_url, existing.cover_image_thumb_url]);
+
   markContentChanged();
   sendJson(res, 200, { ok: true, deleted: { id, slug: existing.slug, title: existing.title } });
 }
 
-async function assertCategoryExists(categoryId: string): Promise<void> {
+/**
+ * Only a blog post has a category, so there is nothing to check for an event.
+ * The foreign key would still refuse an unknown id; this turns that into a
+ * message under the field instead of a constraint error.
+ */
+async function assertCategoryExists(categoryId: string | null): Promise<void> {
+  if (!categoryId) return;
   const categories = await listCategories();
   if (!categories.some((category) => category.id === categoryId)) {
     throw new ApiError(400, 'validation_failed', 'Choose a category.', {

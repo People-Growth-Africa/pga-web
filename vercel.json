@@ -25,10 +25,23 @@
       "destination": "/api/[...path]"
     },
     {
+      "source": "/blog/:slug",
+      "destination": "/api/[...path]?path=post&type=blog&slug=:slug"
+    },
+    {
+      "source": "/events/:slug",
+      "destination": "/api/[...path]?path=post&type=event&slug=:slug"
+    },
+    {
       "source": "/(.*)",
       "destination": "/spa-fallback.html"
     }
   ],
+  "functions": {
+    "api/[...path].ts": {
+      "includeFiles": "{dist/spa-fallback.html,dist/index.html}"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

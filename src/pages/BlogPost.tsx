@@ -5,8 +5,10 @@ import { canonicalUrl, blogMeta } from '../lib/pageMeta';
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import ContentImage from '../components/ContentImage';
 import SafeContent from '../components/SafeContent';
+import PostBody from '../components/PostBody';
 import SEO from '../components/SEO';
 import { useContent } from '../hooks/useContent';
+import { useLivePosts } from '../hooks/useLivePosts';
 import {
   findBlog,
   mergeBlogCategories,
@@ -16,10 +18,14 @@ import {
 export default function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>();
   const { status: contentStatus, entries } = useContent();
+  const live = useLivePosts();
 
-  const allPosts = useMemo(() => mergeBlogPosts(entries), [entries]);
+  const allPosts = useMemo(() => mergeBlogPosts(entries, live.posts), [entries, live.posts]);
   const categories = useMemo(() => mergeBlogCategories(allPosts), [allPosts]);
-  const post = useMemo(() => (slug ? findBlog(slug, entries) : undefined), [slug, entries]);
+  const post = useMemo(
+    () => (slug ? findBlog(slug, entries, live.posts) : undefined),
+    [slug, entries, live.posts],
+  );
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -33,9 +39,10 @@ export default function BlogPostPage() {
     return [...sameCategory, ...rest].slice(0, 3);
   }, [post, allPosts]);
 
-  // A sheet post is only known once /api/content answers, so a deep link waits
-  // instead of showing the 404 page first. Built-in posts never wait.
-  if (!post && contentStatus === 'loading') {
+  // A sheet post is known once /api/content answers and a manager's post once
+  // /api/posts does, so a deep link waits for both instead of showing the 404
+  // page first. Built-in posts never wait.
+  if (!post && (contentStatus === 'loading' || live.status === 'loading')) {
     return (
       <>
         <SEO title="Article | People Growth Africa" description="An article from People Growth Africa." />
@@ -174,10 +181,10 @@ export default function BlogPostPage() {
 
       {/* ── Hero ─────────────────────────────────────── */}
       <section className="relative bg-deep-green pt-[140px] pb-[80px] overflow-hidden">
-        {post.image && (
+        {(post.detailImage ?? post.image) && (
           <div className="absolute inset-0 z-0">
             <img
-              src={post.image}
+              src={post.detailImage ?? post.image ?? undefined}
               alt=""
               className="w-full h-full object-cover opacity-20"
               loading="eager"
@@ -221,7 +228,7 @@ export default function BlogPostPage() {
             {/* Featured image on larger screens */}
             <div className="rounded-[20px] overflow-hidden mb-10 aspect-[16/9] bg-mint">
               <ContentImage
-                src={post.image || '/images/og-image.jpg'}
+                src={post.detailImage || post.image || '/images/og-image.jpg'}
                 alt={post.title}
                 className="w-full h-full"
                 eager
@@ -240,10 +247,15 @@ export default function BlogPostPage() {
             </div>
 
             {/* Article body. Built-in posts go through the existing renderer;
-                sheet bodies are rendered as React nodes, never as HTML. */}
+                sheet bodies use the older subset renderer; a manager-written
+                post uses the same renderer as the editor's preview, so what the
+                manager approved is what the reader gets. All three build React
+                nodes - the body is never parsed as HTML. */}
             <article className="prose-custom">
               {post.origin === 'sheet' ? (
                 <SafeContent body={post.content} />
+              ) : post.origin === 'live' ? (
+                <PostBody body={post.content} />
               ) : (
                 renderContent(post.content)
               )}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { slugify } from '../../lib/updates';
+import { slugify } from '../../lib/published';
 import { createCategory, deleteCategory, updateCategory, type AdminCategory } from './contentClient';
 
 /**
@@ -211,7 +211,7 @@ export default function CategoriesDialog({
                   className={inputClass}
                 />
                 <p className="mt-1.5 font-[family-name:var(--font-body)] text-[0.75rem] text-charcoal/45 break-all">
-                  /updates?category={slug || 'slug'}
+                  /blog?category={slug || 'slug'}
                 </p>
               </div>
 

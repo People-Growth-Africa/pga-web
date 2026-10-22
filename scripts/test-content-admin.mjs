@@ -4,8 +4,12 @@
  *
  *   - a manager account cannot be produced by public signup
  *   - every admin endpoint refuses a missing session and a non-manager session
- *   - a manager can create, edit, publish, unpublish and delete posts
- *   - a draft is reachable from neither /api/updates nor the sitemap
+ *   - a manager can create, edit, publish, unpublish and delete blog posts and
+ *     events, and the type and date rules are enforced by the server
+ *   - a draft is reachable from neither /api/posts nor the sitemap, whichever
+ *     type it is
+ *   - /updates is gone: the old feed endpoint answers 404
+ *   - a published post's page carries its own head tags and a real status code
  *   - categories can be created, renamed and deleted, and a category with posts
  *     is refused until its posts are moved
  *
@@ -17,6 +21,9 @@
  * accounts.
  */
 import { createHash, randomBytes } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { loadEnvFiles, startApiServer } from './api-server.mjs';
 import { checkApiImports } from './check-api-imports.mjs';
@@ -26,6 +33,15 @@ const TALENT_EMAIL = `test-content-talent-${STAMP}@example.com`;
 const MANAGER_EMAIL = `test-content-manager-${STAMP}@example.com`;
 const PASSWORD = `Str0ng-${randomBytes(9).toString('base64url')}`;
 const POST_PREFIX = `test-content-${STAMP}`;
+const BLOG_SLUG = `${POST_PREFIX}-post`;
+const EVENT_SLUG = `${POST_PREFIX}-event`;
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(here, '..');
+const SITE = 'https://www.peoplegrowthafrica.com';
+
+/** The page handler reads dist/spa-fallback.html; without a build it cannot run. */
+const built = fs.existsSync(path.join(root, 'dist', 'spa-fallback.html'));
 
 const results = [];
 let failures = 0;
@@ -34,6 +50,12 @@ function check(number, description, passed, detail = '') {
   results.push({ number, description, passed, detail });
   if (!passed) failures += 1;
   console.log(`${passed ? 'PASS' : 'FAIL'}  ${String(number).padStart(2)}. ${description}${detail ? ` (${detail})` : ''}`);
+}
+
+/** Documented as deliberately not run, rather than silently counted as passing. */
+function skip(number, description, reason) {
+  results.push({ number, description, passed: true, skipped: true, detail: reason });
+  console.log(`SKIP  ${String(number).padStart(2)}. ${description} (${reason})`);
 }
 
 /* ── HTTP with a cookie jar ───────────────────────────────────────────────── */
@@ -69,7 +91,7 @@ function makeClient(origin) {
         json = null;
       }
     }
-    return { status: response.status, json, text };
+    return { status: response.status, json, text, headers: response.headers };
   };
 }
 
@@ -84,6 +106,40 @@ async function hashPassword(plain) {
   const bcrypt = (await import('bcryptjs')).default;
   const preHashed = createHash('sha256').update(plain, 'utf8').digest('base64');
   return bcrypt.hash(preHashed, 12);
+}
+
+/** The bodies a blog post is written with, so each test only states its change. */
+function blogBody(overrides = {}) {
+  return {
+    type: 'blog',
+    slug: BLOG_SLUG,
+    title: 'A test post',
+    excerpt: 'Short summary for the test.',
+    body: 'First paragraph.\n\nSecond paragraph with **bold**.',
+    categoryId: null,
+    coverImageUrl: null,
+    linkLabel: null,
+    linkUrl: null,
+    status: 'draft',
+    ...overrides,
+  };
+}
+
+function eventBody(overrides = {}) {
+  return {
+    type: 'event',
+    slug: EVENT_SLUG,
+    title: 'A test event',
+    excerpt: 'One evening with the team.',
+    body: 'Come along.',
+    isOnline: true,
+    eventStart: '2027-03-18T08:00:00.000Z',
+    eventEnd: null,
+    locationText: null,
+    registrationUrl: null,
+    status: 'draft',
+    ...overrides,
+  };
 }
 
 async function main() {
@@ -136,6 +192,7 @@ async function main() {
   const manager = makeClient(origin);
 
   let createdPostId = null;
+  let createdEventId = null;
   let createdCategoryId = null;
   let secondCategoryId = null;
 
@@ -250,43 +307,28 @@ async function main() {
     /* ── Posts ───────────────────────────────────────────────────────────── */
 
     const firstCategory = adminManager.json?.categories?.[0];
-    check(9, 'the six default categories are seeded', (adminManager.json?.categories?.length ?? 0) >= 6, `${adminManager.json?.categories?.length ?? 0} categories`);
+    check(
+      9,
+      'the six default categories are seeded',
+      (adminManager.json?.categories?.length ?? 0) >= 6,
+      `${adminManager.json?.categories?.length ?? 0} categories`,
+    );
 
     const created = await manager('/api/admin/posts', {
       method: 'PUT',
-      body: {
-        slug: `${POST_PREFIX}-post`,
-        title: 'A test update',
-        excerpt: 'Short summary for the test.',
-        body: 'First paragraph.\n\nSecond paragraph with **bold**.',
-        categoryId: firstCategory.id,
-        coverImageUrl: null,
-        linkLabel: null,
-        linkUrl: null,
-        status: 'draft',
-      },
+      body: blogBody({ title: 'A test post', categoryId: firstCategory.id }),
     });
     createdPostId = created.json?.post?.id ?? null;
     check(
       10,
-      'a manager can create a draft post',
-      created.status === 201 && Boolean(createdPostId),
+      'a manager can create a draft blog post',
+      created.status === 201 && Boolean(createdPostId) && created.json?.post?.type === 'blog',
       `status ${created.status}`,
     );
 
     const duplicate = await manager('/api/admin/posts', {
       method: 'PUT',
-      body: {
-        slug: `${POST_PREFIX}-post`,
-        title: 'Collision',
-        excerpt: '',
-        body: '',
-        categoryId: firstCategory.id,
-        coverImageUrl: null,
-        linkLabel: null,
-        linkUrl: null,
-        status: 'draft',
-      },
+      body: blogBody({ title: 'Collision', excerpt: '', body: '', categoryId: firstCategory.id }),
     });
     check(
       11,
@@ -297,17 +339,13 @@ async function main() {
 
     const badCategory = await manager('/api/admin/posts', {
       method: 'PUT',
-      body: {
+      body: blogBody({
         slug: `${POST_PREFIX}-nope`,
         title: 'Bad category',
         excerpt: '',
         body: '',
         categoryId: '00000000-0000-4000-8000-000000000000',
-        coverImageUrl: null,
-        linkLabel: null,
-        linkUrl: null,
-        status: 'draft',
-      },
+      }),
     });
     check(
       12,
@@ -316,24 +354,128 @@ async function main() {
       `status ${badCategory.status}`,
     );
 
-    // A draft must not be reachable from the public feed.
-    const feedWhileDraft = await anonymous('/api/updates', { method: 'GET' });
-    const draftVisible = (feedWhileDraft.json?.posts ?? []).some(
-      (post) => post.slug === `${POST_PREFIX}-post`,
-    );
+    /* ── The type rules, enforced server side ───────────────────────────── */
+
+    const noType = await manager('/api/admin/posts', {
+      method: 'PUT',
+      body: (() => {
+        const body = blogBody({ slug: `${POST_PREFIX}-untyped`, categoryId: firstCategory.id });
+        delete body.type;
+        return body;
+      })(),
+    });
     check(
       13,
-      'a draft is not in the public feed',
-      feedWhileDraft.status === 200 && !draftVisible,
+      'a post without a type is refused',
+      noType.status === 400 && Boolean(noType.json?.fields?.type),
+      `status ${noType.status} field ${noType.json?.fields?.type ?? 'none'}`,
+    );
+
+    const badType = await manager('/api/admin/posts', {
+      method: 'PUT',
+      body: blogBody({ slug: `${POST_PREFIX}-wrong-type`, type: 'update' }),
+    });
+    check(
+      14,
+      'an unknown type is refused',
+      badType.status === 400,
+      `status ${badType.status}`,
+    );
+
+    const noStart = await manager('/api/admin/posts', {
+      method: 'PUT',
+      body: eventBody({ slug: `${POST_PREFIX}-no-start`, eventStart: null }),
+    });
+    check(
+      15,
+      'an event without a start time is refused',
+      noStart.status === 400 && Boolean(noStart.json?.fields?.eventStart),
+      `status ${noStart.status} field ${noStart.json?.fields?.eventStart ?? 'none'}`,
+    );
+
+    const backwards = await manager('/api/admin/posts', {
+      method: 'PUT',
+      body: eventBody({
+        slug: `${POST_PREFIX}-backwards`,
+        eventStart: '2027-03-18T08:00:00.000Z',
+        eventEnd: '2027-03-18T07:00:00.000Z',
+      }),
+    });
+    check(
+      16,
+      'an event ending before it starts is refused',
+      backwards.status === 400 && Boolean(backwards.json?.fields?.eventEnd),
+      `status ${backwards.status} field ${backwards.json?.fields?.eventEnd ?? 'none'}`,
+    );
+
+    const noVenue = await manager('/api/admin/posts', {
+      method: 'PUT',
+      body: eventBody({ slug: `${POST_PREFIX}-no-venue`, isOnline: false, locationText: null }),
+    });
+    check(
+      17,
+      'an in-person event without a venue is refused',
+      noVenue.status === 400 && Boolean(noVenue.json?.fields?.locationText),
+      `status ${noVenue.status} field ${noVenue.json?.fields?.locationText ?? 'none'}`,
+    );
+
+    // An online event needs no venue, so the same body without one is accepted.
+    const createdEvent = await manager('/api/admin/posts', {
+      method: 'PUT',
+      body: eventBody({ title: 'A test event' }),
+    });
+    createdEventId = createdEvent.json?.post?.id ?? null;
+    check(
+      18,
+      'an online event with no venue is accepted',
+      createdEvent.status === 201 &&
+        Boolean(createdEventId) &&
+        createdEvent.json?.post?.type === 'event' &&
+        createdEvent.json?.post?.is_online === true,
+      `status ${createdEvent.status}`,
+    );
+    check(
+      19,
+      'the event keeps its UTC instant',
+      createdEvent.json?.post?.event_start === '2027-03-18T08:00:00.000Z',
+      String(createdEvent.json?.post?.event_start ?? 'null'),
+    );
+
+    /* ── Drafts are private, on both routes ─────────────────────────────── */
+
+    const feedWhileDraft = await anonymous('/api/posts', { method: 'GET' });
+    const draftSlugs = new Set((feedWhileDraft.json?.posts ?? []).map((post) => post.slug));
+    check(
+      20,
+      'a draft blog post is not in the public feed',
+      feedWhileDraft.status === 200 && !draftSlugs.has(BLOG_SLUG),
+      `status ${feedWhileDraft.status}`,
+    );
+    check(
+      21,
+      'a draft event is not in the public feed',
+      feedWhileDraft.status === 200 && !draftSlugs.has(EVENT_SLUG),
       `status ${feedWhileDraft.status}`,
     );
 
     const sitemapWhileDraft = await anonymous('/api/sitemap', { method: 'GET' });
     check(
-      14,
-      'a draft is not in the sitemap',
-      sitemapWhileDraft.status === 200 && !sitemapWhileDraft.text.includes(`${POST_PREFIX}-post`),
+      22,
+      'a draft is in neither section of the sitemap',
+      sitemapWhileDraft.status === 200 &&
+        !sitemapWhileDraft.text.includes(`/blog/${BLOG_SLUG}`) &&
+        !sitemapWhileDraft.text.includes(`/events/${EVENT_SLUG}`),
       `status ${sitemapWhileDraft.status}`,
+    );
+
+    /* ── /updates is gone ────────────────────────────────────────────────── */
+
+    const oldFeed = await anonymous('/api/updates', { method: 'GET' });
+    check(
+      23,
+      'the retired /api/updates endpoint answers 404',
+      oldFeed.status === 404,
+      `status ${oldFeed.status}`,
     );
 
     /* ── Publish ─────────────────────────────────────────────────────────── */
@@ -343,61 +485,195 @@ async function main() {
       body: { id: createdPostId, status: 'published' },
     });
     check(
-      15,
+      24,
       'a manager can publish a post',
       published.status === 200 && published.json?.post?.status === 'published',
       `status ${published.status}`,
     );
     check(
-      16,
+      25,
       'publishing stamps published_at',
       Boolean(published.json?.post?.published_at),
       String(published.json?.post?.published_at ?? 'null'),
     );
 
-    const feedWhilePublished = await anonymous('/api/updates', { method: 'GET' });
+    const publishedEvent = await manager('/api/admin/post-status', {
+      method: 'POST',
+      body: { id: createdEventId, status: 'published' },
+    });
     check(
-      17,
-      'a published post appears in the public feed',
-      (feedWhilePublished.json?.posts ?? []).some((post) => post.slug === `${POST_PREFIX}-post`),
-      `status ${feedWhilePublished.status}`,
+      26,
+      'a manager can publish an event',
+      publishedEvent.status === 200 && publishedEvent.json?.post?.status === 'published',
+      `status ${publishedEvent.status}`,
+    );
+
+    const feedWhilePublished = await anonymous('/api/posts', { method: 'GET' });
+    const feedRows = feedWhilePublished.json?.posts ?? [];
+    const blogRow = feedRows.find((post) => post.slug === BLOG_SLUG);
+    const eventRow = feedRows.find((post) => post.slug === EVENT_SLUG);
+    check(
+      27,
+      'the published blog post appears in the feed with its type',
+      blogRow?.type === 'blog' && Boolean(blogRow?.body),
+      `status ${feedWhilePublished.status}, type ${blogRow?.type ?? 'none'}`,
+    );
+    check(
+      28,
+      'the published event appears in the feed with its instant',
+      eventRow?.type === 'event' && eventRow?.eventStart === '2027-03-18T08:00:00.000Z',
+      `type ${eventRow?.type ?? 'none'}, start ${eventRow?.eventStart ?? 'none'}`,
     );
 
     const sitemapPublished = await anonymous('/api/sitemap', { method: 'GET' });
     check(
-      18,
-      'a published post is added to the sitemap',
-      sitemapPublished.text.includes(`/updates/${POST_PREFIX}-post`),
+      29,
+      'the published blog post is added to the sitemap under /blog',
+      sitemapPublished.text.includes(`${SITE}/blog/${BLOG_SLUG}`),
       `status ${sitemapPublished.status}`,
     );
     check(
-      19,
-      'the sitemap keeps its static entries',
-      sitemapPublished.text.includes('https://www.peoplegrowthafrica.com/blog') &&
-        sitemapPublished.text.includes('https://www.peoplegrowthafrica.com/events'),
+      30,
+      'the published event is added to the sitemap under /events',
+      sitemapPublished.text.includes(`${SITE}/events/${EVENT_SLUG}`),
+      `status ${sitemapPublished.status}`,
     );
+    check(
+      31,
+      'the sitemap keeps its static entries',
+      sitemapPublished.text.includes(`${SITE}/blog`) &&
+        sitemapPublished.text.includes(`${SITE}/events`),
+    );
+    check(
+      32,
+      'the sitemap carries no /updates URL any more',
+      !sitemapPublished.text.includes('/updates'),
+    );
+
+    /* ── The page head, at request time ─────────────────────────────────── */
+
+    // /blog/<slug> is rewritten to /api/post by vercel.json; locally the same
+    // handler is reached by its own path, which is what the rewrite targets.
+    const page = (type, slug) =>
+      anonymous(`/api/post?path=post&type=${type}&slug=${encodeURIComponent(slug)}`, {
+        method: 'GET',
+        headers: { Accept: 'text/html' },
+      });
+
+    if (built) {
+      const blogPage = await page('blog', BLOG_SLUG);
+      const blogHead = blogPage.text.slice(0, blogPage.text.indexOf('</head>'));
+      check(
+        33,
+        'a published blog post answers 200 with its own title in the HTML',
+        blogPage.status === 200 && blogHead.includes('<title>A test post</title>'),
+        `status ${blogPage.status}`,
+      );
+      check(
+        34,
+        'its canonical and Open Graph URL are the /blog URL',
+        blogHead.includes(`<link rel="canonical" href="${SITE}/blog/${BLOG_SLUG}" />`) &&
+          blogHead.includes(`property="og:url" content="${SITE}/blog/${BLOG_SLUG}"`),
+      );
+      check(
+        35,
+        'it carries the Twitter card tags',
+        blogHead.includes('name="twitter:card"') &&
+          blogHead.includes('name="twitter:title"') &&
+          blogHead.includes('name="twitter:image"'),
+      );
+      check(
+        36,
+        'its structured data is a BlogPosting',
+        /"@type":"BlogPosting"/.test(blogHead) || /"@type": "BlogPosting"/.test(blogHead),
+      );
+
+      const eventPage = await page('event', EVENT_SLUG);
+      const eventHead = eventPage.text.slice(0, eventPage.text.indexOf('</head>'));
+      check(
+        37,
+        'a published event answers 200 with Event structured data',
+        eventPage.status === 200 &&
+          (/"@type":"Event"/.test(eventHead) || /"@type": "Event"/.test(eventHead)),
+        `status ${eventPage.status}`,
+      );
+      check(
+        38,
+        'the event schema carries startDate, attendance mode and a virtual location',
+        eventHead.includes('"startDate":"2027-03-18T08:00:00.000Z"') &&
+          eventHead.includes('OnlineEventAttendanceMode') &&
+          eventHead.includes('VirtualLocation'),
+      );
+
+      const missing = await page('blog', `${POST_PREFIX}-missing`);
+      const missingHead = missing.text.slice(0, missing.text.indexOf('</head>'));
+      check(
+        39,
+        'an unknown slug answers a real 404 and asks not to be indexed',
+        missing.status === 404 && missingHead.includes('name="robots" content="noindex'),
+        `status ${missing.status}`,
+      );
+
+      const wrongSection = await page('blog', EVENT_SLUG);
+      check(
+        40,
+        'an event slug requested as a blog post is a 404',
+        wrongSection.status === 404,
+        `status ${wrongSection.status}`,
+      );
+
+      // A draft must not be reachable by its page URL either. The event is
+      // unpublished for this, then restored, so the later delete still has a row.
+      await manager('/api/admin/post-status', {
+        method: 'POST',
+        body: { id: createdEventId, status: 'draft' },
+      });
+      const draftPage = await page('event', EVENT_SLUG);
+      check(
+        41,
+        'a draft slug answers 404 on its page route',
+        draftPage.status === 404,
+        `status ${draftPage.status}`,
+      );
+      await manager('/api/admin/post-status', {
+        method: 'POST',
+        body: { id: createdEventId, status: 'published' },
+      });
+    } else {
+      for (const [number, description] of [
+        [33, 'a published blog post answers 200 with its own title in the HTML'],
+        [34, 'its canonical and Open Graph URL are the /blog URL'],
+        [35, 'it carries the Twitter card tags'],
+        [36, 'its structured data is a BlogPosting'],
+        [37, 'a published event answers 200 with Event structured data'],
+        [38, 'the event schema carries startDate, attendance mode and a virtual location'],
+        [39, 'an unknown slug answers a real 404 and asks not to be indexed'],
+        [40, 'an event slug requested as a blog post is a 404'],
+        [41, 'a draft slug answers 404 on its page route'],
+      ]) {
+        skip(number, description, 'dist/ is not built');
+      }
+    }
 
     /* ── Edit ────────────────────────────────────────────────────────────── */
 
     const edited = await manager('/api/admin/post', {
       method: 'PUT',
-      body: {
+      body: blogBody({
         id: createdPostId,
-        slug: `${POST_PREFIX}-post`,
-        title: 'A test update, edited',
+        title: 'A test post, edited',
         excerpt: 'Updated summary.',
         body: 'Updated body.',
         categoryId: firstCategory.id,
-        coverImageUrl: null,
         linkLabel: 'Read more',
         linkUrl: 'https://example.com',
         status: 'published',
-      },
+      }),
     });
     check(
-      20,
+      42,
       'a manager can edit a post',
-      edited.status === 200 && edited.json?.post?.title === 'A test update, edited',
+      edited.status === 200 && edited.json?.post?.title === 'A test post, edited',
       `status ${edited.status}`,
     );
 
@@ -405,12 +681,12 @@ async function main() {
       method: 'POST',
       body: { id: createdPostId, status: 'draft' },
     });
-    const feedAfterUnpublish = await anonymous('/api/updates', { method: 'GET' });
+    const feedAfterUnpublish = await anonymous('/api/posts', { method: 'GET' });
     check(
-      21,
+      43,
       'unpublishing removes it from the public feed again',
       unpublish.status === 200 &&
-        !(feedAfterUnpublish.json?.posts ?? []).some((post) => post.slug === `${POST_PREFIX}-post`),
+        !(feedAfterUnpublish.json?.posts ?? []).some((post) => post.slug === BLOG_SLUG),
       `status ${unpublish.status}`,
     );
 
@@ -422,7 +698,7 @@ async function main() {
     });
     createdCategoryId = newCategory.json?.category?.id ?? null;
     check(
-      22,
+      44,
       'a manager can add a category',
       newCategory.status === 201 && Boolean(createdCategoryId),
       `status ${newCategory.status}`,
@@ -433,7 +709,7 @@ async function main() {
       body: { id: createdCategoryId, name: `Renamed ${STAMP}`, slug: `renamed-${STAMP}` },
     });
     check(
-      23,
+      45,
       'a manager can rename a category',
       renamed.status === 200 && renamed.json?.category?.name === `Renamed ${STAMP}`,
       `status ${renamed.status}`,
@@ -442,31 +718,26 @@ async function main() {
     // Move the post across so the new category has something in it.
     await manager('/api/admin/post', {
       method: 'PUT',
-      body: {
+      body: blogBody({
         id: createdPostId,
-        slug: `${POST_PREFIX}-post`,
-        title: 'A test update, edited',
+        title: 'A test post, edited',
         excerpt: 'Updated summary.',
         body: 'Updated body.',
         categoryId: createdCategoryId,
-        coverImageUrl: null,
-        linkLabel: null,
-        linkUrl: null,
-        status: 'draft',
-      },
+      }),
     });
 
     const blockedDelete = await manager(`/api/admin/category?id=${createdCategoryId}`, {
       method: 'DELETE',
     });
     check(
-      24,
+      46,
       'deleting a category with posts is refused',
       blockedDelete.status === 409 && blockedDelete.json?.code === 'category_in_use',
       `status ${blockedDelete.status} ${blockedDelete.json?.code ?? ''}`,
     );
     check(
-      25,
+      47,
       'the refusal offers somewhere to move the posts',
       Array.isArray(blockedDelete.json?.options) && blockedDelete.json.options.length > 0,
       `${blockedDelete.json?.options?.length ?? 0} options`,
@@ -478,7 +749,7 @@ async function main() {
       { method: 'DELETE' },
     );
     check(
-      26,
+      48,
       'the reassign flow moves the posts and deletes the category',
       reassigned.status === 200 && (reassigned.json?.movedPosts ?? 0) >= 1,
       `status ${reassigned.status} moved ${reassigned.json?.movedPosts ?? 0}`,
@@ -491,53 +762,120 @@ async function main() {
       method: 'DELETE',
     });
     check(
-      27,
+      49,
       'a manager can delete a post',
       deletedPost.status === 200,
       `status ${deletedPost.status}`,
     );
     createdPostId = null;
 
-    const feedAfterDelete = await anonymous('/api/updates', { method: 'GET' });
+    const feedAfterDelete = await anonymous('/api/posts', { method: 'GET' });
     check(
-      28,
+      50,
       'a deleted post is gone from the public feed',
-      !(feedAfterDelete.json?.posts ?? []).some((post) => post.slug === `${POST_PREFIX}-post`),
+      !(feedAfterDelete.json?.posts ?? []).some((post) => post.slug === BLOG_SLUG),
+    );
+
+    const deletedEvent = await manager(`/api/admin/post?id=${createdEventId}`, {
+      method: 'DELETE',
+    });
+    check(
+      51,
+      'a manager can delete an event',
+      deletedEvent.status === 200,
+      `status ${deletedEvent.status}`,
+    );
+    createdEventId = null;
+
+    const sitemapAfterDelete = await anonymous('/api/sitemap', { method: 'GET' });
+    check(
+      52,
+      'a deleted event leaves the sitemap',
+      !sitemapAfterDelete.text.includes(EVENT_SLUG),
+    );
+
+    /* ── Which blobs may be deleted ──────────────────────────────────────── */
+
+    // Replacing or deleting a post removes the cover files it no longer points
+    // at. The guard is what stops that from becoming "delete any URL a manager
+    // pasted into the cover field".
+    const { ownCoverUrls } = await import('../api/_lib/cover-blobs.ts');
+    const ours = 'https://store1.public.blob.vercel-storage.com/covers/full/cover-abc.webp';
+    check(53, 'a cover blob in our store is ours to delete', ownCoverUrls([ours]).length === 1);
+    check(
+      54,
+      'a pasted external image is never deleted',
+      ownCoverUrls(['https://images.unsplash.com/photo-123.jpg']).length === 0,
+    );
+    check(
+      55,
+      'a blob outside the covers prefix is left alone',
+      ownCoverUrls(['https://store1.public.blob.vercel-storage.com/other/file.webp']).length === 0,
+    );
+    check(
+      56,
+      'a host that only looks like the blob store is refused',
+      ownCoverUrls([
+        'https://store1.public.blob.vercel-storage.com.evil.example/covers/x.webp',
+        'http://store1.public.blob.vercel-storage.com/covers/x.webp',
+      ]).length === 0,
+    );
+    check(
+      57,
+      'a full and thumbnail pair collapses to two entries',
+      ownCoverUrls([ours, ours, `${ours.replace('/full/', '/thumb/')}`, null]).length === 2,
     );
 
     /* ── Uploads ─────────────────────────────────────────────────────────── */
 
     const noBlobToken = !process.env.BLOB_READ_WRITE_TOKEN;
     const upload = await manager('/api/admin/upload', {
-      body: { filename: 'x.png', contentType: 'image/png', data: 'iVBORw0KGgo=' },
+      body: {
+        filename: 'x.png',
+        contentType: 'image/png',
+        variant: 'full',
+        data: 'iVBORw0KGgo=',
+      },
     });
     if (noBlobToken) {
       check(
-        29,
+        58,
         'upload reports that Blob is not configured',
         upload.status === 503 && upload.json?.code === 'uploads_disabled',
         `status ${upload.status}`,
       );
     } else {
       check(
-        29,
+        58,
         'a non-image upload is refused by its magic bytes',
         upload.status === 400,
         `status ${upload.status}`,
       );
     }
 
-    const badMethod = await manager('/api/admin/posts', { method: 'GET' });
+    const stillThere = await manager('/api/admin/posts', { method: 'GET' });
     check(
-      30,
+      59,
       'the admin list answers the manager after all of that',
-      badMethod.status === 200,
-      `status ${badMethod.status}`,
+      stillThere.status === 200,
+      `status ${stillThere.status}`,
+    );
+
+    /* ── Delivery ────────────────────────────────────────────────────────── */
+
+    const cachedFeed = await anonymous('/api/posts', { method: 'GET' });
+    const cacheControl = cachedFeed.headers?.get('cache-control') ?? '';
+    check(
+      60,
+      'the public feed is CDN-cached with a bounded stale window',
+      cacheControl.includes('s-maxage=30') && cacheControl.includes('stale-while-revalidate=60'),
+      cacheControl,
     );
   } finally {
     // Remove every row this run created, whatever happened above.
     try {
       if (createdPostId) await sql`DELETE FROM posts WHERE id = ${createdPostId}`;
+      if (createdEventId) await sql`DELETE FROM posts WHERE id = ${createdEventId}`;
       if (createdCategoryId) await sql`DELETE FROM categories WHERE id = ${createdCategoryId}`;
       await sql`DELETE FROM posts WHERE slug LIKE ${`${POST_PREFIX}-%`}`;
       await sql`DELETE FROM categories WHERE slug IN (${`test-category-${STAMP}`}, ${`renamed-${STAMP}`})`;
@@ -549,7 +887,10 @@ async function main() {
     await server?.close();
   }
 
-  console.log(`\n${results.length} checks, ${failures} failed.`);
+  const skipped = results.filter((result) => result.skipped).length;
+  console.log(
+    `\n${results.length} checks, ${failures} failed${skipped > 0 ? `, ${skipped} skipped` : ''}.`,
+  );
   if (failures > 0) {
     console.log('\nFailing checks:');
     for (const result of results.filter((entry) => !entry.passed)) {
