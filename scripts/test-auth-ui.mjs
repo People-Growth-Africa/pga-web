@@ -29,6 +29,9 @@ const EMAIL = `${EMAIL_PREFIX}@example.com`;
 const PASSWORD = 'Quiet-Harbour-7712';
 const NAME = 'Ada UI Test';
 const NEWSLETTER_EMAIL = `${EMAIL_PREFIX}-newsletter@example.com`;
+/** The logo mark that is actually painted: the other colour scheme's copy is hidden. */
+const LOGO_IMG = 'a[aria-label="People Growth Africa Home"] img:visible';
+
 /** The one answer the newsletter endpoint gives, whatever state the address is in. */
 const NEWSLETTER_MESSAGE =
   'Thanks. If that address is not already on the list, a confirmation link is on its way. Check your inbox and spam folder.';
@@ -196,6 +199,11 @@ async function main() {
     process.exit(1);
   }
   process.env.JWT_SECRET ??= randomBytes(32).toString('hex');
+  // The forms are compiled in (see AUTH_ENABLED in src/config/signup-links.ts),
+  // so the API this suite drives has to answer them too. Without this the page
+  // renders the forms and every submit comes back "Accounts are not available",
+  // which is how the first check would otherwise fail on a clean machine.
+  process.env.AUTH_ENABLED = 'true';
   // Same reason test:auth does this: a previous run must not leave rate limit
   // counters behind that would 429 this one.
   delete process.env.UPSTASH_REDIS_REST_URL;
@@ -738,21 +746,28 @@ async function main() {
       await page.emulateMedia({ reducedMotion: 'no-preference' });
       await page.evaluate(() => sessionStorage.removeItem('pga_logo_animated'));
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.waitForSelector('a[aria-label="People Growth Africa Home"] img', {
-        timeout: 10000,
-      });
+      // The mark ships two images, one per colour scheme, and the unused one is
+      // display:none. Asking for `img` alone resolves to both and measures the
+      // hidden one, so every check here has to name the one on screen.
+      await page.waitForSelector(LOGO_IMG, { timeout: 10000 });
       const phoneIntro = await page.evaluate(() => {
         const link = document.querySelector('a[aria-label="People Growth Africa Home"]');
-        const img = link.querySelector('img');
-        const style = getComputedStyle(img);
+        const img = [...link.querySelectorAll('img')].find(
+          (candidate) => candidate.getClientRects().length > 0,
+        );
+        // The CSS reveal sits on the frame the image fills, not on the image:
+        // that is where the class is written in BrandMark.
+        const frame = img.closest('span');
+        const style = getComputedStyle(frame);
         return {
           svgs: link.querySelectorAll('svg').length,
           dots: link.querySelectorAll('svg circle').length,
           animation: style.animationName,
           duration: style.animationDuration,
-          // The dot path drives itself with inline styles (the promoted mark,
-          // the dots' opacity). None of them should exist on a phone.
-          tweened: link.querySelectorAll('[style*="transform"], [style*="will-change"]').length,
+          // The dot path promotes its mark with an inline will-change. Nothing
+          // on a phone should own a compositor layer that a script keeps alive.
+          // (The image's static `transform: scale(1)` is not one of them.)
+          tweened: link.querySelectorAll('[style*="will-change"]').length,
         };
       });
       check(
@@ -768,13 +783,14 @@ async function main() {
       const phoneSettled = await page
         .waitForFunction(
           () => {
-            const img = document.querySelector(
-              'a[aria-label="People Growth Africa Home"] img',
+            const link = document.querySelector('a[aria-label="People Growth Africa Home"]');
+            const img = [...link.querySelectorAll('img')].find(
+              (candidate) => candidate.getClientRects().length > 0,
             );
             return (
               sessionStorage.getItem('pga_logo_animated') === 'true' &&
               Boolean(img) &&
-              getComputedStyle(img).opacity === '1'
+              getComputedStyle(img.closest('span')).opacity === '1'
             );
           },
           null,
@@ -793,14 +809,15 @@ async function main() {
       await page.setViewportSize({ width: 1280, height: 860 });
       await page.evaluate(() => sessionStorage.removeItem('pga_logo_animated'));
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.waitForSelector('a[aria-label="People Growth Africa Home"] img', {
-        timeout: 10000,
-      });
+      await page.waitForSelector(LOGO_IMG, { timeout: 10000 });
       const desktopIntro = await page.evaluate(() => {
         const link = document.querySelector('a[aria-label="People Growth Africa Home"]');
+        const img = [...link.querySelectorAll('img')].find(
+          (candidate) => candidate.getClientRects().length > 0,
+        );
         return {
           dots: link.querySelectorAll('svg circle').length,
-          animation: getComputedStyle(link.querySelector('img')).animationName,
+          animation: getComputedStyle(img).animationName,
         };
       });
       check(
