@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { sendJson } from './_lib/http.js';
-import { ROUTES } from './_lib/routes/index.js';
+import { PREFIX_ROUTES, ROUTES } from './_lib/routes/index.js';
 
 /**
  * The one serverless function this API deploys.
@@ -52,12 +52,24 @@ function routeKey(req: VercelRequest): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
-  const route = ROUTES[routeKey(req)];
+  const key = routeKey(req);
+  const route = ROUTES[key];
 
-  if (!route) {
-    sendJson(res, 404, { error: 'No such endpoint.', code: 'not_found' });
+  if (route) {
+    await route(req, res);
     return;
   }
 
-  await route(req, res);
+  // A subtree endpoint - the cover media route - answers everything under its
+  // prefix, and the rest of the path is its argument. It is handed over as
+  // `path`, which is also how a rewrite delivers an endpoint name, so the
+  // handler reads its argument the same way in both cases.
+  const subtree = PREFIX_ROUTES.find((entry) => key.startsWith(entry.prefix));
+  if (subtree) {
+    req.query = { ...req.query, path: key.slice(subtree.prefix.length) };
+    await subtree.handler(req, res);
+    return;
+  }
+
+  sendJson(res, 404, { error: 'No such endpoint.', code: 'not_found' });
 }

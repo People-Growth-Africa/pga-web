@@ -285,14 +285,27 @@ const id = z
   .regex(/^[0-9a-f-]+$/i, 'That record could not be found.');
 
 /**
- * Cover images are URLs, and only http(s). A `javascript:` or `data:` value
- * here would be written into an <img src> on a public page.
+ * A cover this deployment stored in its own Blob store.
+ *
+ * An upload answers with a path rather than a URL when the store is private (see
+ * api/_lib/cover-url.ts), so that path has to be accepted here or the panel could
+ * not save a cover it had just uploaded itself.
+ */
+const OWN_COVER_PATH = /^\/api\/media\/covers\/(?:full|thumb)\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:webp|jpe?g|png)$/;
+
+/**
+ * Cover images are URLs, http(s) or one of our own media paths. A `javascript:`
+ * or `data:` value here would be written into an <img src> on a public page, and
+ * anything else is refused for the same reason.
  */
 const coverImageUrl = z
   .string()
   .trim()
   .max(COVER_IMAGE_MAX, `Cover image URL must be ${COVER_IMAGE_MAX} characters or fewer.`)
-  .refine((value) => value === '' || /^https?:\/\//.test(value), 'Enter a full http(s) image URL.')
+  .refine(
+    (value) => value === '' || /^https?:\/\//.test(value) || OWN_COVER_PATH.test(value),
+    'Enter a full http(s) image URL.',
+  )
   .transform((value) => (value === '' ? null : value))
   .nullable()
   .optional();

@@ -77,6 +77,8 @@ top of the panel, next to a link back to the public site.
 
 Keep photographs under about **300 KB** each and around **1600 pixels** wide. Large pictures are the main reason websites feel slow, especially on mobile data, and most of our readers are browsing on a phone.
 
+A cover chosen in the panel is uploaded to the project's Vercel Blob store and shrunk to two WebP files in the browser first (a full one for the article, a thumbnail for the grids). Both store access modes work: a **public** store's URL is used directly, while a **private** store's files are read back through the site at `/api/media/...`, because a private file cannot be loaded by a browser without the token the server holds. Either way, old covers are deleted from the store when they are replaced or the post goes.
+
 The four brand logos are already optimised. If they ever need regenerating, a script is included:
 
 ```bash

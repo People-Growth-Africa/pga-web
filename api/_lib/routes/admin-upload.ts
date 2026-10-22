@@ -2,12 +2,13 @@ import { put } from '@vercel/blob';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHash, randomBytes } from 'node:crypto';
 
+import { coverUrl } from '../cover-url.js';
 import { ApiError, endpoint, parseJsonBody, sendJson } from '../http.js';
 import { requireManager } from '../manager.js';
 import { enforceRateLimit } from '../ratelimit.js';
 
 /**
- * POST /api/admin/upload - store one cover image and return its public URL.
+ * POST /api/admin/upload - store one cover image and return the URL pages use.
  *
  * The client sends the file as base64 in JSON rather than as multipart. Vercel's
  * multipart parsing differs between runtimes and has no type to hook, whereas a
@@ -150,26 +151,72 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req: VercelReq
 
   // The Blob API is the one step this handler cannot check in advance: the token
   // can be set and still be refused (a store that was deleted, recreated on
-  // another project, or created without public access). Left uncaught it became
-  // a bare 500 that said nothing to the manager and nothing in the logs, so a
-  // failure here is answered with the store's own reason instead.
-  const blob = await put(`covers/${variant}/${name}`, buffer, {
-    access: 'public',
-    contentType: TYPES[type].contentType,
-    allowOverwrite: false,
-  }).catch((error: unknown) => {
-    console.error(`[upload] Blob refused the file: ${blobReason(error)}`);
-    throw new ApiError(502, 'upload_failed', `The image could not be stored. ${storageAdvice(error)}`);
-  });
+  // another project, or created with the other access mode). Left uncaught it
+  // became a bare 500 that said nothing to the manager and nothing in the logs,
+  // so `storeCover` answers with the store's own reason instead.
+  const stored = await storeCover(
+    `covers/${variant}/${name}`,
+    buffer,
+    TYPES[type].contentType,
+  );
 
   sendJson(res, 201, {
-    url: blob.url,
-    pathname: blob.pathname,
+    url: stored.url,
+    pathname: stored.pathname,
     variant,
     size: buffer.length,
     contentType: TYPES[type].contentType,
   });
 });
+
+/**
+ * Stores one cover and returns the URL a page should use for it.
+ *
+ * A Blob store is created public or private and that cannot be changed, so the
+ * mode is discovered by asking the store rather than read from a setting of ours
+ * that could disagree with it: a private store refuses `access: 'public'`, a
+ * public one refuses `access: 'private'`, and each reports it as a refusal to
+ * write. Private is tried first because a private store serves nothing on its
+ * own - those files are read back through api/_lib/routes/media.ts - while a
+ * public store's URL is loaded straight from the CDN, which is the cheaper
+ * answer when the store allows it.
+ *
+ * Only an access-mode refusal is worth the second attempt: a missing token or an
+ * outage fails the same way twice, and retrying would just double the wait before
+ * the manager sees why.
+ */
+async function storeCover(
+  pathname: string,
+  body: Buffer,
+  contentType: string,
+): Promise<{ url: string; pathname: string }> {
+  let refusal: unknown = null;
+
+  for (const access of ['private', 'public'] as const) {
+    try {
+      const blob = await put(pathname, body, { access, contentType, allowOverwrite: false });
+      return {
+        url: access === 'private' ? coverUrl(blob.pathname) : blob.url,
+        pathname: blob.pathname,
+      };
+    } catch (error) {
+      if (!isAccessModeRefusal(error)) {
+        console.error(`[upload] Blob refused the file: ${blobReason(error)}`);
+        throw new ApiError(502, 'upload_failed', `The image could not be stored. ${storageAdvice(error)}`);
+      }
+      refusal ??= error;
+    }
+  }
+
+  console.error(`[upload] Blob refused both access modes: ${blobReason(refusal)}`);
+  throw new ApiError(502, 'upload_failed', `The image could not be stored. ${storageAdvice(refusal)}`);
+}
+
+/** The store saying no because of its access mode, rather than for another reason. */
+function isAccessModeRefusal(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : '';
+  return /access|public|private/i.test(message);
+}
 
 /** What the Blob client said, trimmed to one log-safe line. */
 function blobReason(error: unknown): string {
@@ -193,8 +240,8 @@ function storageAdvice(error: unknown): string {
   if (/token|unauthor|forbidden|401|403|credential/i.test(message)) {
     return `The image store rejected this deployment's credentials, so BLOB_READ_WRITE_TOKEN or the Blob store it points at needs checking in Vercel.${detail}`;
   }
-  if (/private|access/i.test(message)) {
-    return `The Blob store does not accept public files. Covers have to be readable by anyone, so the store needs public access.${detail}`;
+  if (/private|access|public/i.test(message)) {
+    return `The Blob store refused the file in both access modes, so the store itself needs checking in Vercel.${detail}`;
   }
   if (/size|too large|413/i.test(message)) {
     return `The Blob store refused the file size. Try a smaller image.${detail}`;

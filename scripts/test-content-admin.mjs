@@ -799,23 +799,23 @@ async function main() {
     // Replacing or deleting a post removes the cover files it no longer points
     // at. The guard is what stops that from becoming "delete any URL a manager
     // pasted into the cover field".
-    const { ownCoverUrls } = await import('../api/_lib/cover-blobs.ts');
+    const { ownCoverTargets } = await import('../api/_lib/cover-blobs.ts');
     const ours = 'https://store1.public.blob.vercel-storage.com/covers/full/cover-abc.webp';
-    check(53, 'a cover blob in our store is ours to delete', ownCoverUrls([ours]).length === 1);
+    check(53, 'a cover blob in our store is ours to delete', ownCoverTargets([ours]).length === 1);
     check(
       54,
       'a pasted external image is never deleted',
-      ownCoverUrls(['https://images.unsplash.com/photo-123.jpg']).length === 0,
+      ownCoverTargets(['https://images.unsplash.com/photo-123.jpg']).length === 0,
     );
     check(
       55,
       'a blob outside the covers prefix is left alone',
-      ownCoverUrls(['https://store1.public.blob.vercel-storage.com/other/file.webp']).length === 0,
+      ownCoverTargets(['https://store1.public.blob.vercel-storage.com/other/file.webp']).length === 0,
     );
     check(
       56,
       'a host that only looks like the blob store is refused',
-      ownCoverUrls([
+      ownCoverTargets([
         'https://store1.public.blob.vercel-storage.com.evil.example/covers/x.webp',
         'http://store1.public.blob.vercel-storage.com/covers/x.webp',
       ]).length === 0,
@@ -823,7 +823,7 @@ async function main() {
     check(
       57,
       'a full and thumbnail pair collapses to two entries',
-      ownCoverUrls([ours, ours, `${ours.replace('/full/', '/thumb/')}`, null]).length === 2,
+      ownCoverTargets([ours, ours, `${ours.replace('/full/', '/thumb/')}`, null]).length === 2,
     );
 
     /* ── Uploads ─────────────────────────────────────────────────────────── */
@@ -969,6 +969,107 @@ async function main() {
       'the cookie a manager signs in with lasts one hour, not the seven days others get',
       /Max-Age=3600\b/.test(loginCookie),
       loginCookie ? loginCookie.replace(/session=[^;]+/, 'session=…') : 'no set-cookie',
+    );
+
+    /* ── Cover media ─────────────────────────────────────────────────────── */
+
+    // A Blob store created private serves nothing without the token, so an upload
+    // answers with a path this deployment serves instead of a store URL. The
+    // mapping is a pure function, and it is the only thing standing between a
+    // request and an arbitrary blob read, so it is checked directly.
+    const { coverUrl, coverPathname, isCoverPathname } = await import('../api/_lib/cover-url.ts');
+    const { postCreateSchema } = await import('../api/_lib/validation.ts');
+
+    const storedName = 'cover-1a2b3c-9f8e7d6c.webp';
+    check(
+      67,
+      'a cover in a private store is served from this site, not from the store',
+      coverUrl(`covers/full/${storedName}`) === `/api/media/covers/full/${storedName}`,
+      coverUrl(`covers/full/${storedName}`),
+    );
+    check(
+      68,
+      'a stored cover path and an older store URL both map back to their pathname',
+      coverPathname(`/api/media/covers/full/${storedName}`) === `covers/full/${storedName}` &&
+        coverPathname(`https://store1.private.blob.vercel-storage.com/covers/thumb/${storedName}`) ===
+          `covers/thumb/${storedName}`,
+    );
+    check(
+      69,
+      'only cover files are readable through the media route: no traversal, other folders or pasted URLs',
+      !isCoverPathname('covers/full/../../secrets.webp') &&
+        !isCoverPathname('other/full/cover.webp') &&
+        coverPathname('/api/media/covers/full/../../secrets.webp') === null &&
+        coverPathname('https://images.unsplash.com/photo-1.jpg') === null,
+    );
+    {
+      const targets = ownCoverTargets([
+        '/api/media/covers/full/a.webp',
+        '/api/media/covers/thumb/a.webp',
+        'https://store1.public.blob.vercel-storage.com/covers/full/b.webp',
+        'https://images.unsplash.com/photo-1.jpg',
+        null,
+      ]);
+      check(
+        70,
+        'cleanup deletes our covers by pathname and older store URLs as they were saved',
+        targets.length === 3 &&
+          targets.includes('covers/full/a.webp') &&
+          targets.includes('covers/thumb/a.webp') &&
+          targets.includes('https://store1.public.blob.vercel-storage.com/covers/full/b.webp'),
+        targets.join(' '),
+      );
+    }
+
+    const missingCover = await anonymous('/api/media/covers/full/nobody-000000-00000000.webp', {
+      method: 'GET',
+    });
+    check(
+      71,
+      'a cover that is not in the store is a plain 404, not an error page',
+      missingCover.status === 404,
+      `status ${missingCover.status}`,
+    );
+
+    const traversal = await anonymous('/api/media/covers/full/..%2F..%2Fserver.js', {
+      method: 'GET',
+    });
+    check(
+      72,
+      'the media route refuses a path that climbs out of the covers folder',
+      traversal.status === 404 && !(traversal.text ?? '').includes('import '),
+      `status ${traversal.status}`,
+    );
+
+    // The panel saves whatever the upload answered with, so the write schema has
+    // to accept that path - while still refusing a cover value that would end up
+    // in an <img src> and run as a script.
+    const coverDraft = {
+      type: 'blog',
+      slug: `${POST_PREFIX}-cover`,
+      title: 'Cover check',
+      excerpt: '',
+      body: 'Body',
+      categoryId: '00000000-0000-0000-0000-000000000000',
+      status: 'draft',
+    };
+    const savedCover = postCreateSchema.safeParse({
+      ...coverDraft,
+      coverImageUrl: `/api/media/covers/full/${storedName}`,
+      coverImageThumbUrl: `/api/media/covers/thumb/${storedName}`,
+    });
+    check(
+      73,
+      'a post can be saved with a cover this site is serving',
+      savedCover.success &&
+        savedCover.data.coverImageUrl === `/api/media/covers/full/${storedName}`,
+      savedCover.success ? '' : JSON.stringify(savedCover.error.issues[0]?.message),
+    );
+    check(
+      74,
+      'a cover value that is not a URL or one of our media paths is still refused',
+      !postCreateSchema.safeParse({ ...coverDraft, coverImageUrl: 'javascript:alert(1)' }).success &&
+        !postCreateSchema.safeParse({ ...coverDraft, coverImageUrl: '/api/media/other/x.webp' }).success,
     );
   } finally {
     // Remove every row this run created, whatever happened above.

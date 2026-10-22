@@ -185,7 +185,7 @@ export function clientIp(req: VercelRequest): string {
   return req.socket?.remoteAddress ?? 'unknown';
 }
 
-type HttpMethod = 'GET' | 'POST' | 'DELETE' | 'PUT';
+type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'DELETE' | 'PUT';
 type RouteHandler = (req: VercelRequest, res: VercelResponse) => Promise<void>;
 
 /**

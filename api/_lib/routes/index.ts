@@ -77,6 +77,10 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/content': lazy(async () => (await import('./content.js')).default),
   '/revalidate': lazy(async () => (await import('./revalidate.js')).default),
 
+  // --- Cover images stored in a private Blob store. Kept out of the table
+  //     above, because its key is a whole subtree: the rest of the URL is the
+  //     Blob pathname, and those contain slashes. See PREFIX_ROUTES below. ---
+
   // --- The published posts feed, the pages that need a head at request time,
   //     and the sitemap that lists them. Public and cacheable, and like
   //     /content they answer from the database rather than from a build, so
@@ -105,6 +109,18 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/newsletter/confirm': requiresDatabase(async () => (await import('./newsletter/confirm.js')).default),
   '/newsletter/subscribe': requiresDatabase(async () => (await import('./newsletter/subscribe.js')).default),
 };
+
+/**
+ * Endpoints that answer a subtree rather than one exact path.
+ *
+ * The rest of the URL after the prefix is handed to the handler as `path`, the
+ * same way a rewrite hands over an endpoint name. Only the cover media route
+ * needs this today: what it serves is a Blob pathname, and those contain
+ * slashes, so an exact key could never name it.
+ */
+export const PREFIX_ROUTES: { prefix: string; handler: RouteHandler }[] = [
+  { prefix: '/media/', handler: lazy(async () => (await import('./media.js')).default) },
+];
 
 /** A handler that is loaded the first time its route is called, then reused. */
 function lazy(load: () => Promise<RouteHandler>): RouteHandler {
