@@ -13,6 +13,11 @@
       "source": "/book",
       "destination": "/consultation",
       "permanent": true
+    },
+    {
+      "source": "/admin",
+      "destination": "/admin/content",
+      "permanent": false
     }
   ],
   "rewrites": [

@@ -483,6 +483,24 @@ async function main() {
         `/api/auth/me ${sessionStatus}`,
       );
 
+      // --- 5b. The content admin has its own door ----------------------------
+      // The public domain keeps the general account screens closed, so the admin
+      // cannot send a manager to /auth: it has /admin/login of its own.
+      await page.goto(`${baseUrl}/admin/content`, { waitUntil: 'networkidle' });
+      const managerRedirect = await page
+        .waitForURL('**/admin/login', { timeout: 15000 })
+        .then(() => true)
+        .catch(() => false);
+      const managerForm =
+        (await page.getByLabel('Email', { exact: true }).isVisible().catch(() => false)) &&
+        (await page.getByLabel('Password', { exact: true }).isVisible().catch(() => false));
+      check(
+        12.1,
+        'A signed-out visitor to /admin/content lands on the manager sign-in, not the public one',
+        managerRedirect && managerForm,
+        page.url(),
+      );
+
       // --- 6. The newsletter form actually submits ---------------------------
       // It once showed "Subscribed ✓" on a four second timer without sending a
       // thing. These checks are what stops that coming back.

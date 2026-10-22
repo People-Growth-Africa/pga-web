@@ -10,7 +10,20 @@ import DashboardSkeleton from './dashboard/DashboardSkeleton';
  * so this only decides what the visitor sees: a short wait, the log in page, or
  * their own dashboard.
  */
-export default function RequireAuth({ role, children }: { role: Role; children: ReactNode }) {
+export default function RequireAuth({
+  role,
+  children,
+  signInPath = '/auth#login',
+}: {
+  role: Role;
+  children: ReactNode;
+  /**
+   * Where a signed out visitor is sent. The content admin has its own sign-in
+   * page, because the public `/auth` screen is deliberately closed on
+   * peoplegrowthafrica.com; every other guarded page keeps the normal one.
+   */
+  signInPath?: string;
+}) {
   const { status, user } = useAuth();
   const location = useLocation();
 
@@ -28,7 +41,7 @@ export default function RequireAuth({ role, children }: { role: Role; children: 
   }
 
   if (!user) {
-    return <Navigate to="/auth#login" replace state={{ from: location.pathname }} />;
+    return <Navigate to={signInPath} replace state={{ from: location.pathname }} />;
   }
 
   if (user.role !== role) {

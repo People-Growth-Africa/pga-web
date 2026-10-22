@@ -20,6 +20,7 @@ import NewsletterConfirm from './pages/NewsletterConfirm';
 import TalentDashboard from './pages/TalentDashboard';
 import EmployerDashboard from './pages/EmployerDashboard';
 import AdminContent from './pages/admin/AdminContent';
+import ManagerLogin from './pages/admin/ManagerLogin';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import NotFound from './pages/NotFound';
@@ -80,10 +81,30 @@ function AnimatedRoutes() {
           <Route path="/employer/dashboard" element={AUTH_ENABLED ? <EmployerDashboard /> : <Navigate to="/" replace />} />
           {/* The content admin. RequireAuth checks the role before rendering, and
               the API checks it again on every call - this only decides what a
-              visitor sees. */}
+              visitor sees.
+
+              Its sign-in is /admin/login rather than /auth: the public domain
+              keeps the general account screens closed (src/lib/accountGate.ts),
+              and a manager still has to be able to reach the panel there. */}
+          <Route
+            path="/admin"
+            element={AUTH_ENABLED ? <Navigate to="/admin/content" replace /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/admin/login"
+            element={AUTH_ENABLED ? <ManagerLogin /> : <Navigate to="/" replace />}
+          />
           <Route
             path="/admin/content"
-            element={AUTH_ENABLED ? <RequireAuth role="manager"><AdminContent /></RequireAuth> : <Navigate to="/" replace />}
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth role="manager" signInPath="/admin/login">
+                  <AdminContent />
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
           />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />

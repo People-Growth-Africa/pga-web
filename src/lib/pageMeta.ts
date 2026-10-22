@@ -299,6 +299,7 @@ export const PRIVATE_ROUTES = [
   '/newsletter/confirm',
   '/talent/dashboard',
   '/employer/dashboard',
+  '/admin/login',
   '/admin/content',
 ] as const;
 
@@ -310,6 +311,7 @@ export const PRIVATE_ROUTE_TITLES: Record<string, string> = {
   '/newsletter/confirm': 'Confirm your subscription | People Growth Africa',
   '/talent/dashboard': 'Talent dashboard | People Growth Africa',
   '/employer/dashboard': 'Employer dashboard | People Growth Africa',
+  '/admin/login': 'Content admin sign-in | People Growth Africa',
   '/admin/content': 'Content Admin | People Growth Africa',
 };
 
