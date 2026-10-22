@@ -28,7 +28,7 @@ import {
 import { enforceRateLimit } from '../ratelimit.js';
 import { markContentChanged } from '../content/version.js';
 import { deleteCoverBlobs } from '../cover-blobs.js';
-import { pingIndexNow, postUrlPath } from '../indexnow.js';
+import { announcePostChange } from '../indexnow.js';
 
 /**
  * POST /api/admin/posts        - list, with optional status/category/search filters
@@ -154,8 +154,11 @@ async function createHandler(req: VercelRequest, res: VercelResponse, userId: st
     markContentChanged();
     const post = await findPostById(id);
     // A post saved straight to published has a URL from this moment, so Bing and
-    // Yandex are told rather than left to find it on their next crawl.
-    if (post?.status === 'published') pingIndexNow([postUrlPath(post.type, post.slug)]);
+    // Yandex are told rather than left to find it on their next crawl. A new
+    // draft changes nothing public and sends nothing.
+    if (post) {
+      announcePostChange({ type: post.type, slug: post.slug, status: post.status, previous: null });
+    }
     sendJson(res, 201, { post });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -193,7 +196,14 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
 
     markContentChanged();
     const post = await findPostById(data.id);
-    if (post?.status === 'published') pingIndexNow([postUrlPath(post.type, post.slug)]);
+    if (post) {
+      announcePostChange({
+        type: post.type,
+        slug: post.slug,
+        status: post.status,
+        previous: existing.status,
+      });
+    }
     sendJson(res, 200, { post });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -240,7 +250,14 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
 
   markContentChanged();
   const post = await findPostById(id);
-  if (post?.status === 'published') pingIndexNow([postUrlPath(post.type, post.slug)]);
+  if (post) {
+    announcePostChange({
+      type: post.type,
+      slug: post.slug,
+      status: post.status,
+      previous: existing.status,
+    });
+  }
   sendJson(res, 200, { post });
 }
 
@@ -256,6 +273,16 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, userId: st
 
   // Deleting the row is the point; the cover files go with it.
   await deleteCoverBlobs([existing.cover_image_url, existing.cover_image_thumb_url]);
+
+  // A published URL is about to 404. IndexNow has no delete verb: submitting the
+  // URL is how an engine is told to recrawl and drop it. A draft never had a
+  // public URL, so this announces nothing for it.
+  announcePostChange({
+    type: existing.type,
+    slug: existing.slug,
+    status: 'draft',
+    previous: existing.status,
+  });
 
   markContentChanged();
   sendJson(res, 200, { ok: true, deleted: { id, slug: existing.slug, title: existing.title } });

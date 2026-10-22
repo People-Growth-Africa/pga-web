@@ -146,6 +146,24 @@ fs.writeFileSync(
   'utf8',
 );
 
+/* ── The IndexNow key file ───────────────────────────────────────────────── */
+
+/*
+ * IndexNow asks the site to serve `/<key>.txt` containing the key, as proof that
+ * the host is yours. Writing it here rather than committing it means the key is
+ * whatever `INDEXNOW_KEY` says on the deploy that built the site - rotating it is
+ * one environment variable and one deploy, with no file to keep in step.
+ *
+ * The default matches DEFAULT_INDEXNOW_KEY in api/_lib/indexnow.ts. The two are
+ * in separate compile units, so a value that drifts is caught by test:seo, not
+ * silently served under one key while pinging with another.
+ */
+const DEFAULT_INDEXNOW_KEY = 'cd7fc363c33879dab4b0ccf1061ac27f';
+const configuredKey = (process.env.INDEXNOW_KEY ?? '').trim();
+const indexNowKey = /^[A-Za-z0-9-]{8,128}$/.test(configuredKey) ? configuredKey : DEFAULT_INDEXNOW_KEY;
+
+fs.writeFileSync(path.join(dist, `${indexNowKey}.txt`), indexNowKey, 'utf8');
+
 // No dist/sitemap.xml on purpose. The file would win over the /sitemap.xml
 // rewrite (Vercel checks the filesystem before rewrites), so the build could
 // only ever publish a sitemap that was already stale. /api/sitemap is the one
@@ -153,3 +171,4 @@ fs.writeFileSync(
 
 console.log(`prerender: wrote ${written.length} HTML files (${pages.length} prerendered).`);
 console.log(`prerender: dist/seo-index.json lists ${indexEntries.length} built-in index rows.`);
+console.log(`prerender: dist/${indexNowKey}.txt serves the IndexNow key.`);

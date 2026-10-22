@@ -253,8 +253,10 @@ async function main() {
       path.join(import.meta.dirname, '..', 'api', '_lib', 'indexnow.ts'),
       'utf8',
     );
-    const key = keySource.match(/INDEXNOW_KEY = '([^']+)'/)?.[1];
-    check(Boolean(key), 'the IndexNow key is declared');
+    const moduleKey = keySource.match(/DEFAULT_INDEXNOW_KEY = '([^']+)'/)?.[1];
+    const configuredKey = (process.env.INDEXNOW_KEY ?? '').trim();
+    const key = /^[A-Za-z0-9-]{8,128}$/.test(configuredKey) ? configuredKey : moduleKey;
+    check(Boolean(key), 'the IndexNow key is resolved');
     if (key) {
       const keyFile = await fetchText(base, `/${key}.txt`);
       check(keyFile.response.status === 200, 'the IndexNow key file is served', String(keyFile.response.status));

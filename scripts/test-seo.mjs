@@ -377,14 +377,28 @@ check(
 /* ── IndexNow key ─────────────────────────────────────────────────────────── */
 
 const indexNowSource = fs.readFileSync(path.join(root, 'api', '_lib', 'indexnow.ts'), 'utf8');
-const key = indexNowSource.match(/export const INDEXNOW_KEY = '([^']+)'/)?.[1];
-check(Boolean(key), 'indexnow.ts declares a key');
-if (key) {
-  const keyFile = path.join(dist, `${key}.txt`);
-  check(fs.existsSync(keyFile), `dist/${key}.txt is served as the IndexNow key`);
+const moduleKey = indexNowSource.match(/DEFAULT_INDEXNOW_KEY = '([^']+)'/)?.[1];
+check(Boolean(moduleKey), 'indexnow.ts declares a default key');
+
+// The key the build served: INDEXNOW_KEY when it is valid, the default otherwise.
+// api/ and scripts/ are separate compile units, so this is where the two copies
+// of the default are compared.
+const configuredKey = (process.env.INDEXNOW_KEY ?? '').trim();
+const buildKey = /^[A-Za-z0-9-]{8,128}$/.test(configuredKey) ? configuredKey : moduleKey;
+check(Boolean(buildKey), 'the build resolved an IndexNow key');
+
+if (buildKey) {
+  const keyFile = path.join(dist, `${buildKey}.txt`);
+  check(fs.existsSync(keyFile), `dist/${buildKey}.txt is served as the IndexNow key`);
   if (fs.existsSync(keyFile)) {
-    check(fs.readFileSync(keyFile, 'utf8').trim() === key, 'the IndexNow key file contains the key');
+    check(fs.readFileSync(keyFile, 'utf8').trim() === buildKey, 'the IndexNow key file contains the key');
   }
+  const prerenderSource = fs.readFileSync(path.join(root, 'scripts', 'prerender.mjs'), 'utf8');
+  const buildDefault = prerenderSource.match(/const DEFAULT_INDEXNOW_KEY = '([^']+)'/)?.[1];
+  check(
+    Boolean(buildDefault) && buildDefault === moduleKey,
+    'the build and the API default to the same IndexNow key',
+  );
 }
 
 const sw = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
