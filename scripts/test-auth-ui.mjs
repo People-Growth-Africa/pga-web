@@ -481,6 +481,22 @@ async function main() {
         `sent ${subscribeSent}, notice ${noticeShown ? 'shown' : 'missing'}, field "${clearedField}"`,
       );
 
+      // The newsletter is not only an index-page block: the end of an article is
+      // where a reader is most likely to want the next one.
+      await page.goto(`${baseUrl}/blog/from-whatsapp-groups-to-world-class-hr`, {
+        waitUntil: 'networkidle',
+      });
+      const articleSubscribe = await page
+        .getByLabel('Email address for newsletter')
+        .isVisible()
+        .catch(() => false);
+      check(
+        14.1,
+        'A blog article carries the newsletter form at the end',
+        articleSubscribe,
+        articleSubscribe ? 'visible' : 'missing',
+      );
+
       const confirmToken = linksSince(mark).at(-1);
       let confirmedInBrowser = false;
       if (confirmToken) {

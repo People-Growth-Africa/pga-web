@@ -7,6 +7,7 @@ import ContentImage from '../components/ContentImage';
 import SafeContent from '../components/SafeContent';
 import PostBody from '../components/PostBody';
 import SEO from '../components/SEO';
+import NewsletterSignup from '../components/NewsletterSignup';
 import { useContent } from '../hooks/useContent';
 import { useLivePosts } from '../hooks/useLivePosts';
 import {
@@ -260,6 +261,12 @@ export default function BlogPostPage() {
                 renderContent(post.content)
               )}
             </article>
+          </AnimateOnScroll>
+
+          {/* The reader who has just finished the article is the one most likely
+              to want the next one. Same form and confirmation flow as /blog. */}
+          <AnimateOnScroll delay={0.12}>
+            <NewsletterSignup variant="article" />
           </AnimateOnScroll>
 
           {/* Share */}

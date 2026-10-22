@@ -4,9 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import SEO from '../components/SEO';
 import { staticPageMeta } from '../lib/pageMeta';
-import FormsUnavailableNotice, { FormAvailabilityPending } from '../components/FormsUnavailableNotice';
-import { useFormsAvailability } from '../hooks/useFormsAvailability';
-import { authRequest } from '../lib/authClient';
+import NewsletterSignup from '../components/NewsletterSignup';
 import ContentImage from '../components/ContentImage';
 import { getFeaturedPost } from '../data/posts';
 import { useContent } from '../hooks/useContent';
@@ -19,20 +17,10 @@ import { mergeBlogCategories, mergeBlogPosts, type BlogView } from '../lib/conte
    day the content sheet takes the list past this number. */
 const POSTS_PER_PAGE = 12;
 
-/** 'sent' only ever means the server answered; nothing is faked here. */
-type NewsletterState = 'idle' | 'sending' | 'sent' | 'error';
-
 export default function BlogList() {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(POSTS_PER_PAGE);
-  const [newsletterEmail, setNewsletterEmail] = useState('');
-  const [newsletterState, setNewsletterState] = useState<NewsletterState>('idle');
-  const [newsletterNotice, setNewsletterNotice] = useState('');
-  // The newsletter writes to the same database the lead forms do, so it asks
-  // the same question on load and says so before anyone types an address.
-  const formsAvailability = useFormsAvailability();
-
   // The built-in posts, anything new in the sheet, and everything a manager has
   // published, deduped by slug with the built-in page winning.
   const { entries } = useContent();
@@ -107,34 +95,6 @@ export default function BlogList() {
 
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
-  };
-
-  const handleSubscribe = async (e: FormEvent) => {
-    e.preventDefault();
-    const email = newsletterEmail.trim();
-    if (!email || newsletterState === 'sending') return;
-
-    setNewsletterState('sending');
-    setNewsletterNotice('');
-
-    const result = await authRequest<{ ok: boolean; message?: string; already?: boolean }>(
-      '/api/newsletter/subscribe',
-      { body: { email } },
-    );
-
-    if (result.ok) {
-      setNewsletterState('sent');
-      setNewsletterNotice(
-        result.data.message ?? 'Check your inbox to confirm your subscription.',
-      );
-      // An address that is already subscribed stays in the box: clearing it
-      // would suggest another email was sent to it.
-      if (result.data.already !== true) setNewsletterEmail('');
-      return;
-    }
-
-    setNewsletterState('error');
-    setNewsletterNotice(result.failure.fields?.email ?? result.failure.error);
   };
 
   return (
@@ -299,68 +259,9 @@ export default function BlogList() {
         </div>
       </section>
 
-      {/* ── Newsletter ─────────────────────────────────── */}
-      <section className="py-[100px] bg-cream relative overflow-hidden">
-        <div className="absolute top-[-60px] right-[-60px] w-[300px] h-[300px] rounded-full bg-terracotta/8" />
-        <div className="absolute bottom-[-40px] left-[-40px] w-[200px] h-[200px] rounded-full bg-brand-green/6" />
-        <div className="relative z-[1] max-w-[1200px] mx-auto px-6">
-          <AnimateOnScroll className="max-w-[680px] mx-auto text-center">
-            <p className="font-[family-name:var(--font-body)] text-[0.8rem] font-semibold uppercase tracking-[0.12em] text-brand-green mb-3">Stay in the Loop</p>
-            <h2 className="font-[family-name:var(--font-heading)] font-semibold text-charcoal leading-[1.15] mb-4"
-              style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)' }}>
-              Get HR Insights<br />Delivered to Your Inbox
-            </h2>
-            <p className="font-[family-name:var(--font-body)] text-[1.05rem] text-charcoal/60 leading-relaxed mb-9 max-w-[500px] mx-auto">
-              Join 2,000+ business leaders across Africa receiving practical people management tips, regulatory updates, and growth strategies. It comes in quarterly.
-            </p>
-            {formsAvailability !== 'available' ? (
-              formsAvailability === 'unavailable' ? (
-                <FormsUnavailableNotice className="max-w-[480px] mx-auto text-left" />
-              ) : (
-                <FormAvailabilityPending className="text-center" />
-              )
-            ) : (
-            <form onSubmit={handleSubscribe} className="flex flex-col sm:flex-row gap-3 max-w-[480px] mx-auto">
-              <input
-                type="email"
-                placeholder="Enter your email address"
-                value={newsletterEmail}
-                onChange={(e) => {
-                  setNewsletterEmail(e.target.value);
-                  // A new address is a new attempt, so the last answer goes away.
-                  if (newsletterState !== 'idle') {
-                    setNewsletterState('idle');
-                    setNewsletterNotice('');
-                  }
-                }}
-                required
-                className="flex-1 px-6 py-4 border-[1.5px] border-charcoal/12 rounded-full font-[family-name:var(--font-body)] text-base bg-white text-charcoal outline-none focus:border-brand-green transition-colors placeholder:text-charcoal/40"
-                aria-label="Email address for newsletter"
-              />
-              <button type="submit" disabled={newsletterState === 'sending'} className={`px-8 py-4 border-none rounded-full font-[family-name:var(--font-body)] text-[0.95rem] font-semibold cursor-pointer transition-all duration-300 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-70 ${
-                newsletterState === 'sent'
-                  ? 'bg-brand-green text-white'
-                  : 'bg-deep-green text-white hover:bg-terracotta hover:-translate-y-0.5'
-              }`}>
-                {newsletterState === 'sending' ? 'Sending…' : newsletterState === 'sent' ? 'Thanks ✓' : 'Subscribe'}
-              </button>
-            </form>
-            )}
-            {/* Old wording, kept for reference: No spam. The newsletter and nothing else, every two weeks. */}
-            <p className="font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/40 mt-4">No spam. The newsletter and nothing else. It comes in quarterly.</p>
-            {/* Mounted from the start so a screen reader announces the server's answer when it lands. */}
-            <p
-              role="status"
-              aria-live="polite"
-              className={`font-[family-name:var(--font-body)] text-[0.85rem] mt-2 min-h-[1.25rem] ${
-                newsletterState === 'error' ? 'text-terracotta' : 'text-deep-green'
-              }`}
-            >
-              {newsletterNotice}
-            </p>
-          </AnimateOnScroll>
-        </div>
-      </section>
+      <AnimateOnScroll>
+        <NewsletterSignup />
+      </AnimateOnScroll>
     </>
   );
 }

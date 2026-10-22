@@ -12,8 +12,10 @@
  * coming soon page (see `src/lib/accountGate.ts`). Setting it back to `false`
  * turns the form links back on for every host and closes the accounts routes.
  */
-export const TALENT_FORM_URL = 'https://forms.gle/JdbM7Q6KT4DjCG2B7';
-export const EMPLOYER_FORM_URL = 'https://forms.gle/t9W3bkrFfNW1pX3j6';
+export const TALENT_FORM_URL =
+  'https://docs.google.com/forms/d/e/1FAIpQLSdHrr0XUxa44bhh6ZXjlIdxDKm-uGjCQIxSJkmeMAtwz3bG-Q/viewform?usp=dialog';
+export const EMPLOYER_FORM_URL =
+  'https://docs.google.com/forms/d/e/1FAIpQLSe_slu3UKGYnur0CFdFFXI23IMJZ-KfF6aO3WP1Staueo_52g/viewform?usp=dialog';
 
 // Typed as a plain boolean rather than a literal so the checks below stay
 // honest: they are real conditions that a single edit can turn around.
