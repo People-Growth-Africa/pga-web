@@ -50,6 +50,14 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
       email: user.email,
       emailVerified: user.email_verified,
     },
-    redirect: safeRedirect(user.role === 'talent' ? '/talent/dashboard' : '/employer/dashboard'),
+    // Managers get the content panel. Without a branch of their own they fall
+    // through to the employer dashboard, which is a page their role cannot use.
+    redirect: safeRedirect(
+      user.role === 'talent'
+        ? '/talent/dashboard'
+        : user.role === 'manager'
+          ? '/admin/content'
+          : '/employer/dashboard',
+    ),
   });
 });

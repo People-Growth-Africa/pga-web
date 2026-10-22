@@ -86,26 +86,27 @@ export function sendJson(res: VercelResponse, status: number, body: unknown): vo
  *
  * sendJson above is for anything that belongs to a signed in visitor and is
  * never stored. The updates feed is the other case: the same answer for
- * everyone, read from a sheet that changes rarely. `s-maxage` is the closest
- * thing this deployment has to ISR - Vercel serves the stored copy for `seconds`
- * without invoking the function, then serves one stale copy while the next is
- * built for up to `staleSeconds` more. `max-age=0` keeps browsers out of it, so
- * a visitor never sits on an old copy of a page they are actively reading.
+ * everyone, read from a database that changes only when a manager saves.
+ * `s-maxage` is the closest thing this deployment has to ISR - Vercel serves
+ * the stored copy for `seconds` without invoking the function.
+ *
+ * No `stale-while-revalidate`, deliberately. `max-age=0` makes the response
+ * stale the moment it arrives, so that directive tells a browser to serve the
+ * copy it already holds and refresh behind the scenes - and a manager who
+ * publishes a post and opens the page would be shown the previous list, every
+ * time, and conclude the save had failed. `s-maxage` alone keeps the CDN fast
+ * without ever handing a browser a copy it already knows is out of date.
  */
 export function sendPublicJson(
   res: VercelResponse,
   status: number,
   body: unknown,
   seconds: number,
-  staleSeconds: number = seconds * 2,
 ): void {
   if (res.headersSent) return;
   res.status(status);
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader(
-    'Cache-Control',
-    `public, max-age=0, s-maxage=${seconds}, stale-while-revalidate=${staleSeconds}`,
-  );
+  res.setHeader('Cache-Control', `public, max-age=0, s-maxage=${seconds}`);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.send(JSON.stringify(body));
 }

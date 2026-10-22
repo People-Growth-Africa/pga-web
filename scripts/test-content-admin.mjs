@@ -192,11 +192,17 @@ async function main() {
     const managerLogin = await manager('/api/auth/login', {
       body: { email: MANAGER_EMAIL, password: PASSWORD },
     });
+    // The redirect matters as much as the status: it is what the page follows
+    // after signing in. A manager who is sent to the employer dashboard lands on
+    // a page their role cannot use, and a role branch that only knows talent and
+    // employer does exactly that.
     check(
       3,
-      'the manager can sign in',
-      managerLogin.status >= 200 && managerLogin.status < 300,
-      `status ${managerLogin.status}`,
+      'the manager can sign in and is sent to the content panel',
+      managerLogin.status >= 200 &&
+        managerLogin.status < 300 &&
+        managerLogin.json?.redirect === '/admin/content',
+      `status ${managerLogin.status}, redirect ${managerLogin.json?.redirect ?? 'none'}`,
     );
 
     /* ── The gate ────────────────────────────────────────────────────────── */
