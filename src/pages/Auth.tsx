@@ -18,13 +18,15 @@ import {
 } from '../lib/authClient';
 
 /**
- * Accounts are built but not announced, so the coming soon page is what every
- * visitor sees for now, on every host. Set this to true (or delete it and the
- * branch that reads it) to hand the decision back to the host rule in
+ * Whether these forms are open at all, regardless of host. It is `true` while
+ * accounts are being demonstrated, which hands the decision to the host rule in
  * src/lib/accountGate.ts: localhost and *.vercel.app show the real forms, and
  * the public domain keeps the coming soon page.
+ *
+ * Set it to false (or delete it and the branch that reads it) to put the coming
+ * soon page back on every host.
  */
-const ACCOUNT_FORMS_OPEN = false;
+const ACCOUNT_FORMS_OPEN = true;
 
 type Tab = 'signup' | 'login';
 
