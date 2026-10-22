@@ -10,6 +10,7 @@ import SEO from '../components/SEO';
 import NewsletterSignup from '../components/NewsletterSignup';
 import { useContent } from '../hooks/useContent';
 import { useLivePosts } from '../hooks/useLivePosts';
+import { isSafeHttpUrl } from '../lib/content';
 import {
   findBlog,
   mergeBlogCategories,
@@ -81,6 +82,13 @@ export default function BlogPostPage() {
   }
 
   const categoryLabel = categories.find((c) => c.id === post.category)?.label ?? post.category;
+  // The manager's optional link out, which the editor describes as a button at
+  // the end of the post. Only an http(s) URL is rendered: the value is stored as
+  // written, and a `javascript:` one here would be a script in the page.
+  const externalLinkUrl = isSafeHttpUrl(post.linkUrl ?? null) ? post.linkUrl : null;
+  const externalLink = externalLinkUrl
+    ? { url: externalLinkUrl, label: post.linkLabel?.trim() || 'Read more' }
+    : null;
   const formattedDate = new Date(post.date).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'long',
@@ -262,6 +270,24 @@ export default function BlogPostPage() {
               )}
             </article>
           </AnimateOnScroll>
+
+          {/* Where the article came from, or the page it refers to. Only a
+              manager sets this, from the External link field in the editor. */}
+          {externalLink ? (
+            <AnimateOnScroll delay={0.11}>
+              <div className="mt-10">
+                <a
+                  href={externalLink.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-brand-green text-white font-[family-name:var(--font-body)] font-semibold text-[0.95rem] rounded-full hover:bg-deep-green transition-colors"
+                >
+                  {externalLink.label}
+                  <span aria-hidden="true">↗</span>
+                </a>
+              </div>
+            </AnimateOnScroll>
+          ) : null}
 
           {/* The reader who has just finished the article is the one most likely
               to want the next one. Same form and confirmation flow as /blog. */}

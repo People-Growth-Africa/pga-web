@@ -82,6 +82,8 @@ export default async function postPage(req: VercelRequest, res: VercelResponse):
     body: row.body,
     category: row.category_name,
     coverImageUrl: row.cover_image_url,
+    linkLabel: row.link_label ?? null,
+    linkUrl: row.link_url ?? null,
     eventStart: row.event_start,
     eventEnd: row.event_end,
     locationText: row.location_text,

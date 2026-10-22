@@ -49,6 +49,13 @@ export type BlogView = BlogPost & {
    * 1600px file, and a reader who opens the article does.
    */
   detailImage?: string;
+  /**
+   * An outside page the article points at, offered as a button after the body.
+   * Only a manager can set one, and only on a blog post, so a built-in or sheet
+   * post never has either field.
+   */
+  linkLabel?: string | null;
+  linkUrl?: string | null;
 };
 
 /** A built-in or sheet event, with the extra facts the cards and page need. */
@@ -148,6 +155,8 @@ export function blogFromLive(post: LivePost): BlogView {
     // looks soft in every client that shows it large.
     shareImage: post.coverImageUrl ?? post.coverImageThumbUrl ?? undefined,
     detailImage: post.coverImageUrl ?? post.coverImageThumbUrl ?? undefined,
+    linkLabel: post.linkLabel,
+    linkUrl: post.linkUrl,
     date: (post.publishedAt ?? post.updatedAt).slice(0, 10),
     author,
     readTime: readTime(post.body),

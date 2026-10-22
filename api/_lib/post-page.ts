@@ -30,6 +30,9 @@ export type PagePost = {
   body: string;
   category: string | null;
   coverImageUrl: string | null;
+  /** An outside page the article points at, shown as a button after the body. */
+  linkLabel: string | null;
+  linkUrl: string | null;
   eventStart: string | null;
   eventEnd: string | null;
   locationText: string | null;
@@ -326,6 +329,10 @@ export function renderFallbackArticle(post: PagePost): string {
   const section = isEvent ? 'Events' : 'Blog';
   const cover = post.coverImageUrl ? absoluteUrl(post.coverImageUrl) : null;
   const registration = safeHttpUrl(post.registrationUrl);
+  // A blog post can point at an outside page - a LinkedIn post, a source, a
+  // longer read. The manager's own label is the button text, and a URL that is
+  // not http(s) is dropped rather than written into the response.
+  const external = isEvent ? null : safeHttpUrl(post.linkUrl);
 
   // A post carries a date and a category; an event carries a schedule and a
   // place, which a definition list states properly.
@@ -374,6 +381,9 @@ export function renderFallbackArticle(post: PagePost): string {
       ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(post.title)}" style="width:100%;height:auto;border-radius:.75rem;margin:0 0 1.75rem" />`
       : '',
     `<div>${renderBodyHtml(post.body)}</div>`,
+    external
+      ? `<p style="margin:2rem 0 0"><a href="${escapeHtml(external)}" rel="noopener noreferrer" style="display:inline-block;background:#0f6e56;color:#fff;padding:.7rem 1.4rem;border-radius:999px;text-decoration:none;font-weight:600">${escapeHtml(post.linkLabel?.trim() || 'Read more')}</a></p>`
+      : '',
     isEvent && registration
       ? `<p style="margin:2rem 0 0"><a href="${escapeHtml(registration)}" rel="noopener noreferrer" style="display:inline-block;background:#0f6e56;color:#fff;padding:.7rem 1.4rem;border-radius:999px;text-decoration:none;font-weight:600">Register for this event</a></p>`
       : '',

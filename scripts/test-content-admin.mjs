@@ -1071,6 +1071,58 @@ async function main() {
       !postCreateSchema.safeParse({ ...coverDraft, coverImageUrl: 'javascript:alert(1)' }).success &&
         !postCreateSchema.safeParse({ ...coverDraft, coverImageUrl: '/api/media/other/x.webp' }).success,
     );
+
+    /* ── The external link on a post ─────────────────────────────────────── */
+
+    // The editor promises the manager's link is "shown as a button at the end of
+    // the post". The page a crawler and a first paint see is rendered here, so
+    // this is where that promise is checked - including that a stored value
+    // cannot become a script link.
+    const { renderFallbackArticle } = await import('../api/_lib/post-page.ts');
+    const pagePost = {
+      type: 'blog',
+      slug: `${POST_PREFIX}-linked`,
+      title: 'A linked post',
+      excerpt: 'Summary',
+      body: 'Body',
+      category: 'Articles',
+      coverImageUrl: null,
+      linkLabel: 'See Post on LinkedIn',
+      linkUrl: 'https://lnkd.in/p/eWTFv5es',
+      eventStart: null,
+      eventEnd: null,
+      locationText: null,
+      isOnline: false,
+      registrationUrl: null,
+      publishedAt: '2026-10-22T12:00:00.000Z',
+      updatedAt: '2026-10-22T12:00:00.000Z',
+    };
+
+    const linkedHtml = renderFallbackArticle(pagePost);
+    check(
+      75,
+      'a published post carries its external link as a button',
+      linkedHtml.includes('href="https://lnkd.in/p/eWTFv5es"') &&
+        linkedHtml.includes('See Post on LinkedIn'),
+    );
+    const scriptLink = renderFallbackArticle({ ...pagePost, linkUrl: 'javascript:alert(1)' });
+    const unlabelled = renderFallbackArticle({ ...pagePost, linkLabel: '  ' });
+    check(
+      76,
+      'a link that is not http(s) is dropped, and an empty label still gets a button',
+      !scriptLink.includes('javascript:') && unlabelled.includes('>Read more<'),
+      'javascript dropped, empty label falls back',
+    );
+    check(
+      77,
+      "an event does not grow the blog's external link",
+      !renderFallbackArticle({
+        ...pagePost,
+        type: 'event',
+        isOnline: true,
+        linkUrl: 'https://lnkd.in/p/eWTFv5es',
+      }).includes('lnkd.in'),
+    );
   } finally {
     // Remove every row this run created, whatever happened above.
     try {
