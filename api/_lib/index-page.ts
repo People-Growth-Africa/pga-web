@@ -32,7 +32,16 @@ export type IndexRow = {
 
 export const INDEX_SECTION: Record<
   IndexType,
-  { path: string; heading: string; section: string; title: string; description: string; intro: string }
+  {
+    path: string;
+    heading: string;
+    section: string;
+    title: string;
+    description: string;
+    intro: string;
+    /** Shown instead of the list when there is nothing to print. */
+    empty: string;
+  }
 > = {
   blog: {
     path: '/blog',
@@ -43,6 +52,7 @@ export const INDEX_SECTION: Record<
       'Plain-spoken guides on HR, Nigerian labour law and people management for growing businesses in Nigeria and across Africa.',
     intro:
       'Practical writing on HR, Nigerian labour law and the people problems that come with growth.',
+    empty: 'No posts yet, check back soon.',
   },
   event: {
     path: '/events',
@@ -53,6 +63,7 @@ export const INDEX_SECTION: Record<
       'Live webinars, masterclasses and small mentorship cohorts on HR, labour law and leadership for African business leaders and HR teams.',
     intro:
       'Webinars, masterclasses and mentorship cohorts for leaders and HR teams across Africa.',
+    empty: 'No programmes yet, check back soon.',
   },
 };
 
@@ -159,7 +170,7 @@ export function renderIndexList(type: IndexType, rows: IndexRow[]): string {
     `<p style="margin:0 0 1.5rem;color:#5b6b68">${escapeHtml(copy.intro)}</p>`,
     items.length
       ? `<ul style="list-style:none;padding:0;margin:1rem 0 0">\n        ${items.join('\n        ')}\n      </ul>`
-      : '<p>Nothing has been published here yet.</p>',
+      : `<p>${escapeHtml(copy.empty)}</p>`,
     '</article>',
     '</div>',
     `<!-- ${copy.path} rendered at request time from the built-in records and the published rows -->`,

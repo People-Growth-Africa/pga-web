@@ -117,15 +117,18 @@ Based in Apapa, Lagos, People Growth Africa (PGA) helps SMEs, agribusinesses and
 - Upcoming Events & Workshops: ${DOMAIN}/events
 - Knowledge Hub / Blog: ${DOMAIN}/blog
 - Book a Free Consultation: ${DOMAIN}/consultation
-
-## Knowledge Articles & Insights
 `;
 
-slugs.forEach((slug, i) => {
-  const title = titles[i] || slug;
-  const excerpt = excerpts[i] || 'Article insight on African HR and enterprise growth.';
-  llmsTxt += `- [${title}](${DOMAIN}/blog/${slug}): ${excerpt}\n`;
-});
+// The site ships no built-in articles any more: every article is a row in the
+// posts table. A build with none must not print a heading with nothing under it.
+if (slugs.length > 0) {
+  llmsTxt += '\n## Knowledge Articles & Insights\n';
+  slugs.forEach((slug, i) => {
+    const title = titles[i] || slug;
+    const excerpt = excerpts[i] || 'Article insight on African HR and enterprise growth.';
+    llmsTxt += `- [${title}](${DOMAIN}/blog/${slug}): ${excerpt}\n`;
+  });
+}
 
 llmsTxt += `\n## Contact Information
 - Address: Lagos, Nigeria
@@ -140,13 +143,15 @@ console.log('Generated llms.txt standard file for AI web crawlers.');
 
 let llmsFullTxt = `# People Growth Africa (PGA) - Full Knowledge & Services Index\n\n`;
 llmsFullTxt += llmsTxt;
-llmsFullTxt += `\n---\n\n## Full Article Index\n\n`;
 
-slugs.forEach((slug, i) => {
-  const title = titles[i] || slug;
-  const excerpt = excerpts[i] || '';
-  llmsFullTxt += `### ${title}\nURL: ${DOMAIN}/blog/${slug}\nSummary: ${excerpt}\n\n`;
-});
+if (slugs.length > 0) {
+  llmsFullTxt += `\n---\n\n## Full Article Index\n\n`;
+  slugs.forEach((slug, i) => {
+    const title = titles[i] || slug;
+    const excerpt = excerpts[i] || '';
+    llmsFullTxt += `### ${title}\nURL: ${DOMAIN}/blog/${slug}\nSummary: ${excerpt}\n\n`;
+  });
+}
 
 fs.writeFileSync(path.join(publicDir, 'llms-full.txt'), llmsFullTxt, 'utf-8');
 console.log('Generated llms-full.txt successfully.');

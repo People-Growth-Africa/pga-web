@@ -3,9 +3,10 @@
  *
  *   npm run build && npm run test:crawl
  *
- * The build prerenders the built-in articles. Everything published since - a new
- * post, a new event, the two section indexes and the sitemap - is rendered by the
- * function through a rewrite. This suite starts the real API on a local port,
+ * Articles and events are not files any more: the build writes only the home page
+ * and /consultation, and everything else - a new post, a new event, the two
+ * section indexes and the sitemap - is rendered by the function through a
+ * rewrite. This suite starts the real API on a local port,
  * inserts its own rows, asks for those URLs with a crawler's user agent and
  * checks the response itself: status, canonical, structured data, and the body
  * text a crawler that never runs JavaScript would read.
@@ -23,6 +24,8 @@ const SITE = 'https://www.peoplegrowthafrica.com';
 const stamp = `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`;
 const PUBLISHED_SLUG = `crawl-test-published-${stamp}`;
 const DRAFT_SLUG = `crawl-test-draft-${stamp}`;
+const EVENT_SLUG = `crawl-test-event-${stamp}`;
+const EVENT_TITLE = `Crawl test event ${stamp}`;
 const BODY_SENTINEL = `Sentinel line ${stamp} that only the article body carries.`;
 const DRAFT_SENTINEL = `Draft line ${stamp} that must never be public.`;
 const BINGBOT = 'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)';
@@ -129,6 +132,14 @@ async function main() {
     ],
   );
 
+  // An event carries no category: the table's check constraint allows one only
+  // for a blog post, which is why this insert leaves it null.
+  await sql.query(
+    `INSERT INTO posts (slug, title, excerpt, body, type, status, published_at, event_start, is_online)
+     VALUES ($1, $2, $3, $4, 'event', 'published', now(), now() + interval '30 days', true)`,
+    [EVENT_SLUG, EVENT_TITLE, 'A summary written by the crawl suite.', 'The event body.'],
+  );
+
   const server = await startApiServer({ quiet: true });
   const base = server.origin;
   console.log(`\nTesting ${base} as Bingbot\n`);
@@ -197,6 +208,23 @@ async function main() {
     const wrongSection = await fetchText(base, `/events/${PUBLISHED_SLUG}`);
     check(wrongSection.response.status === 404, 'a blog slug requested under /events is a 404');
 
+    /* ── A withdrawn page ──────────────────────────────────────────────────── */
+
+    // These URLs served real pages until the placeholder content was removed.
+    // 410 tells a crawler the page was taken down on purpose; 404 would keep it
+    // coming back for a URL that is never returning.
+    for (const gone of [
+      '/blog/from-whatsapp-groups-to-world-class-hr',
+      '/events/nigerian-labour-law-compliance-2026',
+    ]) {
+      const response = await fetchText(base, gone);
+      check(response.response.status === 410, `${gone} answers 410`, String(response.response.status));
+      check(
+        response.body.includes('<meta name="robots" content="noindex, nofollow"'),
+        `${gone} is noindex`,
+      );
+    }
+
     /* ── The section indexes ──────────────────────────────────────────────── */
 
     const blogIndex = await fetchText(base, '/blog');
@@ -207,7 +235,6 @@ async function main() {
       '/blog canonical is the section URL',
     );
     check(blogText.includes(PUBLISHED_SLUG) || blogText.includes('Crawl test: a post published after the build'), '/blog links the new post');
-    check(blogText.includes('From WhatsApp Groups'), '/blog still lists the built-in posts');
     check(!blogText.includes(DRAFT_SLUG), '/blog does not link a draft');
     check((blogIndex.body.match(/<h1[\s>]/g) ?? []).length === 1, '/blog has exactly one h1');
     check(
@@ -218,8 +245,7 @@ async function main() {
     const eventsIndex = await fetchText(base, '/events');
     const eventsText = textOf(eventsIndex.body);
     check(eventsIndex.response.status === 200, '/events answers 200');
-    check(eventsText.includes('HR Leaders Roundtable'), '/events lists a published event from the database');
-    check(eventsText.includes('Nigerian Labour Law'), '/events still lists the built-in events');
+    check(eventsText.includes(EVENT_TITLE), '/events lists a published event from the database');
     check((eventsIndex.body.match(/<h1[\s>]/g) ?? []).length === 1, '/events has exactly one h1');
 
     /* ── The sitemap ──────────────────────────────────────────────────────── */
@@ -232,7 +258,13 @@ async function main() {
       sitemap.response.headers.get('content-type') ?? 'none',
     );
     check(sitemap.body.includes(`<loc>${SITE}/blog/${PUBLISHED_SLUG}</loc>`), 'the sitemap includes the published post');
+    check(sitemap.body.includes(`<loc>${SITE}/events/${EVENT_SLUG}</loc>`), 'the sitemap includes the published event');
     check(!sitemap.body.includes(DRAFT_SLUG), 'the sitemap excludes the draft');
+    check(
+      !sitemap.body.includes('from-whatsapp-groups-to-world-class-hr') &&
+        !sitemap.body.includes('nigerian-labour-law-compliance-2026'),
+      'the sitemap lists no withdrawn page',
+    );
     check(sitemap.body.includes(`<loc>${SITE}/blog</loc>`), 'the sitemap includes the two section indexes');
 
     const publishedBlock = sitemap.body
@@ -275,7 +307,7 @@ try {
 } finally {
   if (sql) {
     await sql
-      .query('DELETE FROM posts WHERE slug = ANY($1)', [[PUBLISHED_SLUG, DRAFT_SLUG]])
+      .query('DELETE FROM posts WHERE slug = ANY($1)', [[PUBLISHED_SLUG, DRAFT_SLUG, EVENT_SLUG]])
       .catch((error) => console.error('cleanup failed', error));
   }
 

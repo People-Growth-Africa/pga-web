@@ -6,7 +6,6 @@ import SEO from '../components/SEO';
 import { staticPageMeta } from '../lib/pageMeta';
 import NewsletterSignup from '../components/NewsletterSignup';
 import ContentImage from '../components/ContentImage';
-import { getFeaturedPost } from '../data/posts';
 import { useContent } from '../hooks/useContent';
 import { useLivePosts } from '../hooks/useLivePosts';
 import { isFirstPaint } from '../lib/firstPaint';
@@ -28,12 +27,8 @@ export default function BlogList() {
   const allPosts = useMemo(() => mergeBlogPosts(entries, live.posts), [entries, live.posts]);
   const categories = useMemo(() => mergeBlogCategories(allPosts), [allPosts]);
 
-  // Featured stays the hand-picked built-in article; a sheet row never becomes
-  // the hero at the top of the page.
-  const featured = getFeaturedPost();
-
   const filteredPosts = useMemo(() => {
-    let posts = allPosts.filter((p) => p.id !== featured.id);
+    let posts = allPosts;
     if (activeCategory !== 'all') {
       posts = posts.filter((p) => p.category === activeCategory);
     }
@@ -47,7 +42,7 @@ export default function BlogList() {
       );
     }
     return posts;
-  }, [activeCategory, searchQuery, featured.id, allPosts]);
+  }, [activeCategory, searchQuery, allPosts]);
 
   const visiblePosts = filteredPosts.slice(0, visibleCount);
   const hasMore = visibleCount < filteredPosts.length;
@@ -117,6 +112,7 @@ export default function BlogList() {
             </p>
           </AnimateOnScroll>
 
+          {allPosts.length > 0 && (
           <AnimateOnScroll delay={0.1}>
             <form onSubmit={handleSearch} className="flex max-w-[520px] mx-auto bg-white/10 border border-white/15 rounded-full overflow-hidden backdrop-blur-sm">
               <input
@@ -134,9 +130,28 @@ export default function BlogList() {
               </button>
             </form>
           </AnimateOnScroll>
+          )}
         </div>
       </section>
 
+      {allPosts.length === 0 ? (
+        <section className="py-[80px] pb-[100px] bg-white">
+          <div className="max-w-[1200px] mx-auto px-6">
+            <div className="max-w-[640px] mx-auto text-center py-16 px-8 bg-cream/50 border border-charcoal/10 rounded-[24px]">
+              <p className="font-[family-name:var(--font-body)] text-[0.8rem] font-semibold uppercase tracking-[0.12em] text-brand-green mb-3">
+                The Knowledge Hub
+              </p>
+              <h2 className="font-[family-name:var(--font-heading)] text-2xl md:text-3xl font-semibold text-charcoal mb-3">
+                No posts yet, check back soon
+              </h2>
+              <p className="font-[family-name:var(--font-body)] text-base text-charcoal/60 leading-relaxed">
+                We are writing the first articles now. Add your email below and they will reach you as soon as they are published.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : (
+      <>
       {/* ── Category Filters ──────────────────────────── */}
       <section className="pt-12 bg-white">
         <div className="max-w-[1200px] mx-auto px-6">
@@ -156,59 +171,6 @@ export default function BlogList() {
               </button>
             ))}
           </AnimateOnScroll>
-        </div>
-      </section>
-
-      {/* ── Featured Post ─────────────────────────────── */}
-      <section className="py-[60px]">
-        <div className="max-w-[1200px] mx-auto px-6">
-          <Link to={`/blog/${featured.slug}`} className="block group">
-            <AnimateOnScroll>
-              <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-8 items-center">
-                <div className="relative rounded-[20px] overflow-hidden aspect-[16/10] bg-mint">
-                  <img
-                    src={featured.image || '/images/og-image.jpg'}
-                    alt={featured.title}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    loading="eager"
-                  />
-                  <span className="absolute top-5 left-5 inline-flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white font-[family-name:var(--font-body)] text-[0.75rem] font-semibold uppercase tracking-wider rounded-full">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                    Featured
-                  </span>
-                </div>
-                <div className="py-3">
-                  <div className="flex flex-wrap items-center gap-4 mb-4">
-                    <span className="inline-flex px-3.5 py-1.5 bg-mint text-deep-green font-[family-name:var(--font-body)] text-[0.78rem] font-semibold rounded-full uppercase tracking-wider">
-                      {categories.find((c) => c.id === featured.category)?.label}
-                    </span>
-                    <span className="font-[family-name:var(--font-body)] text-[0.85rem] text-charcoal/50">{new Date(featured.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-                    <span className="font-[family-name:var(--font-body)] text-[0.85rem] text-charcoal/50 before:content-['·'] before:mr-4">{featured.readTime} min read</span>
-                  </div>
-                  <h2 className="font-[family-name:var(--font-heading)] font-semibold text-charcoal leading-[1.2] mb-4 group-hover:text-deep-green transition-colors"
-                    style={{ fontSize: 'clamp(1.6rem, 3vw, 2.2rem)' }}>
-                    {featured.title}
-                  </h2>
-                  <p className="font-[family-name:var(--font-body)] text-base text-charcoal/60 leading-relaxed mb-7">{featured.excerpt}</p>
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-11 h-11 rounded-full bg-mint flex items-center justify-center font-[family-name:var(--font-heading)] font-semibold text-deep-green text-sm">
-                      {featured.author.initials}
-                    </div>
-                    <div>
-                      <div className="font-[family-name:var(--font-body)] font-semibold text-[0.9rem] text-charcoal">{featured.author.name}</div>
-                      <div className="font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/50">{featured.author.role}</div>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center gap-2 font-[family-name:var(--font-body)] font-semibold text-[0.95rem] text-brand-green group-hover:gap-3 group-hover:text-terracotta transition-all">
-                    Read Full Article
-                    <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round">
-                      <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-                    </svg>
-                  </span>
-                </div>
-              </div>
-            </AnimateOnScroll>
-          </Link>
         </div>
       </section>
 
@@ -258,6 +220,8 @@ export default function BlogList() {
           )}
         </div>
       </section>
+      </>
+      )}
 
       <AnimateOnScroll>
         <NewsletterSignup />

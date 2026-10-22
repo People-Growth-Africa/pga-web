@@ -29,6 +29,16 @@ const EMAIL = `${EMAIL_PREFIX}@example.com`;
 const PASSWORD = 'Quiet-Harbour-7712';
 const NAME = 'Ada UI Test';
 const NEWSLETTER_EMAIL = `${EMAIL_PREFIX}-newsletter@example.com`;
+/**
+ * One published article and one published event this run owns.
+ *
+ * The site ships no built-in content, so an article page and an event card can
+ * only be exercised through the posts table - exactly how a manager's own post
+ * arrives. Both carry this run's slug prefix and are deleted in cleanup.
+ */
+const ARTICLE_SLUG = `${EMAIL_PREFIX}-article`;
+const EVENT_SLUG = `${EMAIL_PREFIX}-event`;
+const EVENT_TITLE = 'UI test: a programme this run published';
 /** The logo mark that is actually painted: the other colour scheme's copy is hidden. */
 const LOGO_IMG = 'a[aria-label="People Growth Africa Home"] img:visible';
 
@@ -56,6 +66,7 @@ async function cleanupTestRows() {
   if (!connection) return;
   const { neon } = await import('@neondatabase/serverless');
   const sql = neon(connection);
+  await sql.query('DELETE FROM posts WHERE slug = ANY($1)', [[ARTICLE_SLUG, EVENT_SLUG]]);
   await sql.query('DELETE FROM newsletter_subscribers WHERE email LIKE $1', [`${EMAIL_PREFIX}%`]);
   for (const table of ['event_registrations', 'consultation_bookings', 'enquiries']) {
     await sql.query(`DELETE FROM ${table} WHERE email LIKE $1`, [`${EMAIL_PREFIX}%`]);
@@ -213,6 +224,41 @@ async function main() {
   if (!imports.ok) {
     console.error(`\n${imports.summary}\n\nRun \`node scripts/check-api-imports.mjs\` for the details.\n`);
     process.exit(1);
+  }
+
+  // The two fixtures the browser needs. Test data, never shipped: both are
+  // removed in cleanupTestRows(), success or failure.
+  {
+    const { neon } = await import('@neondatabase/serverless');
+    const sql = neon(process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL);
+    const categories = await sql.query('SELECT id FROM categories ORDER BY name LIMIT 1');
+    if (!categories[0]?.id) {
+      throw new Error('No category exists. Run `npm run setup:content` first.');
+    }
+    await sql.query('DELETE FROM posts WHERE slug = ANY($1)', [[ARTICLE_SLUG, EVENT_SLUG]]);
+    await sql.query(
+      `INSERT INTO posts (slug, title, excerpt, body, type, category_id, status, published_at)
+       VALUES ($1, $2, $3, $4, 'blog', $5, 'published', now())`,
+      [
+        ARTICLE_SLUG,
+        'UI test: an article this run published',
+        'A throwaway article, created and removed by the browser suite.',
+        '## What the test checks\n\nThe newsletter form sits at the end of this article.',
+        categories[0].id,
+      ],
+    );
+    // An event has no category: the table's check constraint allows one only for
+    // a blog post.
+    await sql.query(
+      `INSERT INTO posts (slug, title, excerpt, body, type, status, published_at, event_start, is_online)
+       VALUES ($1, $2, $3, $4, 'event', 'published', now(), now() + interval '30 days', true)`,
+      [
+        EVENT_SLUG,
+        EVENT_TITLE,
+        'A throwaway programme, created and removed by the browser suite.',
+        'The registration form is what this fixture exists for.',
+      ],
+    );
   }
 
   const server = await startApiServer({ quiet: true });
@@ -483,7 +529,7 @@ async function main() {
 
       // The newsletter is not only an index-page block: the end of an article is
       // where a reader is most likely to want the next one.
-      await page.goto(`${baseUrl}/blog/from-whatsapp-groups-to-world-class-hr`, {
+      await page.goto(`${baseUrl}/blog/${ARTICLE_SLUG}`, {
         waitUntil: 'networkidle',
       });
       const articleSubscribe = await page

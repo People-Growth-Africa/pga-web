@@ -329,30 +329,58 @@ check(
     normaliseLinkUrl('javascript:alert(1)') === null,
 );
 
-console.log('\nMerging with the built-in content\n');
+console.log('\nMerging the content sources\n');
 
-const builtInBlogCount = mergeBlogPosts([]).length;
-const builtInEventCount = mergeEvents([], [], '2026-10-19').length;
+// Test data, clearly marked: none of these rows ships with the site. There are no
+// built-in articles or events any more, so the merge rules are checked against a
+// sheet entry and a row a manager published (the /api/posts shape).
+const liveBlogRow = (slug, title, publishedAt = '2026-09-01T09:00:00.000Z') => ({
+  type: 'blog',
+  slug,
+  title,
+  excerpt: `${title} summary`,
+  body: 'Body text written by the test.',
+  category: 'Articles',
+  categorySlug: 'articles',
+  coverImageUrl: null,
+  coverImageThumbUrl: null,
+  linkLabel: null,
+  linkUrl: null,
+  eventStart: null,
+  eventEnd: null,
+  locationText: null,
+  isOnline: false,
+  registrationUrl: null,
+  publishedAt,
+  updatedAt: publishedAt,
+});
+const liveEventRow = (slug, title, eventStart = '2027-02-01T10:00:00.000Z') => ({
+  ...liveBlogRow(slug, title),
+  type: 'event',
+  eventStart,
+  isOnline: true,
+});
 
-const duplicateBlog = parse([row({ title: 'A different title', slug: 'from-whatsapp-groups-to-world-class-hr' })]);
-const mergedDuplicate = mergeBlogPosts(duplicateBlog.entries);
+const duplicateBlog = parse([row({ title: 'A different title', slug: 'manager-published-post' })]);
+const liveBlog = [liveBlogRow('manager-published-post', 'The manager post')];
+const mergedDuplicate = mergeBlogPosts(duplicateBlog.entries, liveBlog);
 check(
   17,
-  'A sheet row whose slug matches a built-in post is dropped, and the built-in post wins',
-  mergedDuplicate.length === builtInBlogCount &&
-    mergedDuplicate.find((post) => post.slug === 'from-whatsapp-groups-to-world-class-hr')?.title !==
-      'A different title',
-  `${mergedDuplicate.length} posts, ${builtInBlogCount} built in`,
+  'A sheet row whose slug is already published wins, and the manager row is dropped',
+  mergedDuplicate.length === 1 &&
+    mergedDuplicate[0].title === 'A different title' &&
+    mergedDuplicate[0].origin === 'sheet',
+  `${mergedDuplicate.length} posts, ${mergedDuplicate.map((post) => post.origin).join()}`,
 );
 
 const newBlog = parse([
   row({ title: 'A brand new sheet post', slug: 'brand-new-sheet-post', category: 'New Category' }),
 ]);
-const mergedNewBlog = mergeBlogPosts(newBlog.entries);
+const mergedNewBlog = mergeBlogPosts(newBlog.entries, liveBlog);
 check(
   18,
-  'A new sheet blog is added alongside every built-in post, and its category gets a filter',
-  mergedNewBlog.length === builtInBlogCount + 1 &&
+  'A new sheet blog is added alongside the published rows, and its category gets a filter',
+  mergedNewBlog.length === 2 &&
     mergedNewBlog.some((post) => post.slug === 'brand-new-sheet-post') &&
     mergeBlogCategories(mergedNewBlog).some((category) => category.id === 'New Category') &&
     findBlog('brand-new-sheet-post', newBlog.entries)?.origin === 'sheet',
@@ -364,28 +392,28 @@ const eventEntries = parse([
   row({ type: 'Event', title: 'Past sheet event', slug: 'past-sheet-event', event_date: '2026-01-15' }),
   row({
     type: 'Event',
-    title: 'Duplicate of a built-in event',
-    slug: 'nigerian-labour-law-compliance-2026',
+    title: 'Duplicate of a published event',
+    slug: 'manager-published-event',
     event_date: '2027-08-01',
   }),
 ]);
-const mergedEvents = mergeEvents(eventEntries.entries, [], '2026-10-19');
+const liveEvents = [liveEventRow('manager-published-event', 'The manager event')];
+const mergedEvents = mergeEvents(eventEntries.entries, liveEvents, '2026-10-19');
 const { upcoming, past } = splitEvents(mergedEvents);
 check(
   19,
-  'Built-in events are kept, new sheet events are added and duplicate slugs are dropped',
-  mergedEvents.length === builtInEventCount + 2 &&
-    !mergedEvents.some((event) => event.title === 'Duplicate of a built-in event') &&
+  'New sheet events are added and a duplicate slug resolves to one row, the sheet one',
+  mergedEvents.length === 3 &&
+    mergedEvents.filter((event) => event.slug === 'manager-published-event').length === 1 &&
     findEvent('far-future', eventEntries.entries, [], '2026-10-19')?.origin === 'sheet',
-  `${mergedEvents.length} events, ${builtInEventCount} built in`,
+  `${mergedEvents.length} events`,
 );
 
 check(
   20,
-  'A future sheet event is upcoming, a past one is past, and built-in events keep their status',
+  'A future sheet event is upcoming and a past one is past',
   upcoming.some((event) => event.slug === 'far-future') &&
-    past.some((event) => event.slug === 'past-sheet-event') &&
-    upcoming.length >= builtInEventCount,
+    past.some((event) => event.slug === 'past-sheet-event'),
   `upcoming ${upcoming.length}, past ${past.length}`,
 );
 
@@ -403,9 +431,9 @@ check(
 
 check(
   22,
-  'Sheet blog posts sort newest first alongside built-in posts',
+  'Sheet and published posts sort newest first together',
   (() => {
-    const dates = mergeBlogPosts(newBlog.entries).map((post) => post.date);
+    const dates = mergeBlogPosts(newBlog.entries, liveBlog).map((post) => post.date);
     return dates.join() === [...dates].sort((a, b) => b.localeCompare(a)).join();
   })(),
 );

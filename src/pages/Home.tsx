@@ -310,7 +310,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Upcoming Events & Mentorship Sessions (Carousel) ── */}
+      {/* ── Upcoming Events & Mentorship Sessions (Carousel) ──
+          Rendered only when there is something to show: the site ships no
+          built-in programmes, so a build with an empty table must not leave a
+          heading and an empty carousel behind. */}
+      {eventsList.length > 0 && (
       <section className="relative py-[100px] bg-white overflow-hidden" id="events">
         <div className="max-w-[1200px] mx-auto px-6">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-6">
@@ -345,6 +349,7 @@ export default function Home() {
           </AnimateOnScroll>
         </div>
       </section>
+      )}
 
       {/* ── Values ─────────────────────────────────────── */}
       <section className="relative py-[100px] bg-cream/60 overflow-hidden">

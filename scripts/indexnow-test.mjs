@@ -1,8 +1,8 @@
 /**
  * Submit one URL to IndexNow and print what happened.
  *
- *   npm run indexnow:test -- /blog/from-whatsapp-groups-to-world-class-hr
- *   npm run indexnow:test -- https://www.peoplegrowthafrica.com/events/hr-leaders-roundtable-2027
+ *   npm run indexnow:test -- /blog/some-published-slug
+ *   npm run indexnow:test -- https://www.peoplegrowthafrica.com/events/some-published-slug
  *
  * This is the manual check for the key and the endpoint: it sends exactly one
  * URL, bypasses the production-only rule (that rule exists for automatic

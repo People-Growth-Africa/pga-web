@@ -75,7 +75,8 @@ check(fs.existsSync(indexFile), 'dist/seo-index.json exists');
 if (fs.existsSync(indexFile)) {
   const parsed = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
   const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
-  check(entries.length > 0, `seo-index.json carries rows (${entries.length})`);
+  // The site ships no built-in content, so an empty list is the expected state.
+  // The shape check still has to hold for the day a record is added back.
   check(
     entries.every(
       (entry) =>
@@ -85,11 +86,7 @@ if (fs.existsSync(indexFile)) {
         typeof entry.title === 'string' &&
         typeof entry.excerpt === 'string',
     ),
-    'every built-in index row has a type, slug, title and excerpt',
-  );
-  check(
-    entries.some((entry) => entry.type === 'blog') && entries.some((entry) => entry.type === 'event'),
-    'the built-in index carries both blog posts and events',
+    `every built-in index row has a type, slug, title and excerpt (${entries.length} rows)`,
   );
   check(
     new Set(entries.map((entry) => `${entry.type}:${entry.slug}`)).size === entries.length,
@@ -114,8 +111,11 @@ const prerendered = files.filter((file) => {
   return html.includes('data-prerendered') && !html.includes('<div id="root"></div>');
 });
 
-// 25 pages minus the two indexes the function owns.
-check(prerendered.length === 23, `23 prerendered pages (found ${prerendered.length})`);
+// The home page and /consultation. /blog and /events belong to the function, and
+// the site no longer ships built-in articles or events, so nothing else gets a
+// file. A page that reappears here without going through prerenderPages() (or
+// the other way round) is what this count catches.
+check(prerendered.length === 2, `2 prerendered pages (found ${prerendered.length})`);
 
 const routeOf = (file) => (file === 'index.html' ? '/' : `/${file.replace(/\/index\.html$/, '')}`);
 const titles = new Map();
@@ -355,6 +355,37 @@ check(
   JSON.stringify([...constantPaths].sort()) === JSON.stringify(builtPaths),
   `static sitemap paths match every public page (${constantPaths.length} in the constant, ${builtPaths.length} public)`,
 );
+
+/* ── The withdrawn pages ──────────────────────────────────────────────────── */
+
+// api/_lib/removed-content.ts answers 410 for these, so the build must not
+// produce a file for any of them (a file would win the rewrite and serve a page
+// that no longer exists), and nothing generated may still link to one.
+const removedSource = fs.readFileSync(path.join(root, 'api', '_lib', 'removed-content.ts'), 'utf8');
+const removed = [...removedSource.matchAll(/\{ type: '(blog|event)', slug: '([^']+)' \}/g)].map(
+  (match) => `${match[1]}/${match[2]}`,
+);
+check(removed.length > 0, `removed-content.ts lists the withdrawn URLs (${removed.length})`);
+
+for (const route of removed) {
+  check(!fs.existsSync(path.join(dist, route, 'index.html')), `/${route} is not prerendered`);
+}
+
+if (fs.existsSync(indexFile)) {
+  const rawIndex = fs.readFileSync(indexFile, 'utf8');
+  check(
+    removed.every((route) => !rawIndex.includes(route.split('/')[1])),
+    'the built-in index lists no withdrawn page',
+  );
+}
+
+for (const file of ['llms.txt', 'llms-full.txt']) {
+  const text = fs.readFileSync(path.join(root, 'public', file), 'utf8');
+  check(
+    removed.every((route) => !text.includes(`/blog/${route.split('/')[1]}`)),
+    `${file} links no withdrawn article`,
+  );
+}
 
 /* ── robots.txt ───────────────────────────────────────────────────────────── */
 

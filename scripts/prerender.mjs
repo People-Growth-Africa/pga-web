@@ -93,8 +93,9 @@ function writeRoute(routePath, html) {
  * published since the build. Those two pages are rendered by
  * api/_lib/routes/index-page.ts from this build's list plus every published
  * database row, which is the only way their HTML is complete at all times.
- * Everything else - the home page, consultation, every built-in article and
- * event - keeps its prerendered file.
+ * Everything else - the home page and consultation, the only pages that still
+ * ship real content - keeps its prerendered file, and articles and events are
+ * written by the handler for the post they name.
  */
 const INDEX_ROUTES = new Set(['/blog', '/events']);
 const pages = prerenderPages().filter((page) => !INDEX_ROUTES.has(page.path));

@@ -62,22 +62,24 @@ post meant for 12 October would land in December. Writing the date as
   published so people can register, and a past one stays published under *Past
   events*.
 
-## How the sheet content is merged with the built-in content
+## How the sheet content is merged with everything else
 
 The built-in arrays in [`src/data/posts.ts`](../src/data/posts.ts) and
-[`src/data/events.ts`](../src/data/events.ts) are never replaced or deleted.
+[`src/data/events.ts`](../src/data/events.ts) no longer carry placeholder
+content; both are empty. They remain the base the merge rules extend, so the
+ordering below still holds for the two sources that do publish today: the sheet
+and the manager's own posts.
 
-1. Every built-in post and event is rendered exactly as before.
-2. Sheet entries are appended.
-3. A sheet row whose slug already belongs to a built-in entry is **dropped**, so
-   the built-in page keeps its URL and its content. Editing a sheet row can
-   therefore never quietly rewrite a hand-written page. The fix, if that is what
-   you want, is to change the sheet row's slug.
+1. Sheet entries are added first, in the order the merge already had.
+2. Manager-published rows from the posts table are appended.
+3. A row whose slug is already taken by an earlier source is **dropped**, so a
+   published page keeps its URL and its content. Editing a sheet row can
+   therefore never quietly rewrite a page a manager published. The fix, if that
+   is what you want, is to change the sheet row's slug.
 4. Slug collisions are per type: `/blog/x` and `/events/x` are different pages.
-5. Blogs are sorted by `publish_date` together with the built-in posts, newest
-   first. Events are split into **Upcoming** (soonest first) and **Past**
-   (newest first); built-in events keep the `status` they were written with, which
-   is why they still appear as upcoming.
+5. Blogs are sorted by `publish_date`, newest first. Events are split into
+   **Upcoming** (soonest first) and **Past** (newest first); a sheet event gets
+   its status from `event_date`.
 
 ## Setup checklist
 

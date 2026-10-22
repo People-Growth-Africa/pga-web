@@ -397,3 +397,17 @@ export function renderMissingHead(): string {
     '<meta name="robots" content="noindex, nofollow" />',
   ].join('\n    ');
 }
+
+/**
+ * The head for a URL whose page was removed on purpose.
+ *
+ * Served with 410 by the handler, never with 200: the title explains the answer
+ * to a person who followed an old link, and `noindex` keeps the URL out of an
+ * index while the crawler processes the removal.
+ */
+export function renderGoneHead(): string {
+  return [
+    '<title>This page has been removed | People Growth Africa</title>',
+    '<meta name="robots" content="noindex, nofollow" />',
+  ].join('\n    ');
+}

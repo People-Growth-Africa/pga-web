@@ -47,21 +47,25 @@ Almost everything you'd want to update sits in three files, and you only ever ch
 
 | What you want to change | Where to find it |
 | :--- | :--- |
-| Blog articles (titles, text, author, date) | `src/data/posts.ts` — **9 articles** published |
-| Events and programmes | `src/data/events.ts` — **5 programmes** listed |
+| Blog articles and events | The content panel at `/admin` — stored in the database, no deploy needed |
 | The 15 service areas | `src/data/services.ts` |
 | Wording on a page itself | `src/pages/` — one file per page |
 | Photographs, logos and social share image | `public/images/` |
 
 **When editing these files, keep the surrounding quotes and commas exactly as they are.** The website reads them like a form — if you remove a comma the page will refuse to load. If you're unsure, ask before saving.
 
-### Adding a new article
+### Adding a new article or event
 
-1. Copy an existing article in `src/data/posts.ts`, from its opening brace `{` to its closing `},`.
-2. Paste it at the top of the list and change the words. Give it a new, lower-case `slug` — that becomes the web address, so `slug: 'my-new-article'` becomes `/blog/my-new-article`.
-3. Save, preview the site to check it looks right, then publish.
+Articles and events are no longer written in code. Sign in to `/admin` with a manager
+account, choose **New post**, and fill in the title, category, summary and body. Publishing
+makes the page live within about a minute: it appears on `/blog` (or `/events`), in the
+sitemap and in the RSS-style feeds without a redeploy.
 
-New articles appear on the blog page, in the sitemap, and in the search-engine files automatically. Nothing else needs updating.
+The slug you choose becomes the web address, so `my-new-article` becomes
+`/blog/my-new-article`. Slugs cannot be reused by a second post.
+
+Nothing is published by default. The site ships with no articles or events, and both
+sections show a friendly empty state until the first real one is ready.
 
 ### Pictures
 

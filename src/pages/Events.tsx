@@ -117,6 +117,7 @@ export default function Events() {
       <section className="py-[80px] bg-cream/40 min-h-[600px]">
         <div className="max-w-[1200px] mx-auto px-6">
           {/* Controls Bar: Category Filters & Search */}
+          {allEvents.length > 0 && (
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-10 pb-6 border-b border-charcoal/10">
             {/* Category Filter Pills - one flickable row on a phone, wrapping from md up */}
             <div className="flex flex-nowrap md:flex-wrap items-center gap-2 w-full md:w-auto overflow-x-auto md:overflow-visible scrollbar-none [&::-webkit-scrollbar]:hidden -mx-6 px-6 md:mx-0 md:px-0">
@@ -155,8 +156,21 @@ export default function Events() {
               </div>
             </div>
           </div>
+          )}
 
-          {filteredEvents.length > 0 ? (
+          {allEvents.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-[20px] border border-charcoal/10 p-8">
+              <p className="font-[family-name:var(--font-body)] text-[0.8rem] font-semibold uppercase tracking-[0.12em] text-brand-green mb-3">
+                Events &amp; Programmes
+              </p>
+              <h2 className="font-[family-name:var(--font-heading)] text-2xl md:text-3xl font-semibold text-charcoal mb-3">
+                No programmes yet, check back soon
+              </h2>
+              <p className="text-sm text-charcoal/60 max-w-md mx-auto">
+                The next webinars and mentorship cohorts are being scheduled. If you need something sooner, we can design a programme for your own team.
+              </p>
+            </div>
+          ) : filteredEvents.length > 0 ? (
             <>
               {/* Upcoming Events */}
               {upcoming.length > 0 && (

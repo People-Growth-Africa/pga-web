@@ -3,10 +3,12 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { findPublishedPostBySlug, type PostType } from '../db.js';
 import {
   renderFallbackArticle,
+  renderGoneHead,
   renderMissingHead,
   renderPostHead,
   type PagePost,
 } from '../post-page.js';
+import { isRemovedContent } from '../removed-content.js';
 import { POSTS_CACHE_SECONDS } from './posts.js';
 import { readShell, sendHtml, withContent, withHead } from '../shell.js';
 
@@ -60,6 +62,14 @@ export default async function postPage(req: VercelRequest, res: VercelResponse):
   // A slug only belongs on its own route: /blog/<an-event> is a 404, not a
   // duplicate of the event page under a URL that claims it is an article.
   if (!row || row.type !== type) {
+    // A page that was withdrawn on purpose answers 410, not 404: the URL is not
+    // waiting for anything, and the crawler can drop it. Checked after the
+    // database so a slug that is published again renders its real page, never
+    // this answer.
+    if (isRemovedContent(type, slug)) {
+      sendHtml(res, 410, withHead(shell, renderGoneHead()));
+      return;
+    }
     notFound();
     return;
   }
