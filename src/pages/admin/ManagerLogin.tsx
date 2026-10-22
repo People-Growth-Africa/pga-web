@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { authRequest, type AuthUser } from '../../lib/authClient';
 import { AUTH_ENABLED } from '../../config/signup-links';
@@ -20,20 +20,34 @@ import { AUTH_ENABLED } from '../../config/signup-links';
  * session on a page it cannot use.
  */
 export default function ManagerLogin() {
-  const { status, user, setUser, signOut } = useAuth();
+  const { status, user, setUser, signOut, refresh } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // The panel sends a manager here with ?expired=1 after the server refused a
+  // request, so "signed out" and "your session ran out mid-sentence" do not read
+  // as the same thing.
+  const expired = new URLSearchParams(location.search).get('expired') === '1';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // The panel sends a manager here when a request was refused because the
+  // session is over. The shell may still be holding the old user for a moment,
+  // so reading it back is what stops the navbar from promising a dashboard that
+  // no longer opens - and `expired` suppresses the redirect below, or this page
+  // would bounce straight back into the panel that just refused it.
+  useEffect(() => {
+    if (expired) void refresh();
+  }, [expired, refresh]);
+
   if (!AUTH_ENABLED) {
     return <Navigate to="/" replace />;
   }
 
   // Already signed in as a manager: there is nothing to do on this page.
-  if (status === 'signedIn' && user?.role === 'manager') {
+  if (!expired && status === 'signedIn' && user?.role === 'manager') {
     return <Navigate to="/admin/content" replace />;
   }
 
@@ -81,6 +95,16 @@ export default function ManagerLogin() {
             For the People Growth Africa team. Sign in with your manager account to write, publish and
             unpublish posts and events.
           </p>
+
+          {expired && !formError && (
+            <p
+              role="status"
+              className="mb-5 rounded-xl border border-charcoal/15 bg-cream px-4 py-3 font-[family-name:var(--font-body)] text-sm text-charcoal/75"
+            >
+              Your session ended. The panel signs out after an hour with no activity, and after 12
+              hours at most. Sign in again to carry on.
+            </p>
+          )}
 
           {formError && (
             <p

@@ -20,7 +20,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { loadEnvFiles, startApiServer } from './api-server.mjs';
 import { checkApiImports } from './check-api-imports.mjs';
 
@@ -28,6 +28,13 @@ const EMAIL_PREFIX = `test-auth-ui-${Date.now().toString(36)}`;
 const EMAIL = `${EMAIL_PREFIX}@example.com`;
 const PASSWORD = 'Quiet-Harbour-7712';
 const NAME = 'Ada UI Test';
+/**
+ * The manager the panel checks sign in as. A manager cannot be created by
+ * signing up, so the row is written the way the promotion script writes it and
+ * removed in cleanupTestRows().
+ */
+const MANAGER_EMAIL = `${EMAIL_PREFIX}-manager@example.com`;
+const MANAGER_PASSWORD = 'Panel-Window-4471';
 const NEWSLETTER_EMAIL = `${EMAIL_PREFIX}-newsletter@example.com`;
 /**
  * One published article and one published event this run owns.
@@ -68,6 +75,7 @@ async function cleanupTestRows() {
   const sql = neon(connection);
   await sql.query('DELETE FROM posts WHERE slug = ANY($1)', [[ARTICLE_SLUG, EVENT_SLUG]]);
   await sql.query('DELETE FROM newsletter_subscribers WHERE email LIKE $1', [`${EMAIL_PREFIX}%`]);
+  await sql.query('DELETE FROM users WHERE email = $1', [MANAGER_EMAIL]);
   for (const table of ['event_registrations', 'consultation_bookings', 'enquiries']) {
     await sql.query(`DELETE FROM ${table} WHERE email LIKE $1`, [`${EMAIL_PREFIX}%`]);
   }
@@ -247,6 +255,18 @@ async function main() {
         categories[0].id,
       ],
     );
+    // The manager, written the only way one can be: the trigger that blocks a
+    // public signup from creating one is relaxed for this transaction alone.
+    const bcrypt = (await import('bcryptjs')).default;
+    const preHashed = createHash('sha256').update(MANAGER_PASSWORD, 'utf8').digest('base64');
+    const managerHash = await bcrypt.hash(preHashed, 12);
+    await sql.transaction([
+      sql`SELECT set_config('pga.promote_manager', 'on', true)`,
+      sql`INSERT INTO users (email, password_hash, role, email_verified)
+              VALUES (${MANAGER_EMAIL}, ${managerHash}, 'manager', true)
+            ON CONFLICT (email) DO UPDATE SET password_hash = ${managerHash}, role = 'manager', email_verified = true`,
+    ]);
+
     // An event has no category: the table's check constraint allows one only for
     // a blog post.
     await sql.query(
@@ -499,6 +519,110 @@ async function main() {
         'A signed-out visitor to /admin/content lands on the manager sign-in, not the public one',
         managerRedirect && managerForm,
         page.url(),
+      );
+
+      // --- 5c. The panel itself ----------------------------------------------
+      // What the sign-in is for. The panel had no sign-out and no way back to
+      // the site: the shell's account control points at the panel itself, so a
+      // manager could only leave by typing another URL.
+      await page.locator('#manager-email').fill(MANAGER_EMAIL);
+      await page.locator('#manager-password').fill(MANAGER_PASSWORD);
+      await submit(page, page.getByRole('button', { name: 'Log in', exact: true }), 'manager sign in');
+      await page.waitForURL('**/admin/content', { timeout: 15000 });
+
+      const signedInLine = await page
+        .getByText(MANAGER_EMAIL, { exact: false })
+        .first()
+        .textContent()
+        .catch(() => null);
+      const viewSite = page.getByRole('link', { name: 'View site', exact: true });
+      check(
+        12.2,
+        'The panel says who is signed in and offers a way back to the site',
+        Boolean(signedInLine?.includes(MANAGER_EMAIL)) && (await viewSite.isVisible()),
+        signedInLine?.replace(/\s+/g, ' ').trim() ?? 'no line',
+      );
+
+      // --- 5d. A session that runs out ----------------------------------------
+      // The panel is open and its server side session is now past its absolute
+      // limit. The page still believes it is signed in, so the next thing it
+      // asks for is refused, and that refusal has to end the visit properly
+      // instead of leaving a manager on a page whose every button fails.
+      const { SignJWT } = await import('jose');
+      const { neon } = await import('@neondatabase/serverless');
+      const fixtureSql = neon(process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL);
+      const [managerRow] = await fixtureSql.query('SELECT id, token_version FROM users WHERE email = $1', [
+        MANAGER_EMAIL,
+      ]);
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const staleToken = await new SignJWT({
+        role: 'manager',
+        ver: managerRow.token_version,
+        abs: nowSeconds - 13 * 3600,
+      })
+        .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+        .setSubject(managerRow.id)
+        .setIssuer('peoplegrowthafrica.com')
+        .setAudience('pga-auth')
+        .setIssuedAt(nowSeconds)
+        .setExpirationTime(nowSeconds + 3600)
+        .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+      await context.addCookies([
+        {
+          name: process.env.VERCEL_ENV === 'production' ? '__Host-session' : 'session',
+          value: staleToken,
+          url: baseUrl,
+          httpOnly: true,
+          secure: true,
+          sameSite: 'Lax',
+        },
+      ]);
+
+      // Typing in the list's search box is the smallest real admin call the
+      // panel makes on its own: it refetches the list a moment after the last
+      // keystroke, which is the request the expired session refuses.
+      await page.locator('#admin-search').fill('anything');
+      const expiredRedirect = await page
+        .waitForURL(
+          (url) => url.pathname === '/admin/login' && url.searchParams.get('expired') === '1',
+          { timeout: 15000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      const expiredNotice = await page
+        .getByText('Your session ended', { exact: false })
+        .first()
+        .isVisible()
+        .catch(() => false);
+      check(
+        12.3,
+        'A session past its limit is ended by the server, and the panel says why',
+        expiredRedirect && expiredNotice,
+        `${page.url()}, notice ${expiredNotice}`,
+      );
+
+      // --- 5e. Signing out -----------------------------------------------------
+      await page.locator('#manager-email').fill(MANAGER_EMAIL);
+      await page.locator('#manager-password').fill(MANAGER_PASSWORD);
+      await submit(page, page.getByRole('button', { name: 'Log in', exact: true }), 'manager sign in again');
+      await page.waitForURL('**/admin/content', { timeout: 15000 });
+
+      const signOutButton = page.getByRole('button', { name: 'Sign out', exact: true });
+      const hasSignOut = await signOutButton.isVisible().catch(() => false);
+      check(12.4, 'The panel has its own sign-out control', hasSignOut);
+
+      if (hasSignOut) await signOutButton.click();
+      await page.waitForURL('**/admin/login', { timeout: 15000 });
+      const signedOutStatus = await page.evaluate(async () => {
+        const response = await fetch('/api/auth/me', { credentials: 'include' });
+        return response.status;
+      });
+      check(
+        12.5,
+        'Signing out ends the session and returns to the manager sign-in',
+        signedOutStatus === 401 &&
+          (await page.locator('#manager-email').isVisible().catch(() => false)),
+        `${page.url()}, /api/auth/me ${signedOutStatus}`,
       );
 
       // --- 6. The newsletter form actually submits ---------------------------

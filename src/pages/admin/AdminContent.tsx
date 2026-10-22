@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
+import { useAuth } from '../../hooks/useAuth';
+import { onSessionEnded } from '../../lib/authClient';
 import { livePostPath } from '../../lib/published';
 import CategoriesDialog from './CategoriesDialog';
 import PostEditor from './PostEditor';
@@ -9,6 +11,7 @@ import {
   createPost,
   deletePost,
   listContent,
+  pingSession,
   setPostStatus,
   updatePost,
   type AdminCategory,
@@ -72,8 +75,33 @@ export default function AdminContent() {
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AdminPost | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const searchRef = useRef(search);
+
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  /**
+   * The one way out of an ended session. Any admin call that comes back 401 has
+   * already been refused by the server, so the panel's job is to stop pretending
+   * it is signed in: read the session back, then hand the manager to the sign-in
+   * page with an explanation rather than a red banner on a page they cannot use.
+   *
+   * Only the navigation happens here. Emptying the session first would unmount
+   * this page through RequireAuth, which redirects to a bare /admin/login and
+   * drops the reason - and the page's exit animation keeps it rendered long
+   * enough for that redirect to win. The sign-in page reads the stale session
+   * back itself; see ManagerLogin.
+   */
+  const endSession = useCallback(() => {
+    navigate('/admin/login?expired=1', { replace: true });
+  }, [navigate]);
+
+  // Every refused admin call reports through this, wherever it came from - the
+  // list, the category dialog, a background refetch - so an ended session always
+  // ends the same way. See onSessionEnded in src/lib/authClient.ts.
+  useEffect(() => onSessionEnded(() => endSession()), [endSession]);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const result = await listContent({ signal });
@@ -82,6 +110,7 @@ export default function AdminContent() {
       setLoading(false);
       return;
     }
+
     setPosts(result.data.posts);
     setCategories(result.data.categories);
     setLoadError(null);
@@ -115,6 +144,26 @@ export default function AdminContent() {
     }, 250);
     return () => window.clearTimeout(timer);
   }, [search, status, type]);
+
+  // Writing an article for an hour sends no requests at all, and a manager
+  // session ends after an hour of no requests. The limit is meant to measure
+  // being away from the keyboard, not being quiet, so real interaction is what
+  // says otherwise. Throttled, because every keypress is not a reason to call
+  // the server.
+  useEffect(() => {
+    let lastPing = Date.now();
+    const ping = () => {
+      const now = Date.now();
+      if (now - lastPing < 5 * 60 * 1000) return;
+      lastPing = now;
+      void pingSession();
+    };
+    const events = ['pointerdown', 'keydown', 'focus'] as const;
+    for (const event of events) window.addEventListener(event, ping);
+    return () => {
+      for (const event of events) window.removeEventListener(event, ping);
+    };
+  }, []);
 
   const categoryById = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
@@ -193,6 +242,16 @@ export default function AdminContent() {
     return null;
   }
 
+  /**
+   * Signing out ends the session on the server and lands on the sign-in page,
+   * which is where a manager who just left wants to be if they come back.
+   */
+  async function handleSignOut() {
+    setSigningOut(true);
+    await signOut();
+    navigate('/admin/login', { replace: true });
+  }
+
   return (
     <>
       <SEO
@@ -202,7 +261,39 @@ export default function AdminContent() {
 
       <section className="min-h-screen bg-cream/50 pt-[130px] pb-20">
         <div className="max-w-[1200px] mx-auto px-6">
-          {/* ── Header ─────────────────────────────────── */}
+          {/* Who is signed in, how to leave, and when the panel leaves for them.
+              Sign out belongs here rather than only in a menu: the shell's
+              account control points at this page, so without this a manager had
+              no way out of the admin at all. */}
+          <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-charcoal/10 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="min-w-0">
+              <p className="font-[family-name:var(--font-body)] text-[0.82rem] text-charcoal/70">
+                Signed in as{' '}
+                <span className="font-semibold text-charcoal break-all">{user?.email}</span>
+              </p>
+              <p className="mt-0.5 font-[family-name:var(--font-body)] text-[0.72rem] text-charcoal/45">
+                This panel signs out after 60 minutes with no activity, and after 12 hours at most.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Link
+                to="/"
+                className="inline-flex min-h-[40px] items-center rounded-full border border-charcoal/15 px-4 py-2 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal transition-colors motion-reduce:transition-none hover:bg-cream"
+              >
+                View site
+              </Link>
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                disabled={signingOut}
+                className="inline-flex min-h-[40px] cursor-pointer items-center rounded-full border-2 border-deep-green px-4 py-2 font-[family-name:var(--font-body)] text-sm font-semibold text-deep-green transition-colors motion-reduce:transition-none hover:bg-deep-green hover:text-white disabled:opacity-70"
+              >
+                {signingOut ? 'Signing out…' : 'Sign out'}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Header ────────────────────────────── */}
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
             <div>
               <p className="font-[family-name:var(--font-body)] text-[0.78rem] font-semibold uppercase tracking-wider text-brand-green mb-2">

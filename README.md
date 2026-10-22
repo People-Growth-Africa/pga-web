@@ -67,6 +67,12 @@ The slug you choose becomes the web address, so `my-new-article` becomes
 Nothing is published by default. The site ships with no articles or events, and both
 sections show a friendly empty state until the first real one is ready.
 
+The panel signs a manager out after **an hour with no activity**, and after **12 hours**
+since sign-in however busy they were. Writing counts as activity, so a long editing
+session is not interrupted; stepping away for lunch is. When the session ends mid-edit
+the panel returns to the sign-in page and says why. **Sign out** sits in the strip at the
+top of the panel, next to a link back to the public site.
+
 ### Pictures
 
 Keep photographs under about **300 KB** each and around **1600 pixels** wide. Large pictures are the main reason websites feel slow, especially on mobile data, and most of our readers are browsing on a phone.

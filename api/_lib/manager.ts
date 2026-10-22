@@ -1,7 +1,7 @@
-import type { VercelRequest } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { ApiError } from './http.js';
-import { readSession, type SessionClaims } from './session.js';
+import { hasSessionCookie, readSession, refreshManagerSession, type SessionClaims } from './session.js';
 
 /**
  * The server's half of "managers only".
@@ -14,14 +14,29 @@ import { readSession, type SessionClaims } from './session.js';
  * is nothing a caller can supply to talk their way past it.
  *
  * Two different failures, deliberately: someone who is not signed in is told to
- * sign in (401), and someone signed in as the wrong kind of account is told they
- * do not have access (403). Collapsing them into one message would send a
+ * sign in (401 `sign_in_required`), someone whose session ran out is told that
+ * it ran out (401 `session_expired`), and someone signed in as the wrong kind of
+ * account is told they do not have access (403). Collapsing them would send a
  * manager with an expired session to the wrong debugging path.
+ *
+ * A request that passes also restarts the idle clock (see `refreshManagerSession`
+ * in session.ts): the panel is used by working on it, so activity is exactly
+ * what should keep the session alive.
  */
-export async function requireManager(req: VercelRequest): Promise<SessionClaims> {
+export async function requireManager(
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<SessionClaims> {
   const session = await readSession(req);
 
   if (!session) {
+    // A cookie that is present but no longer accepted means the session ended -
+    // idle, past its absolute limit, signed out elsewhere, or the password
+    // changed. Saying so is the difference between "sign in" and "you were
+    // signed out while you were writing".
+    if (hasSessionCookie(req)) {
+      throw new ApiError(401, 'session_expired', 'Your session expired. Sign in again to carry on.');
+    }
     throw new ApiError(
       401,
       'sign_in_required',
@@ -36,6 +51,8 @@ export async function requireManager(req: VercelRequest): Promise<SessionClaims>
       'This area is for manager accounts. Nothing was changed.',
     );
   }
+
+  await refreshManagerSession(req, res, session);
 
   return session;
 }

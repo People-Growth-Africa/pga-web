@@ -92,7 +92,7 @@ function bodyError(field: string, message: string): ApiError {
 }
 
 export default endpoint({ methods: ['POST'], csrf: true }, async (req: VercelRequest, res: VercelResponse) => {
-  const manager = await requireManager(req);
+  const manager = await requireManager(req, res);
 
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     throw new ApiError(
@@ -148,10 +148,18 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req: VercelReq
   // from a browser or CDN cache.
   const name = `${stem}-${randomBytes(6).toString('hex')}-${createHash('sha256').update(buffer).digest('hex').slice(0, 8)}.${extension}`;
 
+  // The Blob API is the one step this handler cannot check in advance: the token
+  // can be set and still be refused (a store that was deleted, recreated on
+  // another project, or created without public access). Left uncaught it became
+  // a bare 500 that said nothing to the manager and nothing in the logs, so a
+  // failure here is answered with the store's own reason instead.
   const blob = await put(`covers/${variant}/${name}`, buffer, {
     access: 'public',
     contentType: TYPES[type].contentType,
     allowOverwrite: false,
+  }).catch((error: unknown) => {
+    console.error(`[upload] Blob refused the file: ${blobReason(error)}`);
+    throw new ApiError(502, 'upload_failed', `The image could not be stored. ${storageAdvice(error)}`);
   });
 
   sendJson(res, 201, {
@@ -162,6 +170,37 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req: VercelReq
     contentType: TYPES[type].contentType,
   });
 });
+
+/** What the Blob client said, trimmed to one log-safe line. */
+function blobReason(error: unknown): string {
+  if (!(error instanceof Error)) return String(error).slice(0, 300);
+  return `${error.name}: ${error.message}`.slice(0, 300);
+}
+
+/**
+ * The store's answer in words a manager can act on.
+ *
+ * Everything the Blob API refuses an upload over is about this deployment's
+ * configuration rather than about the file or the person sending it, so the
+ * wording points at the store. The store's own message travels along in
+ * brackets: it is what an operator needs to tell a token problem from a
+ * permissions one, and it contains no secret.
+ */
+function storageAdvice(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  const detail = message ? ` (${message.slice(0, 160)})` : '';
+
+  if (/token|unauthor|forbidden|401|403|credential/i.test(message)) {
+    return `The image store rejected this deployment's credentials, so BLOB_READ_WRITE_TOKEN or the Blob store it points at needs checking in Vercel.${detail}`;
+  }
+  if (/private|access/i.test(message)) {
+    return `The Blob store does not accept public files. Covers have to be readable by anyone, so the store needs public access.${detail}`;
+  }
+  if (/size|too large|413/i.test(message)) {
+    return `The Blob store refused the file size. Try a smaller image.${detail}`;
+  }
+  return `The image store did not answer. Try again in a moment.${detail}`;
+}
 
 /**
  * A short, safe stem for the stored name, purely so a human browsing the Blob

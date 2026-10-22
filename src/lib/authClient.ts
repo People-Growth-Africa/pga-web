@@ -46,6 +46,31 @@ export type ApiFailure = {
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; failure: ApiFailure };
 
+/**
+ * Calls that were refused because the session is over.
+ *
+ * A manager session ends after an hour without activity, and the request that
+ * discovers it may come from a dialog or a background refetch rather than from
+ * something the page thought to wrap. Reporting it here means every one of them
+ * ends the visit the same way, instead of leaving a manager clicking buttons on
+ * a page the server has already stopped trusting.
+ *
+ * Only `/api/admin/` paths report: the same codes come back from `/api/auth/me`
+ * on a normal signed-out load, and that is how the page starts, not news.
+ */
+const sessionEndedListeners = new Set<(failure: ApiFailure) => void>();
+
+export function onSessionEnded(listener: (failure: ApiFailure) => void): () => void {
+  sessionEndedListeners.add(listener);
+  return () => {
+    sessionEndedListeners.delete(listener);
+  };
+}
+
+function isSessionEnded(failure: ApiFailure): boolean {
+  return failure.code === 'session_expired' || failure.code === 'sign_in_required';
+}
+
 export const NETWORK_FAILURE: ApiFailure = {
   error: 'Could not reach the server. Check your connection and try again.',
   code: 'network_error',
@@ -131,7 +156,7 @@ export async function authRequest<T>(
     }
 
     const failure = (payload && typeof payload === 'object' ? payload : {}) as Partial<ApiFailure>;
-    return {
+    const result: ApiResult<T> = {
       ok: false,
       failure: {
         error: failure.error ?? missingEndpointMessage(response.status),
@@ -139,6 +164,12 @@ export async function authRequest<T>(
         ...(failure.fields ? { fields: failure.fields } : {}),
       },
     };
+
+    if (path.startsWith('/api/admin/') && isSessionEnded(result.failure)) {
+      for (const listener of sessionEndedListeners) listener(result.failure);
+    }
+
+    return result;
   } catch {
     return { ok: false, failure: NETWORK_FAILURE };
   }

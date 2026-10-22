@@ -62,7 +62,7 @@ async function writeRateLimit(userId: string, name: string): Promise<void> {
 }
 
 export default endpoint({ methods: ['GET', 'PUT', 'POST', 'DELETE'], csrf: true }, async (req, res) => {
-  const manager = await requireManager(req);
+  const manager = await requireManager(req, res);
   const path = (req.url ?? '').split('?')[0]?.replace(/\/+$/, '') ?? '';
 
   if (req.method === 'GET') return listHandler(req, res);

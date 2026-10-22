@@ -85,6 +85,18 @@ export async function listContent(filters: {
   return authRequest(`/api/admin/posts${suffix}`, { method: 'GET' });
 }
 
+/**
+ * Tells the server the manager is still at the keyboard.
+ *
+ * A manager session ends after an hour without a request, and writing an
+ * article makes none, so the panel calls this on real interaction. Its answer
+ * decides nothing: a failure is ignored, and the next save reports an expired
+ * session through the normal failure path.
+ */
+export async function pingSession(): Promise<void> {
+  await authRequest('/api/admin/ping', { method: 'GET' });
+}
+
 export async function createPost(draft: PostDraft): Promise<Result<{ post: AdminPost }>> {
   return authRequest('/api/admin/posts', { method: 'PUT', body: draft });
 }

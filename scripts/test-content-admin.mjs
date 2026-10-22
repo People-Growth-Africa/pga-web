@@ -871,6 +871,105 @@ async function main() {
       cacheControl.includes('s-maxage=30') && cacheControl.includes('stale-while-revalidate=60'),
       cacheControl,
     );
+
+    /* ── Session lifetime ────────────────────────────────────────────────── */
+
+    // A manager session is deliberately short lived, in two different ways, and
+    // both are enforced by the server rather than by the panel. These tokens are
+    // minted here with the same secret the server is running with, so each one
+    // states exactly one kind of lateness.
+    const { SignJWT } = await import('jose');
+    const [managerRow] = await sql`SELECT id, token_version FROM users WHERE email = ${MANAGER_EMAIL}`;
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const cookieName = process.env.VERCEL_ENV === 'production' ? '__Host-session' : 'session';
+
+    async function mintManager({ issuedAt, expiresAt, absoluteStart }) {
+      return new SignJWT({ role: 'manager', ver: managerRow.token_version, abs: absoluteStart })
+        .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+        .setSubject(managerRow.id)
+        .setIssuer('peoplegrowthafrica.com')
+        .setAudience('pga-auth')
+        .setIssuedAt(issuedAt)
+        .setExpirationTime(expiresAt)
+        .sign(secret);
+    }
+
+    async function callWithToken(token, path = '/api/admin/posts') {
+      const response = await fetch(`${origin}${path}`, {
+        method: 'GET',
+        headers: { Cookie: `${cookieName}=${token}` },
+      });
+      const text = await response.text();
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+      return { status: response.status, json, headers: response.headers };
+    }
+
+    const absoluteExpired = await callWithToken(
+      await mintManager({ issuedAt: nowSeconds, expiresAt: nowSeconds + 3600, absoluteStart: nowSeconds - 13 * 3600 }),
+    );
+    check(
+      61,
+      'a manager signed in for more than 12 hours is refused, however active they were',
+      absoluteExpired.status === 401 && absoluteExpired.json?.code === 'session_expired',
+      `status ${absoluteExpired.status}, code ${absoluteExpired.json?.code ?? 'none'}`,
+    );
+
+    const idleExpired = await callWithToken(
+      await mintManager({
+        issuedAt: nowSeconds - 3700,
+        expiresAt: nowSeconds - 100,
+        absoluteStart: nowSeconds - 3700,
+      }),
+    );
+    check(
+      62,
+      'a manager session left idle for over an hour is refused, and says it expired',
+      idleExpired.status === 401 && idleExpired.json?.code === 'session_expired',
+      `status ${idleExpired.status}, code ${idleExpired.json?.code ?? 'none'}`,
+    );
+
+    const activeToken = await mintManager({
+      issuedAt: nowSeconds - 600,
+      expiresAt: nowSeconds + 3000,
+      absoluteStart: nowSeconds - 2 * 3600,
+    });
+    const stillActive = await callWithToken(activeToken);
+    const renewedCookie = stillActive.headers?.get('set-cookie') ?? '';
+    check(
+      63,
+      'a working manager is let through and their session is renewed',
+      stillActive.status === 200 && /Max-Age=3600\b/.test(renewedCookie),
+      `status ${stillActive.status}, set-cookie ${renewedCookie ? 'present' : 'missing'}`,
+    );
+
+    const ping = await manager('/api/admin/ping', { method: 'GET' });
+    check(
+      64,
+      'the panel can keep its session alive while a manager writes',
+      ping.status === 200 && ping.json?.ok === true,
+      `status ${ping.status}`,
+    );
+    const anonymousPing = await anonymous('/api/admin/ping', { method: 'GET' });
+    check(
+      65,
+      'the keep-alive is not a way in for anyone else',
+      anonymousPing.status === 401 && anonymousPing.json?.code === 'sign_in_required',
+      `status ${anonymousPing.status}, code ${anonymousPing.json?.code ?? 'none'}`,
+    );
+
+    const loginCookie = managerLogin.headers?.get('set-cookie') ?? '';
+    check(
+      66,
+      'the cookie a manager signs in with lasts one hour, not the seven days others get',
+      /Max-Age=3600\b/.test(loginCookie),
+      loginCookie ? loginCookie.replace(/session=[^;]+/, 'session=…') : 'no set-cookie',
+    );
   } finally {
     // Remove every row this run created, whatever happened above.
     try {

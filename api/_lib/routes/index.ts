@@ -59,6 +59,9 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/admin/categories': gatedAuth(async () => (await import('./admin-categories.js')).default),
   '/admin/category': gatedAuth(async () => (await import('./admin-categories.js')).default),
   '/admin/upload': gatedAuth(async () => (await import('./admin-upload.js')).default),
+  //     The panel's keep-alive: a manager editing for an hour sends nothing else,
+  //     and the idle limit has to measure absence, not silence. --------------
+  '/admin/ping': gatedAuth(async () => (await import('./admin-ping.js')).default),
 
   // --- A probe the forms read on load, so a missing database is known before
   //     a visitor fills anything in rather than after they press send. It is

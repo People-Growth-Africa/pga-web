@@ -14,7 +14,12 @@ import {
   type Role,
 } from '../../db.js';
 import { hashPassword, isPasswordBreached } from '../../security.js';
-import { assertSessionConfigured, createSessionToken, setSessionCookie } from '../../session.js';
+import {
+  assertSessionConfigured,
+  createSessionToken,
+  sessionTtlSeconds,
+  setSessionCookie,
+} from '../../session.js';
 import { enforceRateLimit } from '../../ratelimit.js';
 import { recordAuthEvent } from '../../audit.js';
 import { issueToken } from '../../auth-tokens.js';
@@ -87,7 +92,7 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     role: created.role,
     tokenVersion: 0,
   });
-  setSessionCookie(req, res, sessionToken);
+  setSessionCookie(req, res, sessionToken, sessionTtlSeconds(created.role));
   await recordAuthEvent('signup', { userId: created.id, ip });
 
   // The profile travels with the response so the dashboard renders real values

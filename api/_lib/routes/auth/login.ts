@@ -2,7 +2,12 @@ import { ApiError, clientIp, endpoint, parseJsonBody, safeRedirect, sendJson } f
 import { loginSchema, parseInput } from '../../validation.js';
 import { findUserByEmail } from '../../db.js';
 import { spendPasswordTime, verifyPassword } from '../../security.js';
-import { assertSessionConfigured, createSessionToken, setSessionCookie } from '../../session.js';
+import {
+  assertSessionConfigured,
+  createSessionToken,
+  sessionTtlSeconds,
+  setSessionCookie,
+} from '../../session.js';
 import { enforceRateLimit } from '../../ratelimit.js';
 import { recordAuthEvent } from '../../audit.js';
 
@@ -40,7 +45,7 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     role: user.role,
     tokenVersion: user.token_version,
   });
-  setSessionCookie(req, res, sessionToken);
+  setSessionCookie(req, res, sessionToken, sessionTtlSeconds(user.role));
   await recordAuthEvent('login', { userId: user.id, ip });
 
   sendJson(res, 200, {

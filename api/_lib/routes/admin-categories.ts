@@ -41,7 +41,7 @@ const CATEGORY_PATHS = new Set(['/api/admin/categories', '/api/admin/category'])
 export default endpoint(
   { methods: ['GET', 'POST', 'PUT', 'DELETE'], csrf: true },
   async (req: VercelRequest, res: VercelResponse) => {
-    const manager = await requireManager(req);
+    const manager = await requireManager(req, res);
     const path = (req.url ?? '').split('?')[0]?.replace(/\/+$/, '') ?? '';
     if (!CATEGORY_PATHS.has(path)) {
       throw new ApiError(404, 'not_found', 'No such endpoint.');
