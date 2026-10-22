@@ -158,9 +158,11 @@ function readBody(req) {
     let size = 0;
     req.on('data', (chunk) => {
       size += chunk.length;
-      // Same ceiling the endpoints enforce, so an oversized body cannot sit in
-      // memory here before the handler refuses it.
-      if (size > 64 * 1024) {
+      // Same ceiling as the largest body an endpoint accepts (an admin post or
+      // a base64 cover upload), so an oversized body cannot sit in memory here
+      // before the handler refuses it. Endpoints with a tighter limit still
+      // enforce their own.
+      if (size > 8 * 1024 * 1024) {
         req.destroy();
         reject(new Error('body too large'));
         return;

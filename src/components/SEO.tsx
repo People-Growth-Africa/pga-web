@@ -46,7 +46,7 @@ interface SEOProps {
 }
 
 /** Build the same shape from the older prop style, for the client-only pages. */
-function metaFromProps({
+function buildMetaFromLegacy({
   title = SITE_NAME,
   description = '',
   image = DEFAULT_IMAGE,
@@ -67,7 +67,11 @@ function metaFromProps({
       ? {
           publishedAt: article?.publishedAt ?? '',
           modifiedAt: article?.publishedAt ?? '',
-          author: article?.author ?? SITE_NAME,
+          // An older page that names its own author keeps a Person node; one
+          // that does not is the organisation itself, as on the blog.
+          author: article?.author
+            ? { '@type': 'Person' as const, name: article.author }
+            : { '@type': 'Organization' as const, name: SITE_NAME, '@id': ORG_ID },
           section: article?.section,
         }
       : undefined;
@@ -160,7 +164,7 @@ export default function SEO({ meta, ...legacy }: SEOProps) {
   const eventLocation = legacy.event?.location;
 
   useEffect(() => {
-    applyPageMeta(meta ?? metaFromProps(legacy));
+    applyPageMeta(meta ?? buildMetaFromLegacy(legacy));
     // The legacy props are pulled apart into primitives so the effect depends on
     // the values rather than on a new object literal on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps

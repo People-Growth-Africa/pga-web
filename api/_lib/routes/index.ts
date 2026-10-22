@@ -46,6 +46,20 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/employer/consultation': gatedAuth(async () => (await import('./employer/consultation.js')).default),
   '/talent/profile': gatedAuth(async () => (await import('./talent/profile.js')).default),
 
+  // --- Content admin: manager accounts only. The gate here is the same
+  //     AUTH_ENABLED switch as the rest of accounts; the manager role check
+  //     itself lives inside each handler (api/_lib/manager.ts) and reads the
+  //     signed session, so a talent or employer cookie is refused there.
+  //     Three paths point at the posts module and two at the categories one:
+  //     the table is keyed by exact path, so each action gets its own key and
+  //     the handler dispatches on the method. ----------------------------------
+  '/admin/posts': gatedAuth(async () => (await import('./admin-posts.js')).default),
+  '/admin/post': gatedAuth(async () => (await import('./admin-posts.js')).default),
+  '/admin/post-status': gatedAuth(async () => (await import('./admin-posts.js')).default),
+  '/admin/categories': gatedAuth(async () => (await import('./admin-categories.js')).default),
+  '/admin/category': gatedAuth(async () => (await import('./admin-categories.js')).default),
+  '/admin/upload': gatedAuth(async () => (await import('./admin-upload.js')).default),
+
   // --- A probe the forms read on load, so a missing database is known before
   //     a visitor fills anything in rather than after they press send. It is
   //     not gated: it exists to report the gate, and it touches nothing.
@@ -59,6 +73,15 @@ export const ROUTES: Record<string, RouteHandler> = {
   //     at build time by scripts/prerender.mjs.) ------------------------------
   '/content': lazy(async () => (await import('./content.js')).default),
   '/revalidate': lazy(async () => (await import('./revalidate.js')).default),
+
+  // --- The published posts feed and the sitemap that lists them. Public and
+  //     cacheable, and like /content they answer from the database rather than
+  //     from a build, so publishing does not need a deploy. Both are behind the
+  //     database gate for the same reason the forms are: with no DATABASE_URL
+  //     there is nothing to read. The sitemap is reached through a rewrite in
+  //     vercel.json that arrives as path=sitemap. ---------------------------
+  '/updates': requiresDatabase(async () => (await import('./updates.js')).default),
+  '/sitemap': requiresDatabase(async () => (await import('./sitemap.js')).default),
 
   // --- Public forms that store submissions, up only when a database is set --
   '/leads/consultation-booking': requiresDatabase(async () => (await import('./leads/consultation-booking.js')).default),

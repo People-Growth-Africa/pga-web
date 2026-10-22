@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
 import { AuthProvider } from './context/AuthContext';
+import RequireAuth from './components/RequireAuth';
 import { AUTH_ENABLED } from './config/signup-links';
 import Signup from './pages/Signup';
 import Home from './pages/Home';
@@ -18,6 +19,9 @@ import VerifyEmail from './pages/VerifyEmail';
 import NewsletterConfirm from './pages/NewsletterConfirm';
 import TalentDashboard from './pages/TalentDashboard';
 import EmployerDashboard from './pages/EmployerDashboard';
+import Updates from './pages/Updates';
+import UpdateDetail from './pages/UpdateDetail';
+import AdminContent from './pages/admin/AdminContent';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import NotFound from './pages/NotFound';
@@ -64,8 +68,11 @@ function AnimatedRoutes() {
               feeds the existing blog and events pages. Old links land on the
               blog rather than on a 404 (vercel.json also redirects them
               permanently, before this JS has a chance to run). */}
-          <Route path="/updates" element={<Navigate to="/blog" replace />} />
-          <Route path="/updates/:slug" element={<Navigate to="/blog" replace />} />
+          {/* Manager-published posts. /updates used to redirect to /blog; it is
+              a section of its own again, and the redirects that sent it to the
+              blog are gone from vercel.json too. */}
+          <Route path="/updates" element={<Updates />} />
+          <Route path="/updates/:slug" element={<UpdateDetail />} />
           <Route path="/consultation" element={<BookConsultation />} />
           <Route path="/book" element={<BookConsultation />} />
           {/* Accounts are off, so the sign up page shows the two Google Form
@@ -78,6 +85,13 @@ function AnimatedRoutes() {
           <Route path="/forgot-password" element={AUTH_ENABLED ? <ForgotPassword /> : <Navigate to="/" replace />} />
           <Route path="/talent/dashboard" element={AUTH_ENABLED ? <TalentDashboard /> : <Navigate to="/" replace />} />
           <Route path="/employer/dashboard" element={AUTH_ENABLED ? <EmployerDashboard /> : <Navigate to="/" replace />} />
+          {/* The content admin. RequireAuth checks the role before rendering, and
+              the API checks it again on every call - this only decides what a
+              visitor sees. */}
+          <Route
+            path="/admin/content"
+            element={AUTH_ENABLED ? <RequireAuth role="manager"><AdminContent /></RequireAuth> : <Navigate to="/" replace />}
+          />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="*" element={<NotFound />} />

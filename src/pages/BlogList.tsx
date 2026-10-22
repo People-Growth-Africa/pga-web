@@ -204,7 +204,7 @@ export default function BlogList() {
               <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-8 items-center">
                 <div className="relative rounded-[20px] overflow-hidden aspect-[16/10] bg-mint">
                   <img
-                    src={featured.image}
+                    src={featured.image || '/images/og-image.jpg'}
                     alt={featured.title}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     loading="eager"

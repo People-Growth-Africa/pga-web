@@ -48,7 +48,12 @@ export interface ArticleMeta {
   publishedAt: string;
   /** `YYYY-MM-DD`; the publish date when the content records no later change. */
   modifiedAt: string;
-  author: string;
+  author: {
+    /** A Person node unless the post explicitly opts the site into being the author. */
+    '@type': 'Person' | 'Organization';
+    name: string;
+    '@id'?: string;
+  };
   section?: string;
 }
 
@@ -117,7 +122,7 @@ export function clampDescription(text: string, limit = MAX_DESCRIPTION_LENGTH): 
  * descriptions are written once here so the sitemap, the static HTML and the
  * client-side head can never drift apart.
  */
-const STATIC_PAGES: Record<'/' | '/blog' | '/events' | '/consultation', PageMeta> = {
+const STATIC_PAGES: Record<'/' | '/blog' | '/events' | '/consultation' | '/updates', PageMeta> = {
   '/': {
     path: '/',
     title: 'People Growth Africa | HR Consulting for African Businesses',
@@ -150,10 +155,23 @@ const STATIC_PAGES: Record<'/' | '/blog' | '/events' | '/consultation', PageMeta
     image: DEFAULT_IMAGE,
     type: 'website',
   },
+  // Not prerendered: the posts it lists live in the database, so the page is
+  // served as a shell and filled in by the browser from /api/updates. The head
+  // is still set here so the client writes the same values the sitemap claims.
+  '/updates': {
+    path: '/updates',
+    title: 'Updates, News & Opportunities | People Growth Africa',
+    description:
+      'News, announcements, events, resources and opportunities from People Growth Africa, published by our team.',
+    image: DEFAULT_IMAGE,
+    type: 'website',
+  },
 };
 
 /** The metadata for a static public page. */
-export function staticPageMeta(path: '/' | '/blog' | '/events' | '/consultation'): PageMeta {
+export function staticPageMeta(
+  path: '/' | '/blog' | '/events' | '/consultation' | '/updates',
+): PageMeta {
   return STATIC_PAGES[path];
 }
 
@@ -170,18 +188,72 @@ export function blogMeta(post: BlogPost): PageMeta {
     // their own.
     title: post.title,
     description: clampDescription(post.metaDescription ?? post.excerpt),
-    image: post.image || DEFAULT_IMAGE,
+    // The share image, never the page's decorative `image`: see the field's
+    // doc comment in src/data/posts.ts.
+    image: post.shareImage || DEFAULT_IMAGE,
     type: 'article',
     article: {
       publishedAt: post.date,
       modifiedAt: post.updated ?? post.date,
-      author: post.author.name,
+      author: {
+        '@type': 'Organization' as const,
+        '@id': ORG_ID,
+        name: SITE_NAME,
+      },
       section: categoryLabel(post.category),
     },
     breadcrumb: [
       { name: 'Home', path: '/' },
       { name: 'Blog', path: '/blog' },
       { name: post.title, path: `/blog/${post.slug}` },
+    ],
+  };
+}
+
+/**
+ * A manager-published post's page: /updates/<slug>.
+ *
+ * Shaped like `blogMeta` on purpose - same Article node, same publisher, same
+ * author reference to the one Organization - so a search engine reads an update
+ * and an article as the same site writing the same kind of thing. The fields
+ * are declared structurally rather than by importing the feed's type, because * the feed is a client module and this one has to stay importable from the
+ * build without pulling a fetch layer into it.
+ */
+export function updateMeta(post: {
+  slug: string;
+  title: string;
+  excerpt: string;
+  coverImageUrl: string | null;
+  category: string;
+  publishedAt: string | null;
+  updatedAt: string;
+}): PageMeta {
+  const path = `/updates/${post.slug}`;
+  return {
+    path,
+    // Left exactly as written, the same reasoning as a blog headline: it is
+    // already the words a searcher would use.
+    title: post.title,
+    description: clampDescription(post.excerpt || post.title),
+    // A cover the manager uploaded, or the site's own card. Never the Unsplash
+    // artwork the blog uses: an update is not a blog post and should not borrow
+    // one of its pictures.
+    image: post.coverImageUrl || DEFAULT_IMAGE,
+    type: 'article',
+    article: {
+      publishedAt: (post.publishedAt ?? post.updatedAt).slice(0, 10),
+      modifiedAt: post.updatedAt.slice(0, 10),
+      author: {
+        '@type': 'Organization' as const,
+        '@id': ORG_ID,
+        name: SITE_NAME,
+      },
+      section: post.category,
+    },
+    breadcrumb: [
+      { name: 'Home', path: '/' },
+      { name: 'Updates', path: '/updates' },
+      { name: post.title, path },
     ],
   };
 }
@@ -227,6 +299,7 @@ export const PRIVATE_ROUTES = [
   '/newsletter/confirm',
   '/talent/dashboard',
   '/employer/dashboard',
+  '/admin/content',
 ] as const;
 
 /** Titles for those shells, so a browser tab still says what the page is. */
@@ -237,6 +310,7 @@ export const PRIVATE_ROUTE_TITLES: Record<string, string> = {
   '/newsletter/confirm': 'Confirm your subscription | People Growth Africa',
   '/talent/dashboard': 'Talent dashboard | People Growth Africa',
   '/employer/dashboard': 'Employer dashboard | People Growth Africa',
+  '/admin/content': 'Content Admin | People Growth Africa',
 };
 
 /**
@@ -276,7 +350,9 @@ export function buildPageSchema(meta: PageMeta): Record<string, unknown> | null 
       mainEntityOfPage: { '@type': 'WebPage', '@id': canonicalUrl(meta.path) },
       datePublished: meta.article.publishedAt,
       dateModified: meta.article.modifiedAt,
-      author: { '@type': 'Person', name: meta.article.author },
+      ...(meta.article.author['@type'] === 'Organization' && meta.article.author['@id']
+        ? { author: { '@type': 'Organization', '@id': meta.article.author['@id'] } }
+        : { author: { '@type': 'Person', name: meta.article.author.name } }),
       ...(meta.article.section ? { articleSection: meta.article.section } : {}),
       publisher: { '@id': ORG_ID },
     };

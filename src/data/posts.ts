@@ -22,7 +22,23 @@ export interface BlogPost {
   content: string;
   category: string;
   tags: string[];
-  image: string;
+  /**
+   * The image shown on the page itself: hero backdrop, featured card,
+   * list thumbnails. Optional so a post added from the content sheet without
+   * one simply falls back to the site's default artwork.
+   */
+  image?: string | null;
+  /**
+   * The image used for sharing: og:image, twitter:image and the Article
+   * `image` in JSON-LD.
+   *
+   * Deliberately separate from `image`, which is decoration. A stock photo
+   * that happens to sit behind the headline is not the article's card, and
+   * announcing one as the other makes every shared link preview something the
+   * post is not. Optional: a post with no share image falls back to
+   * /images/og-image.jpg (1200x630) rather than to the Unsplash URL.
+   */
+  shareImage?: string | null;
   date: string;
   author: Author;
   featured?: boolean;

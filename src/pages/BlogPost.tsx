@@ -1,12 +1,12 @@
 import { useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { canonicalUrl, blogMeta } from '../lib/pageMeta';
 
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import ContentImage from '../components/ContentImage';
 import SafeContent from '../components/SafeContent';
 import SEO from '../components/SEO';
 import { useContent } from '../hooks/useContent';
-import { blogMeta } from '../lib/pageMeta';
 import {
   findBlog,
   mergeBlogCategories,
@@ -78,7 +78,10 @@ export default function BlogPostPage() {
     month: 'long',
     year: 'numeric',
   });
-  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+  // Always the canonical URL, never `window.location`: the build renders this
+  // page without a window, and a share link that depends on one would ship an
+  // empty `url=` to every crawler and scraper that reads the prerendered HTML.
+  const shareUrl = canonicalUrl(`/blog/${post.slug}`);
 
   // Simple markdown-ish renderer for the content
   const renderContent = (content: string) => {
@@ -218,7 +221,7 @@ export default function BlogPostPage() {
             {/* Featured image on larger screens */}
             <div className="rounded-[20px] overflow-hidden mb-10 aspect-[16/9] bg-mint">
               <ContentImage
-                src={post.image || null}
+                src={post.image || '/images/og-image.jpg'}
                 alt={post.title}
                 className="w-full h-full"
                 eager

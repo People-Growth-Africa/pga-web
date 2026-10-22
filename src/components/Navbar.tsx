@@ -22,6 +22,7 @@ const baseNavLinks = [
   { to: '/#about', label: 'About' },
   { to: '/events', label: 'Events' },
   { to: '/blog', label: 'Blog' },
+  { to: '/updates', label: 'Updates' },
   { to: '/#testimonials', label: 'Testimonials' },
 ];
 

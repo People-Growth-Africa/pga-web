@@ -6,6 +6,13 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
  */
 const MAX_BODY_BYTES = 8 * 1024;
 
+/**
+ * The ceiling for an admin post or category write. An article body is one JSON
+ * string and blows past 8 KB on its first few paragraphs, so those endpoints
+ * pass this larger limit while every other endpoint keeps the tight default.
+ */
+export const MAX_ADMIN_BODY_BYTES = 512 * 1024;
+
 /** Origins that are allowed to send credentialed auth requests. */
 const EXTRA_ALLOWED_ORIGINS = (process.env.APP_ORIGINS ?? '')
   .split(',')
@@ -39,6 +46,7 @@ const ALLOWED_REDIRECTS = new Set([
   '/auth#login',
   '/talent/dashboard',
   '/employer/dashboard',
+  '/admin/content',
 ]);
 
 export function safeRedirect(path: string): string {
@@ -102,7 +110,7 @@ export function sendPublicJson(
   res.send(JSON.stringify(body));
 }
 
-export function parseJsonBody(req: VercelRequest): unknown {
+export function parseJsonBody(req: VercelRequest, maxBytes: number = MAX_BODY_BYTES): unknown {
   const raw =
     typeof req.body === 'string'
       ? req.body
@@ -110,7 +118,7 @@ export function parseJsonBody(req: VercelRequest): unknown {
         ? ''
         : JSON.stringify(req.body);
 
-  if (raw.length > MAX_BODY_BYTES) {
+  if (raw.length > maxBytes) {
     throw new ApiError(413, 'body_too_large', 'That request was too large.');
   }
   if (raw.trim() === '') {
@@ -171,7 +179,7 @@ export function clientIp(req: VercelRequest): string {
   return req.socket?.remoteAddress ?? 'unknown';
 }
 
-type HttpMethod = 'GET' | 'POST' | 'DELETE';
+type HttpMethod = 'GET' | 'POST' | 'DELETE' | 'PUT';
 type RouteHandler = (req: VercelRequest, res: VercelResponse) => Promise<void>;
 
 /**

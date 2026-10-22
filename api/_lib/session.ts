@@ -89,7 +89,10 @@ export async function readSession(req: VercelRequest): Promise<SessionClaims | n
     const role = payload.role;
     const ver = payload.ver;
     if (typeof payload.sub !== 'string' || typeof ver !== 'number') return null;
-    if (role !== 'talent' && role !== 'employer') return null;
+    // An allow list rather than a lookup: a token carrying any other value is
+    // refused outright. 'manager' belongs here or a signed in manager cannot
+    // reach anything - the admin endpoints read the role from this claim.
+    if (role !== 'talent' && role !== 'employer' && role !== 'manager') return null;
     return { userId: payload.sub, role, tokenVersion: ver };
   } catch {
     return null;

@@ -13,19 +13,13 @@
       "source": "/book",
       "destination": "/consultation",
       "permanent": true
-    },
-    {
-      "source": "/updates",
-      "destination": "/blog",
-      "permanent": true
-    },
-    {
-      "source": "/updates/:slug*",
-      "destination": "/blog",
-      "permanent": true
     }
   ],
   "rewrites": [
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/[...path]?path=sitemap"
+    },
     {
       "source": "/api/:path*",
       "destination": "/api/[...path]"
@@ -61,7 +55,7 @@
         },
         {
           "key": "Content-Security-Policy-Report-Only",
-          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://images.unsplash.com https://drive.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com; font-src 'self' data:; connect-src 'self' https://vitals.vercel-insights.com; worker-src 'self'; manifest-src 'self'"
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://images.unsplash.com https://drive.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com https://*.public.blob.vercel-storage.com; font-src 'self' data:; connect-src 'self' https://vitals.vercel-insights.com; worker-src 'self'; manifest-src 'self'"
         }
       ]
     },
@@ -69,7 +63,7 @@
       "source": "/sitemap.xml",
       "headers": [
         { "key": "Content-Type", "value": "application/xml; charset=utf-8" },
-        { "key": "Cache-Control", "value": "public, max-age=0, s-maxage=3600" }
+        { "key": "Cache-Control", "value": "public, max-age=0, s-maxage=300, stale-while-revalidate=600" }
       ]
     },
     {
@@ -106,6 +100,14 @@
     },
     {
       "source": "/employer/:path*",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    },
+    {
+      "source": "/admin",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    },
+    {
+      "source": "/admin/:path*",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
     },
     {

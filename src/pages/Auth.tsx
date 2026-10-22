@@ -48,6 +48,13 @@ const PANEL_COPY: Record<Role | 'login', { headline: string; text: string }> = {
     headline: 'Find the people your team needs.',
     text: 'Find vetted talent, or book a consultation on growing your team.',
   },
+  // Not in ROLE_CARDS: a manager account is never something a visitor picks.
+  // This exists only because the copy map is keyed on every Role, and a manager
+  // who lands here reaches it through the log in tab rather than the picker.
+  manager: {
+    headline: 'Welcome back.',
+    text: 'Log in to manage and publish content for the site.',
+  },
 };
 
 const inputClass =

@@ -252,3 +252,135 @@ export function parseInput<Schema extends z.ZodType>(schema: Schema, input: unkn
   const first = result.error.issues[0]?.message ?? 'Check the highlighted fields.';
   throw new ApiError(400, 'validation_failed', first, fields);
 }
+
+/* ── Content admin ──────────────────────────────────────────────────────── */
+
+const SLUG_MAX = 120;
+const TITLE_MAX = 160;
+const EXCERPT_MAX = 400;
+const BODY_MAX = 100_000;
+const CATEGORY_NAME_MAX = 60;
+const COVER_IMAGE_MAX = 2048;
+const LINK_LABEL_MAX = 80;
+const POST_ID_MAX = 40;
+
+/**
+ * Slugs are the public URL, so they are kept to lowercase words joined by
+ * single hyphens: no slashes, no dots, no percent signs. That rules out a slug
+ * that could escape /updates/ into another path or read as an escape sequence.
+ */
+const slug = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(1, 'Enter a slug.')
+  .max(SLUG_MAX, `Slug must be ${SLUG_MAX} characters or fewer.`)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lowercase letters, numbers and single hyphens.');
+
+const id = z
+  .string()
+  .trim()
+  .max(POST_ID_MAX)
+  .regex(/^[0-9a-f-]+$/i, 'That record could not be found.');
+
+/**
+ * Cover images are URLs, and only http(s). A `javascript:` or `data:` value
+ * here would be written into an <img src> on a public page.
+ */
+const coverImageUrl = z
+  .string()
+  .trim()
+  .max(COVER_IMAGE_MAX, `Cover image URL must be ${COVER_IMAGE_MAX} characters or fewer.`)
+  .refine((value) => value === '' || /^https?:\/\//.test(value), 'Enter a full http(s) image URL.')
+  .transform((value) => (value === '' ? null : value))
+  .nullable()
+  .optional();
+
+const linkUrl = z
+  .string()
+  .trim()
+  .max(COVER_IMAGE_MAX, `Link URL must be ${COVER_IMAGE_MAX} characters or fewer.`)
+  .refine((value) => value === '' || /^https?:\/\//.test(value), 'Enter a full http(s) link URL.')
+  .transform((value) => (value === '' ? null : value))
+  .nullable()
+  .optional();
+
+const linkLabel = z
+  .string()
+  .trim()
+  .max(LINK_LABEL_MAX, `Link label must be ${LINK_LABEL_MAX} characters or fewer.`)
+  .refine(
+    (value) => value === '' || value.length > 0,
+    'Give the link a label, or leave the URL empty too.',
+  )
+  .transform((value) => (value === '' ? null : value))
+  .nullable()
+  .optional();
+
+const POST_STATUS = ['draft', 'published'] as const;
+
+const postFields = {
+  slug,
+  title: requiredText(TITLE_MAX, 'title'),
+  excerpt: z.string().trim().max(EXCERPT_MAX, `Excerpt must be ${EXCERPT_MAX} characters or fewer.`),
+  body: z.string().max(BODY_MAX, `Body must be ${BODY_MAX} characters or fewer.`),
+  categoryId: id,
+  coverImageUrl,
+  linkLabel,
+  linkUrl,
+  status: z.enum(POST_STATUS),
+};
+
+export const postCreateSchema = z.strictObject({
+  ...postFields,
+});
+
+/** The id is the one field an edit carries that a create does not. */
+export const postUpdateSchema = z.strictObject({
+  id,
+  ...postFields,
+});
+
+export const postByIdSchema = z.strictObject({ id });
+
+/** The query string of the admin list. Everything optional, all values capped. */
+export const postListQuerySchema = z.strictObject({
+  status: z.enum(POST_STATUS).optional(),
+  categoryId: id.optional(),
+  search: z.string().trim().max(120).optional(),
+});
+
+export const categoryCreateSchema = z.strictObject({
+  name: requiredText(CATEGORY_NAME_MAX, 'category name'),
+  slug,
+});
+
+export const categoryUpdateSchema = z.strictObject({
+  id,
+  name: requiredText(CATEGORY_NAME_MAX, 'category name'),
+  slug,
+});
+
+/**
+ * `moveTo` is required by the handler when the category still has posts, and
+ * refused here when it names the category being deleted - moving a category's
+ * posts to itself would delete them along with it.
+ */
+export const categoryDeleteSchema = z
+  .strictObject({
+    id,
+    moveTo: id.optional(),
+  })
+  .refine((value) => value.moveTo !== value.id, {
+    message: 'Choose a different category to move these posts to.',
+    path: ['moveTo'],
+  });
+
+export const postStatusSchema = z.strictObject({
+  id,
+  status: z.enum(POST_STATUS),
+});
+
+export type PostCreateInput = z.infer<typeof postCreateSchema>;
+export type PostUpdateInput = z.infer<typeof postUpdateSchema>;
+export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;

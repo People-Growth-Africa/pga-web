@@ -62,8 +62,32 @@ for (const loc of locs) {
   }
   check(!loc.includes('/auth'), `no account URLs: ${loc}`);
   check(!loc.includes('/api/'), `no API URLs: ${loc}`);
-  check(!loc.includes('/updates'), `no retired /updates URLs: ${loc}`);
+  check(!loc.includes('/updates'), `the static sitemap carries no database-backed /updates URLs: ${loc}`);
 }
+
+/* ── The dynamic sitemap's static half ──────────────────────────────── */
+
+// /sitemap.xml is served by /api/sitemap (see vercel.json), which merges this
+// committed list with the published post slugs. The two copies of the list can
+// drift - they are in different compile units - so they are compared here
+// against the file the build actually wrote. A built-in post added without
+// updating api/_lib/static-sitemap.ts would otherwise silently drop out of the
+// sitemap that production serves.
+const staticSitemapSource = fs.readFileSync(
+  path.join(root, 'api', '_lib', 'static-sitemap.ts'),
+  'utf8',
+);
+const constantMatch = staticSitemapSource.match(
+  /export const STATIC_SITEMAP_PATHS[^=]*=\s*\[([\s\S]*?)\];/,
+);
+check(Boolean(constantMatch), 'static-sitemap.ts declares STATIC_SITEMAP_PATHS');
+
+const constantPaths = [...(constantMatch?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+const builtPaths = locs.map((loc) => loc.replace(SITE, '') || '/');
+check(
+  JSON.stringify(constantPaths) === JSON.stringify(builtPaths),
+  `static sitemap paths match the build (${constantPaths.length} in the constant, ${builtPaths.length} built)`,
+);
 
 const lastmods = [...sitemap.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1]);
 check(lastmods.length === 9, `only the 9 articles carry a lastmod (found ${lastmods.length})`);
@@ -163,8 +187,26 @@ for (const file of postFiles) {
     check(node.mainEntityOfPage?.['@id'] === `${SITE}${route}`, `${route} schema mainEntityOfPage is the page`);
     check(node.publisher?.['@id'] === `${SITE}/#organization`, `${route} schema publisher is the shared Organization`);
     check(Object.keys(node.publisher ?? {}).length === 1, `${route} schema publisher declares no second Organization`);
-    check(Boolean(node.author?.name), `${route} schema names an author`);
+    // The author is a reference to the shared Organization, never a second
+    // declaration of it and never a Person: one company, one node, by @id.
+    check(
+      node.author?.['@type'] === 'Organization' &&
+        node.author?.['@id'] === `${SITE}/#organization`,
+      `${route} schema author is the shared Organization`,
+    );
+    check(Object.keys(node.author ?? {}).length === 2, `${route} schema author is a pure @id reference`);
     check(Boolean(node.image), `${route} schema has an image`);
+
+    // The share image is the article's own card, never a stock photo. An
+    // Unsplash URL as og:image makes every shared link preview a picture the
+    // post is not, and the twitter card has to agree with the og one.
+    const postHead = html.slice(0, html.indexOf('</head>'));
+    const ogImage = postHead.match(/property="og:image" content="([^"]*)"/)?.[1] ?? '';
+    const twitterImage = postHead.match(/name="twitter:image" content="([^"]*)"/)?.[1] ?? '';
+    check(Boolean(ogImage), `${route} has an og:image`);
+    check(!/unsplash\.com/i.test(ogImage), `${route} og:image is not a stock photo`);
+    check(!/unsplash\.com/i.test(String(node.image)), `${route} schema image is not a stock photo`);
+    check(twitterImage === ogImage, `${route} twitter:image matches og:image`);
   }
 
   if (breadcrumb) {
@@ -206,6 +248,28 @@ check(fs.existsSync(path.join(dist, 'spa-fallback.html')), 'SPA fallback shell e
 /* ── Routing config and service worker ────────────────────────────────────── */
 
 const vercel = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+
+/* ── /updates and the admin are wired into the platform config ───────────── */
+
+const sitemapRewrite = (vercel.rewrites ?? []).find((rule) => rule.source === '/sitemap.xml');
+check(
+  Boolean(sitemapRewrite?.destination?.includes('path=sitemap')),
+  'vercel.json rewrites /sitemap.xml to the API route',
+);
+
+// /updates is a live section again: the redirects that sent it to /blog are gone.
+check(
+  !(vercel.redirects ?? []).some((rule) => rule.source.startsWith('/updates')),
+  'vercel.json no longer redirects /updates to /blog',
+);
+
+const cspHeader = (vercel.headers ?? [])
+  .flatMap((rule) => rule.headers ?? [])
+  .find((header) => header.key === 'Content-Security-Policy-Report-Only');
+check(
+  cspHeader?.value.includes('https://*.public.blob.vercel-storage.com') ?? false,
+  'the CSP allows Vercel Blob covers to render',
+);
 check(vercel.trailingSlash === false, 'vercel.json sets trailingSlash: false');
 check(vercel.cleanUrls === true, 'vercel.json sets cleanUrls: true');
 
@@ -224,7 +288,7 @@ check(Boolean(sitemapHeaders), 'vercel.json sets headers for /sitemap.xml');
 const robotsHeaders = (vercel.headers ?? []).find((rule) => rule.source === '/robots.txt');
 check(Boolean(robotsHeaders), 'vercel.json sets headers for /robots.txt');
 
-for (const source of ['/auth', '/auth/:path*', '/forgot-password', '/talent/:path*', '/employer/:path*', '/newsletter/confirm']) {
+for (const source of ['/auth', '/auth/:path*', '/forgot-password', '/talent/:path*', '/employer/:path*', '/admin', '/admin/:path*', '/newsletter/confirm']) {
   const rule = (vercel.headers ?? []).find((entry) => entry.source === source);
   check(
     (rule?.headers ?? []).some((header) => header.key === 'X-Robots-Tag' && header.value.includes('noindex')),

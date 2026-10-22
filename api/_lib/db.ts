@@ -30,7 +30,32 @@ export function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
 }
 
-export type Role = 'talent' | 'employer';
+/**
+ * A delete refused because a row still references it.
+ *
+ * ON DELETE RESTRICT raises 23001 (restrict_violation); a constraint stated as
+ * NO ACTION raises 23503 instead, so both count. The category handler checks
+ * the post count before deleting, which is what the manager sees - this is the
+ * narrower window where a post is added between that check and the delete. It
+ * has to read as "still in use", not as a server error, because that is what
+ * happened.
+ */
+export function isRestrictViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false;
+  const code = error.code;
+  return code === '23001' || code === '23503';
+}
+
+/**
+ * The three account types.
+ *
+ * 'manager' is never written by a signup: the signup schemas accept only the
+ * talent and employer literals, and a database trigger refuses a manager row
+ * unless scripts/promote-manager.mjs is running (see scripts/setup-content.mjs).
+ */
+export type Role = 'talent' | 'employer' | 'manager';
+
+export const MANAGER_ROLE: Role = 'manager';
 
 export type UserRow = {
   id: string;
@@ -446,4 +471,282 @@ export async function confirmNewsletterSubscriber(tokenHash: string): Promise<st
     [tokenHash],
   );
   return row?.email ?? null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Content admin: categories and posts.
+
+   Timestamps come back as ISO-8601 UTC strings rather than driver Date
+   objects, because these rows are serialized straight into public JSON and
+   into the admin UI, and one format everywhere means no consumer has to
+   guess what it is holding.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Postgres -> `2026-10-21T09:30:00.000Z`, safe to JSON.stringify.
+ *
+ * Each takes the table's alias on purpose: `created_at` exists on both `posts`
+ * and `categories`, and the admin list joins the two, so an unqualified column
+ * is ambiguous and the query fails outright rather than picking one.
+ */
+const isoTimestamp = (table: string, column: string): string =>
+  `to_char(${table}.${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+
+export type PostStatus = 'draft' | 'published';
+
+export type CategoryRow = {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: string;
+  post_count: number;
+};
+
+export type PostRow = {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body: string;
+  category_id: string;
+  category_name: string;
+  category_slug: string;
+  cover_image_url: string | null;
+  link_label: string | null;
+  link_url: string | null;
+  status: PostStatus;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  author_id: string | null;
+};
+
+const POST_COLUMNS = `p.id, p.slug, p.title, p.excerpt, p.body, p.category_id,
+         c.name AS category_name, c.slug AS category_slug,
+         p.cover_image_url, p.link_label, p.link_url, p.status,
+         ${isoTimestamp('p', 'published_at')} AS published_at,
+         ${isoTimestamp('p', 'created_at')} AS created_at,
+         ${isoTimestamp('p', 'updated_at')} AS updated_at,
+         p.author_id`;
+
+const POST_FROM = `FROM posts p JOIN categories c ON c.id = p.category_id`;
+
+export async function listCategories(): Promise<CategoryRow[]> {
+  return query<CategoryRow>(
+    `SELECT c.id, c.name, c.slug, ${isoTimestamp('c', 'created_at')} AS created_at,
+            (SELECT count(*) FROM posts p WHERE p.category_id = c.id)::int AS post_count
+       FROM categories c
+      ORDER BY c.name`,
+  );
+}
+
+export async function findCategoryBySlug(slug: string): Promise<{ id: string } | null> {
+  return queryOne<{ id: string }>('SELECT id FROM categories WHERE slug = $1', [slug]);
+}
+
+export async function findCategoryById(id: string): Promise<CategoryRow | null> {
+  return queryOne<CategoryRow>(
+    `SELECT c.id, c.name, c.slug, ${isoTimestamp('c', 'created_at')} AS created_at,
+            (SELECT count(*) FROM posts p WHERE p.category_id = c.id)::int AS post_count
+       FROM categories c WHERE c.id = $1`,
+    [id],
+  );
+}
+
+export async function insertCategory(input: {
+  name: string;
+  slug: string;
+}): Promise<{ id: string } | null> {
+  const row = await queryOne<{ id: string }>(
+    'INSERT INTO categories (name, slug) VALUES ($1, $2) RETURNING id',
+    [input.name, input.slug],
+  );
+  return row;
+}
+
+/** A rename is a plain update: the slug may change, and posts keep their row. */
+export async function updateCategory(input: {
+  id: string;
+  name: string;
+  slug: string;
+}): Promise<{ id: string } | null> {
+  return queryOne<{ id: string }>(
+    'UPDATE categories SET name = $2, slug = $3 WHERE id = $1 RETURNING id',
+    [input.id, input.name, input.slug],
+  );
+}
+
+/**
+ * Move every post in one category to another, then the caller deletes the
+ * emptied one. Two statements, so a post cannot appear in neither category
+ * between them; the foreign key refuses the delete if any row was left behind.
+ */
+export async function movePostsToCategory(fromId: string, toId: string): Promise<number> {
+  const rows = await query<{ id: string }>(
+    'UPDATE posts SET category_id = $2, updated_at = now() WHERE category_id = $1 RETURNING id',
+    [fromId, toId],
+  );
+  return rows.length;
+}
+
+export async function deleteCategory(id: string): Promise<boolean> {
+  const rows = await query<{ id: string }>('DELETE FROM categories WHERE id = $1 RETURNING id', [id]);
+  return rows.length > 0;
+}
+
+export type PostListFilter = {
+  status?: PostStatus;
+  categoryId?: string;
+  search?: string;
+};
+
+/**
+ * The admin list. Includes drafts, because that is the point of the panel; the
+ * public query below is the only one that may read a draft, and it never does.
+ */
+export async function listPostsForAdmin(filter: PostListFilter = {}): Promise<PostRow[]> {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter.status) {
+    params.push(filter.status);
+    where.push(`p.status = $${params.length}`);
+  }
+  if (filter.categoryId) {
+    params.push(filter.categoryId);
+    where.push(`p.category_id = $${params.length}`);
+  }
+  if (filter.search) {
+    params.push(`%${filter.search}%`);
+    where.push(`(p.title ILIKE $${params.length} OR p.excerpt ILIKE $${params.length})`);
+  }
+
+  return query<PostRow>(
+    `SELECT ${POST_COLUMNS} ${POST_FROM}
+      ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY p.updated_at DESC`,
+    params,
+  );
+}
+
+/**
+ * What the public site reads. Drafts are excluded in SQL rather than filtered
+ * out afterwards, so there is no code path that could forget: a draft row never
+ * leaves the database through this function.
+ */
+export async function listPublishedPosts(): Promise<PostRow[]> {
+  return query<PostRow>(
+    `SELECT ${POST_COLUMNS} ${POST_FROM}
+      WHERE p.status = 'published'
+      ORDER BY p.published_at DESC`,
+  );
+}
+
+export async function findPublishedPostBySlug(slug: string): Promise<PostRow | null> {
+  return queryOne<PostRow>(
+    `SELECT ${POST_COLUMNS} ${POST_FROM}
+      WHERE p.slug = $1 AND p.status = 'published'`,
+    [slug],
+  );
+}
+
+export async function findPostById(id: string): Promise<PostRow | null> {
+  return queryOne<PostRow>(`SELECT ${POST_COLUMNS} ${POST_FROM} WHERE p.id = $1`, [id]);
+}
+
+export async function insertPost(input: {
+  slug: string;
+  title: string;
+  excerpt: string;
+  body: string;
+  categoryId: string;
+  coverImageUrl: string | null;
+  linkLabel: string | null;
+  linkUrl: string | null;
+  status: PostStatus;
+  authorId: string;
+}): Promise<string | null> {
+  const row = await queryOne<{ id: string }>(
+    `INSERT INTO posts
+       (slug, title, excerpt, body, category_id, cover_image_url, link_label, link_url,
+        status, published_at, author_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+             CASE WHEN $9 = 'published' THEN now() ELSE NULL END, $10)
+     RETURNING id`,
+    [
+      input.slug,
+      input.title,
+      input.excerpt,
+      input.body,
+      input.categoryId,
+      input.coverImageUrl,
+      input.linkLabel,
+      input.linkUrl,
+      input.status,
+      input.authorId,
+    ],
+  );
+  return row?.id ?? null;
+}
+
+/**
+ * Publish stamps published_at; unpublish clears it. Both are written from the
+ * server rather than sent by the client, so the published date is always the
+ * moment the change happened and never a value a request made up.
+ */
+export async function updatePost(input: {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body: string;
+  categoryId: string;
+  coverImageUrl: string | null;
+  linkLabel: string | null;
+  linkUrl: string | null;
+  status: PostStatus;
+}): Promise<{ id: string } | null> {
+  return queryOne<{ id: string }>(
+    `UPDATE posts
+        SET slug = $2,
+            title = $3,
+            excerpt = $4,
+            body = $5,
+            category_id = $6,
+            cover_image_url = $7,
+            link_label = $8,
+            link_url = $9,
+            status = $10,
+            published_at = CASE
+              WHEN $10 = 'published' THEN coalesce(published_at, now())
+              ELSE NULL END,
+            updated_at = now()
+      WHERE id = $1
+      RETURNING id`,
+    [
+      input.id,
+      input.slug,
+      input.title,
+      input.excerpt,
+      input.body,
+      input.categoryId,
+      input.coverImageUrl,
+      input.linkLabel,
+      input.linkUrl,
+      input.status,
+    ],
+  );
+}
+
+export async function deletePost(id: string): Promise<boolean> {
+  const rows = await query<{ id: string }>('DELETE FROM posts WHERE id = $1 RETURNING id', [id]);
+  return rows.length > 0;
+}
+
+/** The published slugs, for the sitemap. No bodies, so this stays small. */
+export async function listPublishedSlugs(): Promise<string[]> {
+  const rows = await query<{ slug: string }>(
+    `SELECT slug FROM posts WHERE status = 'published' ORDER BY slug`,
+  );
+  return rows.map((row) => row.slug);
 }

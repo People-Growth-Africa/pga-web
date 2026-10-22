@@ -4,7 +4,15 @@
  * can show the server's message without guessing what went wrong.
  */
 
-export type Role = 'talent' | 'employer';
+/**
+ * The three account types.
+ *
+ * A manager account cannot be created by signing up: the API only ever writes
+ * 'talent' or 'employer', and a database trigger refuses a manager row unless
+ * the promotion script is running. This type widening is so a signed in manager
+ * is recognised, not so one can be made here.
+ */
+export type Role = 'talent' | 'employer' | 'manager';
 
 export type TalentProfile = {
   name: string;
@@ -54,7 +62,9 @@ export const NEED_OPTIONS = [
   { value: 'book_consultation', label: 'Book a consultation' },
 ] as const;
 
+/** Where each kind of account lands after signing in. */
 export function dashboardPath(role: Role): string {
+  if (role === 'manager') return '/admin/content';
   return role === 'talent' ? '/talent/dashboard' : '/employer/dashboard';
 }
 
@@ -83,7 +93,7 @@ function missingEndpointMessage(status: number): string {
 
 export async function authRequest<T>(
   path: string,
-  init?: { method?: 'GET' | 'POST' | 'DELETE'; body?: unknown },
+  init?: { method?: 'GET' | 'POST' | 'DELETE' | 'PUT'; body?: unknown },
 ): Promise<ApiResult<T>> {
   const hasBody = init?.body !== undefined;
 
