@@ -25,6 +25,14 @@
       "destination": "/api/[...path]"
     },
     {
+      "source": "/blog",
+      "destination": "/api/[...path]?path=index&type=blog"
+    },
+    {
+      "source": "/events",
+      "destination": "/api/[...path]?path=index&type=event"
+    },
+    {
       "source": "/blog/:slug",
       "destination": "/api/[...path]?path=post&type=blog&slug=:slug"
     },
@@ -39,7 +47,7 @@
   ],
   "functions": {
     "api/[...path].ts": {
-      "includeFiles": "{dist/spa-fallback.html,dist/index.html}"
+      "includeFiles": "{dist/spa-fallback.html,dist/index.html,dist/seo-index.json}"
     }
   },
   "headers": [

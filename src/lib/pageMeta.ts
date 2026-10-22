@@ -222,6 +222,14 @@ export function eventMeta(event: EventMetaSource): PageMeta {
       // lie to a calendar, so it gets a VirtualLocation instead.
       ...(event.isOnline ? { isOnline: true } : { location: event.format }),
     },
+    // Events carry the same trail as articles. Without it the built-in event
+    // pages were the only ones on the site with no BreadcrumbList, while the
+    // manager-published ones had one: a difference a crawler sees, for no reason.
+    breadcrumb: [
+      { name: 'Home', path: '/' },
+      { name: 'Events', path: '/events' },
+      { name: event.title, path: `/events/${event.slug}` },
+    ],
   };
 }
 
@@ -234,6 +242,47 @@ export function prerenderPages(): PageMeta[] {
     ...blogPosts.map(blogMeta),
     STATIC_PAGES['/events'],
     ...eventsList.map(eventMeta),
+  ];
+}
+
+/**
+ * One row of a section index, as the request-time renderer needs it.
+ *
+ * `/blog` and `/events` are built by api/_lib/routes/index-page.ts, which cannot
+ * import this module (the two compile units are separate). The build writes this
+ * list into dist/seo-index.json and the function bundles it, so the built-in
+ * records reach the database rows without a second hand-written copy.
+ */
+export interface IndexEntry {
+  type: 'blog' | 'event';
+  slug: string;
+  title: string;
+  excerpt: string;
+  /** `YYYY-MM-DD` for a post, an ISO instant for an event. */
+  date: string | null;
+  category?: string;
+}
+
+/** Every built-in post and event, in the order the sections list them. */
+export function builtInIndexEntries(): IndexEntry[] {
+  return [
+    ...blogPosts.map((post) => ({
+      type: 'blog' as const,
+      slug: post.slug,
+      title: post.title,
+      excerpt: post.excerpt,
+      date: post.date,
+      ...(categoryLabel(post.category) ? { category: categoryLabel(post.category) } : {}),
+    })),
+    ...eventsList.map((event) => ({
+      type: 'event' as const,
+      slug: event.slug,
+      title: event.title,
+      excerpt: event.subtitle,
+      // Built-in events predate the sheet's optional start time, so the day is
+      // the whole date they have.
+      date: eventInstant(event.isoDate, null),
+    })),
   ];
 }
 

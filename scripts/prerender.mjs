@@ -37,9 +37,9 @@ if (!fs.existsSync(serverEntry) || !fs.existsSync(metaEntry)) {
 const { default: PrerenderApp } = await import(pathToFileURL(serverEntry).href);
 const {
   prerenderPages,
+  builtInIndexEntries,
   PRIVATE_ROUTES,
   PRIVATE_ROUTE_TITLES,
-  canonicalUrl,
   renderHeadHtml,
 } = await import(pathToFileURL(metaEntry).href);
 
@@ -69,7 +69,7 @@ function pageHtml({ head, markup, prerendered }) {
   if (prerendered) {
     // Read by src/lib/firstPaint.ts: the markup here is already visible, so the
     // hydrating app must not replay entrance animations over it.
-    html = html.replace('<html lang="en">', '<html lang="en" data-prerendered>');
+    html = html.replace('<html lang="en-NG">', '<html lang="en-NG" data-prerendered>');
   }
   return html;
 }
@@ -85,7 +85,19 @@ function writeRoute(routePath, html) {
 
 /* ── Public pages ─────────────────────────────────────────────────────────── */
 
-const pages = prerenderPages();
+/*
+ * /blog and /events are deliberately not written here.
+ *
+ * Vercel serves a file before it applies a rewrite, so while dist/blog/index.html
+ * exists no request for /blog can ever reach the function that knows about posts
+ * published since the build. Those two pages are rendered by
+ * api/_lib/routes/index-page.ts from this build's list plus every published
+ * database row, which is the only way their HTML is complete at all times.
+ * Everything else - the home page, consultation, every built-in article and
+ * event - keeps its prerendered file.
+ */
+const INDEX_ROUTES = new Set(['/blog', '/events']);
+const pages = prerenderPages().filter((page) => !INDEX_ROUTES.has(page.path));
 const written = [];
 
 for (const page of pages) {
@@ -118,46 +130,26 @@ for (const route of PRIVATE_ROUTES) {
   written.push(writeRoute(route, privateHtml(route)));
 }
 
-/* ── Sitemap ──────────────────────────────────────────────────────────────── */
+/* ── The built-in index, for the request-time index pages ─────────────────── */
 
-function escapeXml(value) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
+/*
+ * /blog and /events are served by the API, which cannot import src/. This file
+ * is the bridge: the same records the React pages read, reduced to what an index
+ * row prints, written into dist/ and bundled into the function by vercel.json.
+ * It is build output, not a second source of truth - it is generated from
+ * src/data on every build, so it cannot drift.
+ */
+const indexEntries = builtInIndexEntries();
+fs.writeFileSync(
+  path.join(dist, 'seo-index.json'),
+  `${JSON.stringify({ entries: indexEntries })}\n`,
+  'utf8',
+);
 
-// One entry per canonical URL, in the order the pages are listed above. A
-// lastmod is written only where the content itself carries a real date; the
-// build clock is not a modification date.
-const seen = new Set();
-const entries = [];
-
-for (const page of pages) {
-  const loc = canonicalUrl(page.path);
-  if (seen.has(loc)) continue;
-  seen.add(loc);
-
-  const lastmod = page.article?.publishedAt;
-  entries.push(
-    [
-      '  <url>',
-      `    <loc>${escapeXml(loc)}</loc>`,
-      ...(lastmod ? [`    <lastmod>${lastmod}</lastmod>`] : []),
-      '  </url>',
-    ].join('\n'),
-  );
-}
-
-const sitemap =
-  '<?xml version="1.0" encoding="UTF-8"?>\n' +
-  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-  `${entries.join('\n')}\n` +
-  '</urlset>\n';
-
-fs.writeFileSync(path.join(dist, 'sitemap.xml'), sitemap, 'utf8');
+// No dist/sitemap.xml on purpose. The file would win over the /sitemap.xml
+// rewrite (Vercel checks the filesystem before rewrites), so the build could
+// only ever publish a sitemap that was already stale. /api/sitemap is the one
+// source: static paths plus every published row, asked for on demand.
 
 console.log(`prerender: wrote ${written.length} HTML files (${pages.length} prerendered).`);
-console.log(`prerender: dist/sitemap.xml lists ${entries.length} URLs.`);
+console.log(`prerender: dist/seo-index.json lists ${indexEntries.length} built-in index rows.`);

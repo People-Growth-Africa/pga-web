@@ -37,9 +37,31 @@ fs.mkdirSync(publicDir, { recursive: true });
 
 // Private routes are deliberately NOT disallowed here: a crawler that is kept
 // out cannot read their noindex (vercel.json sends X-Robots-Tag, and their HTML
-// carries a robots meta tag).
+// carries a robots meta tag). Disallowing /admin would hide the one signal that
+// keeps it out of an index.
+//
+// The named groups below are not needed to *allow* a crawler - the wildcard
+// already does - but they make it explicit that the engines this site is aimed
+// at are welcome, and they are the first thing to check if a robots.txt change
+// ever goes wrong.
 const robotsTxt = `# Standard web crawlers
 User-agent: *
+Allow: /
+
+# Search engines, named so a future disallow cannot accidentally catch them
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Bravebot
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+User-agent: Baiduspider
 Allow: /
 
 # AI Crawlers & LLM Agents

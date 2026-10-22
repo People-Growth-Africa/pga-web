@@ -806,9 +806,16 @@ export async function deletePost(id: string): Promise<boolean> {
  *
  * The type travels with each slug because the public path depends on it now:
  * a blog post lives at /blog/<slug> and an event at /events/<slug>.
+ *
+ * `updated_at` travels too: it is a real modification date the row carries, so
+ * the sitemap can state one instead of leaving lastmod out or stamping the build
+ * clock onto every URL.
  */
-export async function listPublishedSlugs(): Promise<{ slug: string; type: PostType }[]> {
-  return query<{ slug: string; type: PostType }>(
-    `SELECT slug, type FROM posts WHERE status = 'published' ORDER BY slug`,
+export async function listPublishedSlugs(): Promise<
+  { slug: string; type: PostType; updated_at: string }[]
+> {
+  return query<{ slug: string; type: PostType; updated_at: string }>(
+    `SELECT slug, type, ${isoTimestamp('posts', 'updated_at')} AS updated_at
+       FROM posts WHERE status = 'published' ORDER BY slug`,
   );
 }

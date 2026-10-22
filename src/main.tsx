@@ -6,6 +6,16 @@ import './index.css';
 const container = document.getElementById('root')!;
 
 /*
+ * Pages rendered at request time - /blog, /events and any post published after
+ * the build - arrive with a readable copy of their content in front of #root
+ * (see api/_lib/shell.ts). That copy exists for crawlers, not for the app: the
+ * app renders the same page from its own data. Removing it before mounting means
+ * it never appears twice in the live DOM and the container is exactly what
+ * createRoot expects.
+ */
+document.getElementById('fallback-content')?.remove();
+
+/*
  * Hydrate when the build already wrote this page, render when it did not.
  *
  * Public pages arrive with their real markup (see scripts/prerender.mjs), so

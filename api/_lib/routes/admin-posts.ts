@@ -28,6 +28,7 @@ import {
 import { enforceRateLimit } from '../ratelimit.js';
 import { markContentChanged } from '../content/version.js';
 import { deleteCoverBlobs } from '../cover-blobs.js';
+import { pingIndexNow, postUrlPath } from '../indexnow.js';
 
 /**
  * POST /api/admin/posts        - list, with optional status/category/search filters
@@ -152,6 +153,9 @@ async function createHandler(req: VercelRequest, res: VercelResponse, userId: st
 
     markContentChanged();
     const post = await findPostById(id);
+    // A post saved straight to published has a URL from this moment, so Bing and
+    // Yandex are told rather than left to find it on their next crawl.
+    if (post?.status === 'published') pingIndexNow([postUrlPath(post.type, post.slug)]);
     sendJson(res, 201, { post });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -189,6 +193,7 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
 
     markContentChanged();
     const post = await findPostById(data.id);
+    if (post?.status === 'published') pingIndexNow([postUrlPath(post.type, post.slug)]);
     sendJson(res, 200, { post });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -235,6 +240,7 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
 
   markContentChanged();
   const post = await findPostById(id);
+  if (post?.status === 'published') pingIndexNow([postUrlPath(post.type, post.slug)]);
   sendJson(res, 200, { post });
 }
 

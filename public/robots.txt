@@ -2,6 +2,22 @@
 User-agent: *
 Allow: /
 
+# Search engines, named so a future disallow cannot accidentally catch them
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Bravebot
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+User-agent: Baiduspider
+Allow: /
+
 # AI Crawlers & LLM Agents
 User-agent: GPTBot
 Allow: /

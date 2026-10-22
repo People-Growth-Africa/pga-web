@@ -332,7 +332,7 @@ check(
 console.log('\nMerging with the built-in content\n');
 
 const builtInBlogCount = mergeBlogPosts([]).length;
-const builtInEventCount = mergeEvents([], '2026-10-19').length;
+const builtInEventCount = mergeEvents([], [], '2026-10-19').length;
 
 const duplicateBlog = parse([row({ title: 'A different title', slug: 'from-whatsapp-groups-to-world-class-hr' })]);
 const mergedDuplicate = mergeBlogPosts(duplicateBlog.entries);
@@ -369,14 +369,14 @@ const eventEntries = parse([
     event_date: '2027-08-01',
   }),
 ]);
-const mergedEvents = mergeEvents(eventEntries.entries, '2026-10-19');
+const mergedEvents = mergeEvents(eventEntries.entries, [], '2026-10-19');
 const { upcoming, past } = splitEvents(mergedEvents);
 check(
   19,
   'Built-in events are kept, new sheet events are added and duplicate slugs are dropped',
   mergedEvents.length === builtInEventCount + 2 &&
     !mergedEvents.some((event) => event.title === 'Duplicate of a built-in event') &&
-    findEvent('far-future', eventEntries.entries, '2026-10-19')?.origin === 'sheet',
+    findEvent('far-future', eventEntries.entries, [], '2026-10-19')?.origin === 'sheet',
   `${mergedEvents.length} events, ${builtInEventCount} built in`,
 );
 

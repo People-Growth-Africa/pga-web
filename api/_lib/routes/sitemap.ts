@@ -19,6 +19,10 @@ import { STATIC_SITEMAP_PATHS } from '../static-sitemap.js';
  *
  * The response is cached at the edge. A new post is in the sitemap once that
  * copy turns over, which is the same window the feed itself uses.
+ *
+ * Nothing writes dist/sitemap.xml any more. The build used to, and because
+ * Vercel checks the filesystem before rewrites that file shadowed this handler:
+ * the sitemap production served could only ever list what existed at build time.
  */
 const SITE_URL = 'https://www.peoplegrowthafrica.com';
 
@@ -47,8 +51,14 @@ export default endpoint({ methods: ['GET'] }, async (_req: VercelRequest, res: V
   for (const path of STATIC_SITEMAP_PATHS) add(path);
   // A post lives under the section its type names, so the same slug can never
   // appear at two paths.
-  for (const { slug, type } of slugs) {
-    add(`/${type === 'blog' ? 'blog' : 'events'}/${slug}`);
+  for (const { slug, type, updated_at } of slugs) {
+    // A published row carries a real change date, so it is stated. The static
+    // pages have none, and today's date on every one of them would be a lie that
+    // changed daily.
+    add(
+      `/${type === 'blog' ? 'blog' : 'events'}/${slug}`,
+      updated_at.slice(0, 10),
+    );
   }
 
   const entries = locations

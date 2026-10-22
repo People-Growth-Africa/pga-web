@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-NG">
   <head>
     <meta charset="UTF-8" />
     <!-- Old tab icon kept for reference: it read as squeezed at tab size.
@@ -36,6 +36,17 @@
     <meta name="theme-color" content="#0F6E56" />
     <link rel="manifest" href="/manifest.json" />
 
+    <!-- Fonts are requested from the document head rather than with an @import
+         inside the stylesheet: the preload scanner finds them immediately and
+         the two connections open while the app bundle is still downloading,
+         instead of the font request waiting for the CSS to arrive first. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+    />
+
     <!-- Page-specific head tags.
          The build replaces everything between these two markers for each public
          route (scripts/prerender.mjs) with that page's title, description,
@@ -58,7 +69,7 @@
     <script type="application/ld+json" id="org-schema">
       {
         "@context": "https://schema.org",
-        "@type": "Organization",
+        "@type": ["Organization", "ProfessionalService"],
         "@id": "https://www.peoplegrowthafrica.com/#organization",
         "name": "People Growth Africa",
         "url": "https://www.peoplegrowthafrica.com/",
@@ -67,15 +78,51 @@
         "areaServed": "Africa",
         "address": {
           "@type": "PostalAddress",
-          "addressLocality": "Lagos",
+          "addressLocality": "Apapa",
+          "addressRegion": "Lagos",
           "addressCountry": "NG"
         },
+        "telephone": "+2349167114560",
+        "email": "hello@peoplegrowthafrica.com",
+        "openingHoursSpecification": [
+          {
+            "@type": "OpeningHoursSpecification",
+            "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday"],
+            "opens": "08:00",
+            "closes": "18:00",
+            "timeZone": "Africa/Lagos"
+          },
+          {
+            "@type": "OpeningHoursSpecification",
+            "dayOfWeek": ["Saturday"],
+            "opens": "11:00",
+            "closes": "16:00",
+            "timeZone": "Africa/Lagos"
+          }
+        ],
         "sameAs": [
           "https://www.linkedin.com/company/people-growth-africa/",
           "https://www.instagram.com/peoplegrowthafrica",
           "https://tiktok.com/@peoplegrowthafrica",
-          "https://www.youtube.com/@peoplegrowthafrica"
+          "https://www.youtube.com/@peoplegrowthafrica",
+          "https://www.facebook.com/peoplegrowthafrica"
         ]
+      }
+    </script>
+
+    <!-- The site itself, as one entity. Also static: a crawler that never runs
+         JavaScript still reads which site this is, what language it is written
+         in, and which organization publishes it. There is no search endpoint on
+         the site, so this deliberately declares no SearchAction. -->
+    <script type="application/ld+json" id="website-schema">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "@id": "https://www.peoplegrowthafrica.com/#website",
+        "name": "People Growth Africa",
+        "url": "https://www.peoplegrowthafrica.com/",
+        "inLanguage": "en-NG",
+        "publisher": { "@id": "https://www.peoplegrowthafrica.com/#organization" }
       }
     </script>
   </head>

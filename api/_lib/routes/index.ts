@@ -88,6 +88,11 @@ export const ROUTES: Record<string, RouteHandler> = {
   //     same way, from the /sitemap.xml rewrite. ---------------------------
   '/posts': requiresDatabase(async () => (await import('./posts.js')).default),
   '/post': requiresDatabase(async () => (await import('./post-page.js')).default),
+  //     /index is the destination of the /blog and /events rewrites. It is not
+  //     behind the database gate: with no DATABASE_URL it still lists the
+  //     built-in records the build recorded, which is better than a 503 on a
+  //     section a visitor can reach. --------------------------------
+  '/index': lazy(async () => (await import('./index-page.js')).default),
   '/sitemap': requiresDatabase(async () => (await import('./sitemap.js')).default),
 
   // --- Public forms that store submissions, up only when a database is set --

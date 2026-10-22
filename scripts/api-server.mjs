@@ -174,20 +174,88 @@ function readBody(req) {
   });
 }
 
+/**
+ * The rewrites in vercel.json, compiled so this server routes like production.
+ *
+ * It matters more than convenience: Vercel checks the filesystem first, then
+ * applies rewrites, and /blog, /events, a post published after the build and
+ * /sitemap.xml are all answered by the function through a rewrite. A local
+ * server that skipped them would send those paths to index.html and quietly
+ * hide exactly the behaviour these tests exist to check.
+ */
+const vercelConfig = JSON.parse(readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+
+function compileSource(source) {
+  const names = [];
+  let pattern = '';
+
+  for (let i = 0; i < source.length; ) {
+    const rest = source.slice(i);
+
+    if (rest.startsWith('(.*)')) {
+      names.push('rest');
+      pattern += '(.*)';
+      i += 4;
+      continue;
+    }
+
+    const param = rest.match(/^:([A-Za-z0-9_-]+)(\*)?/);
+    if (param) {
+      names.push(param[1]);
+      pattern += param[2] ? '(.*)' : '([^/]+)';
+      i += param[0].length;
+      continue;
+    }
+
+    pattern += source[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    i += 1;
+  }
+
+  return { pattern: new RegExp(`^${pattern}/?$`), names };
+}
+
+const REWRITES = (vercelConfig.rewrites ?? []).map((rule) => ({
+  ...compileSource(rule.source),
+  destination: rule.destination,
+}));
+
+/** The destination a path rewrites to, with its parameters filled in. */
+function rewriteTarget(pathname, query) {
+  for (const rule of REWRITES) {
+    const match = rule.pattern.exec(pathname);
+    if (!match) continue;
+
+    const params = Object.fromEntries(
+      rule.names.map((name, index) => [name, decodeURIComponent(match[index + 1] ?? '')]),
+    );
+    const filled = rule.destination.replace(/:(?<name>[A-Za-z0-9_-]+)/g, (_, name) =>
+      encodeURIComponent(params[name] ?? ''),
+    );
+    const target = new URL(filled, 'http://localhost');
+    const merged = new URLSearchParams(target.search);
+    for (const [key, value] of Object.entries(query)) {
+      if (!merged.has(key)) merged.set(key, value);
+    }
+
+    return { pathname: decodeURIComponent(target.pathname), query: Object.fromEntries(merged) };
+  }
+
+  return null;
+}
+
+/** Serves a file from dist/, resolving the paths cleanUrls and directories use. */
 function sendStaticFile(req, res, pathname, distDir) {
   if (!existsSync(distDir)) {
     res.statusCode = 200;
     res.end(
       'Nothing in dist/ yet. Run `npm run build` first, or use the Vite dev server for the UI.\n',
     );
-    return;
+    return true;
   }
 
   const candidates = [pathname];
   if (pathname.endsWith('/')) candidates.push(`${pathname}index.html`);
-  // SPA fallback, mirroring the rewrite in vercel.json: a path with no file
-  // extension is a client side route.
-  if (!path.extname(pathname)) candidates.push('/index.html');
+  else if (!path.extname(pathname)) candidates.push(`${pathname}/index.html`, `${pathname}.html`);
 
   for (const candidate of candidates) {
     const filePath = path.join(distDir, candidate);
@@ -197,11 +265,10 @@ function sendStaticFile(req, res, pathname, distDir) {
     res.setHeader('Content-Type', MIME_TYPES[path.extname(filePath)] ?? 'application/octet-stream');
     res.setHeader('Cache-Control', 'no-store');
     res.end(readFileSync(filePath));
-    return;
+    return true;
   }
 
-  res.statusCode = 404;
-  res.end('Not found\n');
+  return false;
 }
 
 /**
@@ -229,12 +296,15 @@ export async function startApiServer({ port = 0, serveStatic = true, quiet = fal
     const url = new URL(req.url ?? '/', 'http://localhost');
     const pathname = decodeURIComponent(url.pathname);
 
-    const file =
-      routes.get(pathname) ??
-      catchAlls.find(({ prefix }) => pathname.startsWith(`${prefix}/`))?.file;
-    if (file) {
+    const query = Object.fromEntries(url.searchParams);
+
+    const findFunction = (target) =>
+      routes.get(target) ??
+      catchAlls.find(({ prefix }) => target.startsWith(`${prefix}/`))?.file;
+
+    const callFunction = async (file, params) => {
       shimResponse(res);
-      req.query = Object.fromEntries(url.searchParams);
+      req.query = params;
       try {
         let handler = cache.get(file);
         if (!handler) {
@@ -257,6 +327,14 @@ export async function startApiServer({ port = 0, serveStatic = true, quiet = fal
           res.end();
         }
       }
+    };
+
+    // Same order as Vercel: an endpoint, then a file, then a rewrite, then the
+    // SPA fallback. The order is the point - a rewrite for /blog is only reached
+    // because the build no longer writes dist/blog/index.html.
+    const direct = findFunction(pathname);
+    if (direct) {
+      await callFunction(direct, query);
       return;
     }
 
@@ -265,7 +343,20 @@ export async function startApiServer({ port = 0, serveStatic = true, quiet = fal
       res.end('Not found\n');
       return;
     }
-    sendStaticFile(req, res, pathname, distDir);
+
+    if (sendStaticFile(req, res, pathname, distDir)) return;
+
+    const rewritten = rewriteTarget(pathname, query);
+    const rewrittenFile = rewritten ? findFunction(rewritten.pathname) : null;
+    if (rewritten && rewrittenFile) {
+      await callFunction(rewrittenFile, rewritten.query);
+      return;
+    }
+
+    if (sendStaticFile(req, res, '/spa-fallback.html', distDir)) return;
+
+    res.statusCode = 404;
+    res.end('Not found\n');
   });
 
   await new Promise((resolve, reject) => {

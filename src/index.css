@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+/* Fraunces and DM Sans are requested from the document head (index.html), not
+   imported here: an @import is discovered only after this file has loaded, which
+   put the font request behind the whole stylesheet. */
 @import "tailwindcss";
 
 @theme {
