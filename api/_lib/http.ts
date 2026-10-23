@@ -149,15 +149,20 @@ function isLocalOrPreview(host: string): boolean {
 }
 
 /**
- * Cross site request forgery guard. The session cookie is SameSite=Lax, which
+ * Cross site request forgery guard. The session cookie is SameSite=Strict, which
  * already blocks it from being attached to cross site requests; this is the
  * second layer, applied to every request that can change state. Browser
  * requests must come from the same host (or an explicitly allowed origin).
- * Requests without an Origin header cannot carry a borrowed cookie, so
- * non browser callers such as curl are left alone.
+ *
+ * Origin is checked first, and Referer is the fallback for the few browser
+ * requests that omit it: either header naming another site is a rejection.
+ * A request carrying neither came from something that is not a browser (curl,
+ * a health check, the test script), and a browser cannot be made to drop both,
+ * so those are left alone rather than refused - refusing them would break the
+ * command line tools without closing a browser hole.
  */
 export function assertTrustedOrigin(req: VercelRequest): void {
-  const origin = headerValue(req.headers.origin);
+  const origin = headerValue(req.headers.origin) ?? headerValue(req.headers.referer);
   if (!origin) return;
 
   let originHost: string;

@@ -1,7 +1,7 @@
 import { ApiError, clientIp, endpoint, parseJsonBody, safeRedirect, sendJson } from '../../http.js';
 import { loginSchema, parseInput } from '../../validation.js';
-import { findUserByEmail } from '../../db.js';
-import { spendPasswordTime, verifyPassword } from '../../security.js';
+import { findSessionUserById, findUserByEmail, setPassword } from '../../db.js';
+import { hashPassword, passwordNeedsUpgrade, spendPasswordTime, verifyPassword } from '../../security.js';
 import {
   assertSessionConfigured,
   createSessionToken,
@@ -40,10 +40,20 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
   }
 
+  // A hash made with fewer rounds than the current setting is upgraded here,
+  // while the password is still in hand and has just been proved correct.
+  // setPassword bumps token_version, so the session is minted from the row as
+  // it stands after that write rather than from the stale one in `user`.
+  let tokenVersion = user.token_version;
+  if (passwordNeedsUpgrade(user.password_hash)) {
+    await setPassword(user.id, await hashPassword(data.password));
+    tokenVersion = (await findSessionUserById(user.id))?.token_version ?? tokenVersion;
+  }
+
   const sessionToken = await createSessionToken({
     userId: user.id,
     role: user.role,
-    tokenVersion: user.token_version,
+    tokenVersion,
   });
   setSessionCookie(req, res, sessionToken, sessionTtlSeconds(user.role));
   await recordAuthEvent('login', { userId: user.id, ip });

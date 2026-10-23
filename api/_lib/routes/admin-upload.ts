@@ -3,9 +3,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHash, randomBytes } from 'node:crypto';
 
 import { coverUrl } from '../cover-url.js';
-import { ApiError, endpoint, parseJsonBody, sendJson } from '../http.js';
+import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../http.js';
 import { requireManager } from '../manager.js';
 import { enforceRateLimit } from '../ratelimit.js';
+import { recordAuthEvent } from '../audit.js';
 
 /**
  * POST /api/admin/upload - store one cover image and return the URL pages use.
@@ -160,6 +161,8 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req: VercelReq
     TYPES[type].contentType,
   );
 
+  await recordAuthEvent('admin_upload', { userId: manager.userId, ip: clientIp(req) });
+
   sendJson(res, 201, {
     url: stored.url,
     pathname: stored.pathname,
@@ -202,14 +205,14 @@ async function storeCover(
     } catch (error) {
       if (!isAccessModeRefusal(error)) {
         console.error(`[upload] Blob refused the file: ${blobReason(error)}`);
-        throw new ApiError(502, 'upload_failed', `The image could not be stored. ${storageAdvice(error)}`);
+        throw new ApiError(502, 'upload_failed', 'The image could not be stored. Try again in a moment.');
       }
       refusal ??= error;
     }
   }
 
   console.error(`[upload] Blob refused both access modes: ${blobReason(refusal)}`);
-  throw new ApiError(502, 'upload_failed', `The image could not be stored. ${storageAdvice(refusal)}`);
+  throw new ApiError(502, 'upload_failed', 'The image could not be stored. Try again in a moment.');
 }
 
 /** The store saying no because of its access mode, rather than for another reason. */
@@ -222,31 +225,6 @@ function isAccessModeRefusal(error: unknown): boolean {
 function blobReason(error: unknown): string {
   if (!(error instanceof Error)) return String(error).slice(0, 300);
   return `${error.name}: ${error.message}`.slice(0, 300);
-}
-
-/**
- * The store's answer in words a manager can act on.
- *
- * Everything the Blob API refuses an upload over is about this deployment's
- * configuration rather than about the file or the person sending it, so the
- * wording points at the store. The store's own message travels along in
- * brackets: it is what an operator needs to tell a token problem from a
- * permissions one, and it contains no secret.
- */
-function storageAdvice(error: unknown): string {
-  const message = error instanceof Error ? error.message : '';
-  const detail = message ? ` (${message.slice(0, 160)})` : '';
-
-  if (/token|unauthor|forbidden|401|403|credential/i.test(message)) {
-    return `The image store rejected this deployment's credentials, so BLOB_READ_WRITE_TOKEN or the Blob store it points at needs checking in Vercel.${detail}`;
-  }
-  if (/private|access|public/i.test(message)) {
-    return `The Blob store refused the file in both access modes, so the store itself needs checking in Vercel.${detail}`;
-  }
-  if (/size|too large|413/i.test(message)) {
-    return `The Blob store refused the file size. Try a smaller image.${detail}`;
-  }
-  return `The image store did not answer. Try again in a moment.${detail}`;
 }
 
 /**

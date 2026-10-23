@@ -193,9 +193,9 @@ async function main() {
     if (talentCookie) created.push({ cookie: talentCookie, password: GOOD_PASSWORD });
     check(
       1.1,
-      'The session cookie is httpOnly and SameSite=Lax',
+      'The session cookie is httpOnly and SameSite=Strict',
       (talent.response.headers.getSetCookie?.() ?? []).some(
-        (header) => header.includes('HttpOnly') && header.includes('SameSite=Lax'),
+        (header) => header.includes('HttpOnly') && header.includes('SameSite=Strict'),
       ),
     );
 

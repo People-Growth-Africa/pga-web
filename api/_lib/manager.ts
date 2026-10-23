@@ -1,7 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { ApiError } from './http.js';
-import { hasSessionCookie, readSession, refreshManagerSession, type SessionClaims } from './session.js';
+import { findSessionUserById } from './db.js';
+import {
+  clearSessionCookie,
+  hasSessionCookie,
+  readSession,
+  refreshManagerSession,
+  type SessionClaims,
+} from './session.js';
 
 /**
  * The server's half of "managers only".
@@ -50,6 +57,17 @@ export async function requireManager(
       'manager_only',
       'This area is for manager accounts. Nothing was changed.',
     );
+  }
+
+  // The token says who signed in; the row says whether that is still true. A
+  // deleted account, a demoted one, a password change and a sign-out all bump
+  // token_version, and without this check every one of them would leave the old
+  // token working until it expired - which is exactly the window an attacker
+  // holding a copied cookie needs.
+  const user = await findSessionUserById(session.userId);
+  if (!user || user.role !== 'manager' || user.token_version !== session.tokenVersion) {
+    clearSessionCookie(req, res);
+    throw new ApiError(401, 'session_expired', 'Your session ended. Sign in again.');
   }
 
   await refreshManagerSession(req, res, session);

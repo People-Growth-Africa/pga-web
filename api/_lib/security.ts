@@ -30,6 +30,18 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
   }
 }
 
+/**
+ * Whether a stored hash was made with a weaker setting than the current one.
+ * Only bcrypt counts rise over time, so this is checked at login and the
+ * password is re-hashed then - the one moment it exists in plain text.
+ */
+export function passwordNeedsUpgrade(hash: string): boolean {
+  const match = /^\$2[aby]\$(\d{2})\$/.exec(hash);
+  if (!match) return true;
+  const rounds = Number(match[1]);
+  return !Number.isFinite(rounds) || rounds < BCRYPT_ROUNDS;
+}
+
 let dummyHash: Promise<string> | null = null;
 
 /**

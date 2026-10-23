@@ -24,8 +24,8 @@ const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
  *     busy the session is. It is carried in the token as `abs`, so refreshing
  *     the idle window cannot walk past it.
  */
-export const MANAGER_IDLE_SECONDS = 60 * 60;
-export const MANAGER_ABSOLUTE_SECONDS = 60 * 60 * 12;
+export const MANAGER_IDLE_SECONDS = 30 * 60;
+export const MANAGER_ABSOLUTE_SECONDS = 60 * 60 * 8;
 /**
  * How stale a manager token may get before a request replaces it. Reissuing on
  * every call would set a cookie on every keystroke-sized request; five minutes
@@ -197,7 +197,7 @@ function cookieHeader(req: VercelRequest, value: string, maxAge: number): string
     `${SESSION_COOKIE_NAME}=${value}`,
     'Path=/',
     'HttpOnly',
-    'SameSite=Lax',
+    'SameSite=Strict',
     `Max-Age=${maxAge}`,
     ...(secure ? ['Secure'] : []),
   ].join('; ');

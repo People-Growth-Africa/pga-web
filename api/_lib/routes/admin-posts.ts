@@ -3,11 +3,13 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import {
   ApiError,
   MAX_ADMIN_BODY_BYTES,
+  clientIp,
   endpoint,
   parseJsonBody,
   sendJson,
 } from '../http.js';
 import { requireManager } from '../manager.js';
+import { recordAuthEvent } from '../audit.js';
 import {
   parseInput,
   postByIdSchema,
@@ -258,6 +260,10 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
       previous: existing.status,
     });
   }
+  await recordAuthEvent(status === 'published' ? 'admin_post_publish' : 'admin_post_unpublish', {
+    userId,
+    ip: clientIp(req),
+  });
   sendJson(res, 200, { post });
 }
 
@@ -273,6 +279,7 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, userId: st
 
   // Deleting the row is the point; the cover files go with it.
   await deleteCoverBlobs([existing.cover_image_url, existing.cover_image_thumb_url]);
+  await recordAuthEvent('admin_post_delete', { userId, ip: clientIp(req) });
 
   // A published URL is about to 404. IndexNow has no delete verb: submitting the
   // URL is how an engine is told to recrawl and drop it. A draft never had a

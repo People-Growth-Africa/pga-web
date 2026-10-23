@@ -574,7 +574,7 @@ async function main() {
           url: baseUrl,
           httpOnly: true,
           secure: true,
-          sameSite: 'Lax',
+          sameSite: 'Strict',
         },
       ]);
 
