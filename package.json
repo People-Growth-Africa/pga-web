@@ -23,6 +23,7 @@
     "test:seo": "node scripts/test-seo.mjs",
     "test:crawl": "node scripts/test-crawl.mjs",
     "test:indexnow": "node scripts/test-indexnow.mjs",
+    "indexnow": "node scripts/indexnow.mjs",
     "indexnow:test": "node scripts/indexnow-test.mjs",
     "test:dashboard:rules": "node scripts/test-dashboard-rules.mjs",
     "test:dashboard": "npm run test:dashboard:rules && node scripts/test-dashboard.mjs",
