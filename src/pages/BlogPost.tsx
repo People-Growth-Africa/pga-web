@@ -299,7 +299,7 @@ export default function BlogPostPage() {
           <AnimateOnScroll delay={0.15}>
             <div className="mt-12 pt-8 border-t border-charcoal/8">
               <p className="font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal mb-4">Share this article</p>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <a
                   href={`https://www.linkedin.com/shareArticle?mini=true&url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(post.title)}`}
                   target="_blank"
@@ -326,6 +326,38 @@ export default function BlogPostPage() {
                   aria-label="Share on Facebook"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+                </a>
+                {/* Instagram publishes no web share endpoint. On a phone the OS
+                    share sheet includes it, so hand the link to the sheet;
+                    elsewhere copy it, which is all a browser can do here. */}
+                <button
+                  onClick={() => {
+                    if (navigator.share) {
+                      void navigator.share({ title: post.title, url: shareUrl }).catch(() => {});
+                    } else {
+                      void navigator.clipboard.writeText(shareUrl);
+                    }
+                  }}
+                  className="w-10 h-10 rounded-full bg-mint flex items-center justify-center text-[#E1306C] hover:bg-[#E1306C] hover:text-white transition-colors"
+                  aria-label="Share on Instagram"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2.5" y="2.5" width="19" height="19" rx="5" />
+                    <circle cx="12" cy="12" r="4.2" />
+                    <circle cx="17.6" cy="6.4" r="1" fill="currentColor" stroke="none" />
+                  </svg>
+                </button>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`${post.title} ${shareUrl}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-10 h-10 rounded-full bg-mint flex items-center justify-center text-[#25D366] hover:bg-[#25D366] hover:text-white transition-colors"
+                  aria-label="Share on WhatsApp"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 2a8 8 0 1 1-4.1 14.8l-.3-.2-2.9.8.8-2.8-.2-.3A8 8 0 0 1 12 4Z" />
+                    <path d="M9.3 7.4c-.2 0-.5.1-.7.4-.2.3-.9.9-.9 2.1s.9 2.4 1 2.6c.1.2 1.8 2.9 4.5 3.9 2.2.8 2.7.7 3.2.6.5-.1 1.6-.7 1.8-1.3.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3l-1.8-.9c-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1-.3-.1-1.2-.4-2.2-1.4-.8-.8-1.3-1.6-1.5-1.9-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2 0-.3 0-.5l-.7-1.8c-.2-.5-.4-.4-.6-.4h-.2Z" />
+                  </svg>
                 </a>
                 <button
                   onClick={() => { navigator.clipboard.writeText(shareUrl); }}
