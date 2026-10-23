@@ -158,6 +158,12 @@ export default function Home() {
               className="font-[family-name:var(--font-heading)] font-semibold text-white leading-[1.1] mb-6 max-w-[780px]"
               style={{ fontSize: 'clamp(2.8rem, 6vw, 4.8rem)' }}
             >
+              <span
+                className="block mb-3 text-sm font-semibold uppercase tracking-[0.12em] text-mint font-[family-name:var(--font-body)]"
+                style={{ fontSize: '0.875rem' }}
+              >
+                People Growth Africa | HR consulting for growing African businesses
+              </span>
               Build the People Systems<br />Behind <span className="text-mint">Every Growing Business.</span>
             </h1>
           </AnimateOnScroll>
@@ -296,9 +302,9 @@ export default function Home() {
                     <div className="w-12 h-12 rounded-full bg-mint group-hover:bg-brand-green/20 flex items-center justify-center mx-auto mb-3.5 transition-colors">
                       {sp.icon}
                     </div>
-                    <h4 className="font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-charcoal leading-snug group-hover:text-deep-green transition-colors">
+                    <h3 className="font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-charcoal leading-snug group-hover:text-deep-green transition-colors">
                       {sp.name}
-                    </h4>
+                    </h3>
                     <span className="text-[0.75rem] text-brand-green font-semibold mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       View Details →
                     </span>
@@ -374,7 +380,7 @@ export default function Home() {
                   <div className="flex items-start gap-5 bg-white rounded-[14px] p-7 shadow-card hover:translate-x-1 hover:shadow-card-hover transition-all duration-300 border border-charcoal/5">
                     <span className="font-[family-name:var(--font-heading)] text-[1.5rem] font-bold text-terracotta leading-none min-w-[36px] pt-0.5">{v.num}</span>
                     <div>
-                      <h4 className="font-[family-name:var(--font-heading)] text-[1.15rem] font-semibold text-charcoal mb-1.5">{v.title}</h4>
+                      <h3 className="font-[family-name:var(--font-heading)] text-[1.15rem] font-semibold text-charcoal mb-1.5">{v.title}</h3>
                       <p className="font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal/60 leading-relaxed">{v.text}</p>
                     </div>
                   </div>

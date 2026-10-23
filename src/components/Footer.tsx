@@ -90,7 +90,7 @@ export default function Footer() {
           </div>
 
           <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-white mb-5 font-[family-name:var(--font-body)]">Services</h4>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-white mb-5 font-[family-name:var(--font-body)]">Services</h3>
             <ul className="flex flex-col gap-3">
               <li><a href="/#services" onClick={(e) => handleAnchorClick(e, '/#services')} className="text-[0.9rem] text-white/60 hover:text-brand-green transition-colors">HR Strategy</a></li>
               <li><a href="/#services" onClick={(e) => handleAnchorClick(e, '/#services')} className="text-[0.9rem] text-white/60 hover:text-brand-green transition-colors">Organisational Design</a></li>
@@ -100,7 +100,7 @@ export default function Footer() {
           </div>
 
           <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-white mb-5 font-[family-name:var(--font-body)]">Programmes &amp; Insights</h4>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-white mb-5 font-[family-name:var(--font-body)]">Programmes &amp; Insights</h3>
             <ul className="flex flex-col gap-3">
               <li><Link to="/events" className="text-[0.9rem] text-white/60 hover:text-brand-green transition-colors">Events &amp; Webinars</Link></li>
               <li><Link to="/events" className="text-[0.9rem] text-white/60 hover:text-brand-green transition-colors">Mentorship Cohorts</Link></li>
@@ -110,7 +110,7 @@ export default function Footer() {
           </div>
 
           <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-white mb-5 font-[family-name:var(--font-body)]">Contact &amp; Hours</h4>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-white mb-5 font-[family-name:var(--font-body)]">Contact &amp; Hours</h3>
             <ul className="flex flex-col gap-3">
               <li><Link to="/consultation" className="text-[0.9rem] text-white/60 hover:text-brand-green transition-colors">Book a free consultation</Link></li>
               <li>
