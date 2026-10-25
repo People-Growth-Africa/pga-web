@@ -57,7 +57,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/spa-fallback.html"
+      "destination": "/spa-fallback"
     }
   ],
   "functions": {
@@ -172,7 +172,7 @@
       ]
     },
     {
-      "source": "/spa-fallback.html",
+      "source": "/spa-fallback",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
     }
   ]

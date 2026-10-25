@@ -317,7 +317,7 @@ check(apex?.permanent === true, 'the apex redirect is permanent');
 
 const fallbackRewrite = (vercel.rewrites ?? []).find((rule) => rule.source === '/(.*)');
 check(
-  fallbackRewrite?.destination === '/spa-fallback.html',
+  fallbackRewrite?.destination === '/spa-fallback',
   'unknown routes fall back to the shell, not the prerendered homepage',
 );
 

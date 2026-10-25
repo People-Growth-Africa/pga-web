@@ -24,7 +24,7 @@ hydrates that markup instead of painting it from an empty shell.
 A route is only prerendered if it is listed in `prerenderPages()`. Add a
 `PageMeta` for it there (or in `STATIC_PAGES`), and it is written to
 `dist/<path>/index.html` and listed in the sitemap automatically. A route left
-out still works, but it is served the empty shell at `/spa-fallback.html`, so it
+out still works, but it is served the empty shell at `/spa-fallback`, so it
 is invisible to a crawler that does not run JavaScript.
 
 Private routes (accounts, dashboards, password and subscription flows) are
