@@ -47,6 +47,8 @@ const ALLOWED_REDIRECTS = new Set([
   '/talent/dashboard',
   '/employer/dashboard',
   '/admin/content',
+  '/admin/stats',
+  '/admin/set-password',
 ]);
 
 export function safeRedirect(path: string): string {
@@ -190,7 +192,7 @@ export function clientIp(req: VercelRequest): string {
   return req.socket?.remoteAddress ?? 'unknown';
 }
 
-type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'DELETE' | 'PUT';
+type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'DELETE' | 'PUT' | 'PATCH';
 type RouteHandler = (req: VercelRequest, res: VercelResponse) => Promise<void>;
 
 /**

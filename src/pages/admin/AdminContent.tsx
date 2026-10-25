@@ -272,7 +272,7 @@ export default function AdminContent() {
                 <span className="font-semibold text-charcoal break-all">{user?.email}</span>
               </p>
               <p className="mt-0.5 font-[family-name:var(--font-body)] text-[0.72rem] text-charcoal/45">
-                This panel signs out after 60 minutes with no activity, and after 12 hours at most.
+                This panel signs out after 30 minutes with no activity, and after 8 hours at most.
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -310,6 +310,24 @@ export default function AdminContent() {
 
             {view === 'list' && (
               <div className="flex flex-wrap gap-3">
+                <Link
+                  to="/admin/stats"
+                  className="rounded-full border border-charcoal/15 bg-white px-5 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal transition-colors hover:border-brand-green hover:bg-mint"
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  to="/admin/data"
+                  className="rounded-full border border-charcoal/15 bg-white px-5 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal transition-colors hover:border-brand-green hover:bg-mint"
+                >
+                  Data
+                </Link>
+                <Link
+                  to="/admin/registrations"
+                  className="rounded-full border border-charcoal/15 bg-white px-5 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal transition-colors hover:border-brand-green hover:bg-mint"
+                >
+                  Registrations
+                </Link>
                 <button
                   type="button"
                   onClick={() => setCategoriesOpen(true)}

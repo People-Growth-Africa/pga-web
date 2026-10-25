@@ -19,7 +19,12 @@ export async function requireSession(
   }
 
   const user = await findSessionUserById(claims.userId);
-  if (!user || user.token_version !== claims.tokenVersion || user.role !== claims.role) {
+  if (
+    !user ||
+    user.disabled_at !== null ||
+    user.token_version !== claims.tokenVersion ||
+    user.role !== claims.role
+  ) {
     clearSessionCookie(req, res);
     throw new ApiError(401, 'session_expired', 'Your session ended. Log in again.');
   }

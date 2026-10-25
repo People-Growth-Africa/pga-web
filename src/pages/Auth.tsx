@@ -37,7 +37,7 @@ const ROLE_CARDS: { value: Role; title: string; description: string }[] = [
   { value: 'employer', title: 'Employer', description: 'Hire talent or book a consultation' },
 ];
 
-const PANEL_COPY: Record<Role | 'login', { headline: string; text: string }> = {
+const PANEL_COPY: Record<'login' | 'talent' | 'employer' | 'manager', { headline: string; text: string }> = {
   login: {
     headline: 'Welcome back.',
     text: 'Log in to pick up where you left off.',
@@ -121,7 +121,7 @@ export default function Auth() {
   }
 
   const isSignup = tab === 'signup';
-  const panel = PANEL_COPY[isSignup ? role : 'login'];
+  const panel = PANEL_COPY[isSignup ? (role === 'employer' ? 'employer' : 'talent') : 'login'];
   const submitLabel = !isSignup
     ? 'Log in'
     : role === 'talent'

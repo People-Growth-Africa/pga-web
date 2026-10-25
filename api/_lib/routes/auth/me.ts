@@ -14,6 +14,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
       email: user.email,
       role: user.role,
       emailVerified: user.email_verified,
+      mustChangePassword: user.must_change_password,
       profile,
     },
   });

@@ -47,15 +47,31 @@ export function isRestrictViolation(error: unknown): boolean {
 }
 
 /**
- * The three account types.
+ * Account roles.
  *
- * 'manager' is never written by a signup: the signup schemas accept only the
- * talent and employer literals, and a database trigger refuses a manager row
- * unless scripts/promote-manager.mjs is running (see scripts/setup-content.mjs).
+ * 'manager' is the original admin role and is kept as an alias for 'admin' so
+ * existing accounts and sessions keep working. Talent and employer are the only
+ * roles public signup may write; the rest are staff roles, guarded by a trigger.
  */
-export type Role = 'talent' | 'employer' | 'manager';
+export type Role =
+  | 'talent'
+  | 'employer'
+  | 'manager'
+  | 'admin'
+  | 'project_manager'
+  | 'hr_manager';
+
+export type StaffRole = 'admin' | 'project_manager' | 'hr_manager';
 
 export const MANAGER_ROLE: Role = 'manager';
+
+export function isStaffRole(role: Role): boolean {
+  return 'manager admin project_manager hr_manager'.split(' ').includes(role);
+}
+
+export function isAdminRole(role: Role): boolean {
+  return role === 'admin' || role === 'manager';
+}
 
 export type UserRow = {
   id: string;
@@ -64,12 +80,16 @@ export type UserRow = {
   password_hash: string;
   email_verified: boolean;
   token_version: number;
+  must_change_password: boolean;
+  disabled_at: string | null;
 };
 
 export type SessionUserRow = Omit<UserRow, 'password_hash'>;
 
-const USER_COLUMNS = 'id, email, role, password_hash, email_verified, token_version';
-const SESSION_USER_COLUMNS = 'id, email, role, email_verified, token_version';
+const USER_COLUMNS =
+  'id, email, role, password_hash, email_verified, token_version, must_change_password, disabled_at';
+const SESSION_USER_COLUMNS =
+  'id, email, role, email_verified, token_version, must_change_password, disabled_at';
 
 export async function createTalentUser(input: {
   email: string;
@@ -152,10 +172,18 @@ export async function bumpTokenVersion(id: string): Promise<void> {
 }
 
 /** Bumping token_version invalidates every session issued before it. */
-export async function setPassword(id: string, passwordHash: string): Promise<void> {
+export async function setPassword(
+  id: string,
+  passwordHash: string,
+  options: { clearMustChange?: boolean } = {},
+): Promise<void> {
   await query(
-    'UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE id = $1',
-    [id, passwordHash],
+    `UPDATE users
+        SET password_hash = $2,
+            must_change_password = CASE WHEN $3::boolean THEN false ELSE must_change_password END,
+            token_version = token_version + 1
+      WHERE id = $1`,
+    [id, passwordHash, options.clearMustChange ?? false],
   );
 }
 
@@ -817,5 +845,573 @@ export async function listPublishedSlugs(): Promise<
   return query<{ slug: string; type: PostType; updated_at: string }>(
     `SELECT slug, type, ${isoTimestamp('posts', 'updated_at')} AS updated_at
        FROM posts WHERE status = 'published' ORDER BY slug`,
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Event registrations.
+
+   Separate from the shared lead tables because a manager reads and exports
+   these by event, and the same address is allowed once per event only. Public
+   callers never reach these functions except through the write-only endpoint.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export type RegistrationRow = {
+  id: string;
+  event_slug: string;
+  name: string;
+  email: string;
+  phone: string;
+  organization: string | null;
+  notes: string;
+  created_at: string;
+};
+
+export type RegistrationFilter = {
+  eventSlug?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+};
+
+export async function insertRegistration(input: {
+  eventSlug: string;
+  name: string;
+  email: string;
+  phone: string;
+  organization: string | null;
+  notes: string;
+}): Promise<string | null> {
+  const row = await queryOne<{ id: string }>(
+    `INSERT INTO registrations (event_slug, name, email, phone, organization, notes)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
+    [input.eventSlug, input.name, input.email, input.phone, input.organization, input.notes],
+  );
+  return row?.id ?? null;
+}
+
+/**
+ * The admin list's WHERE clause, built with bind parameters only. `search` is
+ * wrapped in wildcards here, never interpolated.
+ */
+function registrationWhere(filter: RegistrationFilter): { where: string; params: unknown[] } {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter.eventSlug) {
+    params.push(filter.eventSlug);
+    where.push(`event_slug = $${params.length}`);
+  }
+  if (filter.search) {
+    params.push(`%${filter.search}%`);
+    where.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length})`);
+  }
+  if (filter.from) {
+    params.push(filter.from);
+    where.push(`created_at >= $${params.length}::date`);
+  }
+  if (filter.to) {
+    params.push(filter.to);
+    where.push(`created_at < ($${params.length}::date + interval '1 day')`);
+  }
+
+  return { where: where.length > 0 ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+const REGISTRATION_COLUMNS = `id, event_slug, name, email, phone, organization, notes,
+         ${isoTimestamp('registrations', 'created_at')} AS created_at`;
+
+export async function listRegistrations(
+  filter: RegistrationFilter & { limit: number; offset: number },
+): Promise<RegistrationRow[]> {
+  const { where, params } = registrationWhere(filter);
+  return query<RegistrationRow>(
+    `SELECT ${REGISTRATION_COLUMNS}
+       FROM registrations
+       ${where}
+      ORDER BY created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, filter.limit, filter.offset],
+  );
+}
+
+export async function countRegistrations(filter: RegistrationFilter = {}): Promise<number> {
+  const { where, params } = registrationWhere(filter);
+  const row = await queryOne<{ total: number }>(
+    `SELECT count(*)::int AS total FROM registrations ${where}`,
+    params,
+  );
+  return row?.total ?? 0;
+}
+
+/** One row per event that has registrations, with its total. */
+export async function listRegistrationEventCounts(): Promise<
+  { event_slug: string; total: number }[]
+> {
+  return query<{ event_slug: string; total: number }>(
+    `SELECT event_slug, count(*)::int AS total
+       FROM registrations
+      GROUP BY event_slug
+      ORDER BY event_slug`,
+  );
+}
+
+/**
+ * Everything matching the filter, newest first, for the CSV export. Capped at
+ * 5000 rows so one request cannot pull an unbounded table into memory; a bigger
+ * set is exported by filtering per event.
+ */
+export async function listRegistrationsForExport(
+  filter: RegistrationFilter = {},
+): Promise<RegistrationRow[]> {
+  const { where, params } = registrationWhere(filter);
+  return query<RegistrationRow>(
+    `SELECT ${REGISTRATION_COLUMNS}
+       FROM registrations
+       ${where}
+      ORDER BY created_at DESC
+      LIMIT 10000`,
+    params,
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Staff accounts, invites and the audit log.
+
+   Staff roles are never written by a public signup. The insert below runs in a
+   transaction that relaxes the guard trigger for that one statement; nothing a
+   request sends can set that switch.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export type StaffAccountRow = {
+  id: string;
+  name: string | null;
+  email: string;
+  role: Role;
+  disabled_at: string | null;
+  must_change_password: boolean;
+  created_at: string;
+};
+
+export async function listStaffAccounts(): Promise<StaffAccountRow[]> {
+  return query<StaffAccountRow>(
+    `SELECT id, name, email, role, disabled_at, must_change_password,
+            ${isoTimestamp('users', 'created_at')} AS created_at
+       FROM users
+      WHERE role IN ('manager', 'admin', 'project_manager', 'hr_manager')
+      ORDER BY created_at ASC`,
+  );
+}
+
+export async function createStaffAccount(input: {
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: StaffRole;
+}): Promise<string | null> {
+  const result = await sql.transaction([
+    sql`SELECT set_config('pga.staff_write', 'on', true)`,
+    sql`INSERT INTO users (name, email, password_hash, role, email_verified, must_change_password)
+        VALUES (${input.name}, ${input.email}, ${input.passwordHash}, ${input.role}, true, true)
+        RETURNING id`,
+  ]);
+  const rows = result[1] as { id: string }[] | undefined;
+  return rows?.[0]?.id ?? null;
+}
+
+export async function setStaffDisabled(id: string, disabled: boolean): Promise<boolean> {
+  const row = await queryOne<{ id: string }>(
+    `UPDATE users
+        SET disabled_at = ${disabled ? 'now()' : 'NULL'},
+            token_version = token_version + 1
+      WHERE id = $1
+        AND role IN ('manager', 'admin', 'project_manager', 'hr_manager')
+      RETURNING id`,
+    [id],
+  );
+  return Boolean(row);
+}
+
+export async function setStaffRole(id: string, role: StaffRole): Promise<boolean> {
+  const result = await sql.transaction([
+    sql`SELECT set_config('pga.staff_write', 'on', true)`,
+    sql`UPDATE users SET role = ${role}, token_version = token_version + 1
+         WHERE id = ${id} RETURNING id`,
+  ]);
+  const rows = result[1] as { id: string }[] | undefined;
+  return Boolean(rows?.[0]);
+}
+
+export async function createStaffInvite(input: {
+  email: string;
+  role: StaffRole;
+  tokenHash: string;
+  expiresAt: string;
+  createdBy: string;
+}): Promise<void> {
+  await query(
+    `INSERT INTO staff_invites (email, role, token_hash, expires_at, created_by)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [input.email, input.role, input.tokenHash, input.expiresAt, input.createdBy],
+  );
+}
+
+export async function findOpenStaffInvite(
+  tokenHash: string,
+): Promise<{ id: string; email: string; role: StaffRole } | null> {
+  return queryOne<{ id: string; email: string; role: StaffRole }>(
+    `SELECT id, email, role
+       FROM staff_invites
+      WHERE token_hash = $1
+        AND used_at IS NULL
+        AND expires_at > now()
+      LIMIT 1`,
+    [tokenHash],
+  );
+}
+
+export async function useStaffInvite(id: string): Promise<void> {
+  await query('UPDATE staff_invites SET used_at = now() WHERE id = $1', [id]);
+}
+
+export async function finishStaffPasswordSetup(
+  email: string,
+  passwordHash: string,
+): Promise<string | null> {
+  const row = await queryOne<{ id: string }>(
+    `UPDATE users
+        SET password_hash = $2,
+            must_change_password = false,
+            email_verified = true,
+            token_version = token_version + 1
+      WHERE email = $1 AND disabled_at IS NULL
+      RETURNING id`,
+    [email, passwordHash],
+  );
+  return row?.id ?? null;
+}
+
+export async function setOwnPassword(
+  id: string,
+  passwordHash: string,
+): Promise<void> {
+  await query(
+    `UPDATE users
+        SET password_hash = $2,
+            must_change_password = false,
+            token_version = token_version + 1
+      WHERE id = $1`,
+    [id, passwordHash],
+  );
+}
+
+export async function insertAuditLog(input: {
+  userId?: string | null;
+  action: string;
+  detail?: string | null;
+}): Promise<void> {
+  await query('INSERT INTO audit_log (user_id, action, detail) VALUES ($1, $2, $3)', [
+    input.userId ?? null,
+    input.action,
+    input.detail ?? null,
+  ]);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Staff data lists. Every filter is a bind parameter; the table is chosen by
+   the handler, never by the request.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export type DataFilter = {
+  search?: string;
+  from?: string;
+  to?: string;
+  eventSlug?: string;
+};
+
+function dataWhere(
+  filter: DataFilter,
+  searchColumns = 'name, email',
+): { where: string; params: unknown[] } {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (filter.eventSlug) {
+    params.push(filter.eventSlug);
+    clauses.push(`event_slug = $${params.length}`);
+  }
+  if (filter.search) {
+    params.push(`%${filter.search}%`);
+    const columns = searchColumns.split(',').map((column) => `${column.trim()} ILIKE $${params.length}`);
+    clauses.push(`(${columns.join(' OR ')})`);
+  }
+  if (filter.from) {
+    params.push(filter.from);
+    clauses.push(`created_at >= $${params.length}::date`);
+  }
+  if (filter.to) {
+    params.push(filter.to);
+    clauses.push(`created_at < ($${params.length}::date + interval '1 day')`);
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
+}
+
+export type SubscriptionRow = {
+  id: string;
+  email: string;
+  status: string;
+  source: string;
+  created_at: string;
+};
+
+export async function listSubscriptions(
+  filter: DataFilter & { limit: number; offset: number },
+): Promise<SubscriptionRow[]> {
+  const { where, params } = dataWhere(filter, 'email');
+  return query<SubscriptionRow>(
+    `SELECT id, email, status, source, ${isoTimestamp('newsletter_subscribers', 'created_at')} AS created_at
+       FROM newsletter_subscribers
+       ${where}
+      ORDER BY created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, filter.limit, filter.offset],
+  );
+}
+
+export async function countSubscriptions(filter: DataFilter = {}): Promise<number> {
+  const { where, params } = dataWhere(filter, 'email');
+  const row = await queryOne<{ total: number }>(
+    `SELECT count(*)::int AS total FROM newsletter_subscribers ${where}`,
+    params,
+  );
+  return row?.total ?? 0;
+}
+
+export async function listSubscriptionsForExport(
+  filter: DataFilter = {},
+): Promise<SubscriptionRow[]> {
+  const { where, params } = dataWhere(filter, 'email');
+  return query<SubscriptionRow>(
+    `SELECT id, email, status, source, ${isoTimestamp('newsletter_subscribers', 'created_at')} AS created_at
+       FROM newsletter_subscribers ${where}
+      ORDER BY created_at DESC LIMIT 10000`,
+    params,
+  );
+}
+
+export type ConsultationRow = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  organisation: string;
+  service: string | null;
+  meeting_format: string;
+  preferred_date: string;
+  preferred_slot: string;
+  notes: string | null;
+  status: string;
+  created_at: string;
+};
+
+const CONSULTATION_COLUMNS = `id, name, email, phone, organisation, service,
+  meeting_format, preferred_date, preferred_slot, notes, status,
+  ${isoTimestamp('consultation_bookings', 'created_at')} AS created_at`;
+
+export async function listConsultations(
+  filter: DataFilter & { limit: number; offset: number },
+): Promise<ConsultationRow[]> {
+  const { where, params } = dataWhere(filter);
+  return query<ConsultationRow>(
+    `SELECT ${CONSULTATION_COLUMNS}
+       FROM consultation_bookings ${where}
+      ORDER BY created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, filter.limit, filter.offset],
+  );
+}
+
+export async function countConsultations(filter: DataFilter = {}): Promise<number> {
+  const { where, params } = dataWhere(filter);
+  const row = await queryOne<{ total: number }>(
+    `SELECT count(*)::int AS total FROM consultation_bookings ${where}`,
+    params,
+  );
+  return row?.total ?? 0;
+}
+
+export async function listConsultationsForExport(
+  filter: DataFilter = {},
+): Promise<ConsultationRow[]> {
+  const { where, params } = dataWhere(filter);
+  return query<ConsultationRow>(
+    `SELECT ${CONSULTATION_COLUMNS}
+       FROM consultation_bookings ${where}
+      ORDER BY created_at DESC LIMIT 10000`,
+    params,
+  );
+}
+
+/* ── Dashboard counts ───────────────────────────────────────────────────── */
+
+export type CategoryStats = { total: number; last7: number; prev7: number };
+
+async function categoryCounts(
+  table: 'registrations' | 'newsletter_subscribers' | 'consultation_bookings' | 'users',
+  extraWhere = '',
+): Promise<CategoryStats> {
+  const where = extraWhere ? `WHERE ${extraWhere}` : '';
+  const row = await queryOne<CategoryStats>(
+    `SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE created_at >= now() - interval '7 days')::int AS last7,
+            count(*) FILTER (WHERE created_at >= now() - interval '14 days'
+                               AND created_at < now() - interval '7 days')::int AS prev7
+       FROM ${table} ${where}`,
+  );
+  return row ?? { total: 0, last7: 0, prev7: 0 };
+}
+
+export async function getDashboardCounts(): Promise<{
+  registrations: CategoryStats;
+  subscriptions: CategoryStats;
+  consultations: CategoryStats;
+  talent: CategoryStats;
+  employers: CategoryStats;
+}> {
+  const [registrations, subscriptions, consultations, talent, employers] = await Promise.all([
+    categoryCounts('registrations'),
+    categoryCounts('newsletter_subscribers', "status <> 'unsubscribed'"),
+    categoryCounts('consultation_bookings'),
+    categoryCounts('users', "role = 'talent'"),
+    categoryCounts('users', "role = 'employer'"),
+  ]);
+  return { registrations, subscriptions, consultations, talent, employers };
+}
+
+export async function dailyCounts(
+  table: 'registrations' | 'newsletter_subscribers' | 'consultation_bookings' | 'users',
+  from: string,
+  extraWhere = '',
+): Promise<{ day: string; total: number }[]> {
+  const extra = extraWhere ? `AND ${extraWhere}` : '';
+  return query<{ day: string; total: number }>(
+    `SELECT to_char(created_at, 'YYYY-MM-DD') AS day, count(*)::int AS total
+       FROM ${table}
+      WHERE created_at >= $1::date ${extra}
+      GROUP BY 1 ORDER BY 1`,
+    [from],
+  );
+}
+
+export async function registrationCountsByEvent(
+  from: string,
+): Promise<{ event_slug: string; total: number }[]> {
+  return query<{ event_slug: string; total: number }>(
+    `SELECT event_slug, count(*)::int AS total
+       FROM registrations
+      WHERE created_at >= $1::date
+      GROUP BY event_slug ORDER BY total DESC`,
+    [from],
+  );
+}
+/* ── First-party traffic ────────────────────────────────────────────────── */
+
+export async function recordPageView(input: {
+  date: string;
+  path: string;
+  referrerHost: string;
+  utmSource: string;
+  country: string;
+  device: string;
+  visitorHash: string;
+}): Promise<void> {
+  await query(
+    `WITH page AS (
+       INSERT INTO page_views_daily
+         (date, path, referrer_host, utm_source, country, device, views)
+       VALUES ($1, $2, $3, $4, $5, $6, 1)
+       ON CONFLICT (date, path, referrer_host, utm_source, country, device)
+       DO UPDATE SET views = page_views_daily.views + 1
+     ), visitor AS (
+       INSERT INTO visitor_hashes_daily (date, hash)
+       VALUES ($1, $7)
+       ON CONFLICT DO NOTHING
+       RETURNING hash
+     )
+     INSERT INTO traffic_uniques_daily (date, uniques)
+     SELECT $1, 1 WHERE EXISTS (SELECT 1 FROM visitor)
+     ON CONFLICT (date) DO UPDATE SET uniques = traffic_uniques_daily.uniques + 1`,
+    [
+      input.date,
+      input.path,
+      input.referrerHost,
+      input.utmSource,
+      input.country,
+      input.device,
+      input.visitorHash,
+    ],
+  );
+}
+
+export async function cleanupTrafficHashes(): Promise<number> {
+  const rows = await query<{ hash: string }>(
+    `DELETE FROM visitor_hashes_daily
+      WHERE date < current_date - 2
+      RETURNING hash`,
+  );
+  return rows.length;
+}
+
+export async function trafficTotals(
+  from: string,
+  to: string,
+): Promise<{ views: number; uniques: number }> {
+  const [views, uniques] = await Promise.all([
+    queryOne<{ total: number }>(
+      `SELECT coalesce(sum(views), 0)::int AS total
+         FROM page_views_daily WHERE date >= $1::date AND date <= $2::date`,
+      [from, to],
+    ),
+    queryOne<{ total: number }>(
+      `SELECT coalesce(sum(uniques), 0)::int AS total
+         FROM traffic_uniques_daily WHERE date >= $1::date AND date <= $2::date`,
+      [from, to],
+    ),
+  ]);
+  return { views: views?.total ?? 0, uniques: uniques?.total ?? 0 };
+}
+
+export async function trafficDaily(
+  from: string,
+  to: string,
+): Promise<{ day: string; views: number; uniques: number }[]> {
+  return query<{ day: string; views: number; uniques: number }>(
+    `WITH days AS (
+       SELECT generate_series($1::date, $2::date, interval '1 day')::date AS day
+     )
+     SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
+            coalesce((SELECT sum(v.views) FROM page_views_daily v WHERE v.date = d.day), 0)::int AS views,
+            coalesce((SELECT u.uniques FROM traffic_uniques_daily u WHERE u.date = d.day), 0)::int AS uniques
+       FROM days d ORDER BY d.day`,
+    [from, to],
+  );
+}
+
+export async function trafficTop(
+  column: 'path' | 'referrer_host' | 'country' | 'device',
+  from: string,
+  to: string,
+  limit = 10,
+): Promise<{ label: string; views: number }[]> {
+  const allowed = new Set(['path', 'referrer_host', 'country', 'device']);
+  if (!allowed.has(column)) throw new Error('Unsupported traffic column');
+  return query<{ label: string; views: number }>(
+    `SELECT ${column} AS label, sum(views)::int AS views
+       FROM page_views_daily
+      WHERE date >= $1::date AND date <= $2::date
+      GROUP BY ${column}
+      ORDER BY views DESC
+      LIMIT $3`,
+    [from, to, limit],
   );
 }

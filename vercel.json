@@ -16,14 +16,24 @@
     },
     {
       "source": "/admin",
-      "destination": "/admin/content",
+      "destination": "/admin/stats",
       "permanent": false
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/traffic-cleanup",
+      "schedule": "0 3 * * *"
     }
   ],
   "rewrites": [
     {
       "source": "/sitemap.xml",
       "destination": "/api/[...path]?path=sitemap"
+    },
+    {
+      "source": "/api/cron/traffic-cleanup",
+      "destination": "/api/[...path]?path=cron/traffic-cleanup"
     },
     {
       "source": "/api/:path*",

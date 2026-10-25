@@ -20,7 +20,14 @@ import NewsletterConfirm from './pages/NewsletterConfirm';
 import TalentDashboard from './pages/TalentDashboard';
 import EmployerDashboard from './pages/EmployerDashboard';
 import AdminContent from './pages/admin/AdminContent';
+import AdminData from './pages/admin/AdminData';
+import AdminRegistrations from './pages/admin/AdminRegistrations';
+import AdminSetPassword from './pages/admin/AdminSetPassword';
+import AdminStaff from './pages/admin/AdminStaff';
+import AdminStats from './pages/admin/AdminStats';
 import ManagerLogin from './pages/admin/ManagerLogin';
+import TrafficTracker from './components/TrafficTracker';
+import { STAFF_ROLES } from './lib/authClient';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import NotFound from './pages/NotFound';
@@ -88,7 +95,7 @@ function AnimatedRoutes() {
               and a manager still has to be able to reach the panel there. */}
           <Route
             path="/admin"
-            element={AUTH_ENABLED ? <Navigate to="/admin/content" replace /> : <Navigate to="/" replace />}
+            element={AUTH_ENABLED ? <Navigate to="/admin/stats" replace /> : <Navigate to="/" replace />}
           />
           <Route
             path="/admin/login"
@@ -98,8 +105,60 @@ function AnimatedRoutes() {
             path="/admin/content"
             element={
               AUTH_ENABLED ? (
-                <RequireAuth role="manager" signInPath="/admin/login">
+                <RequireAuth roles={['manager', 'admin']} signInPath="/admin/login">
                   <AdminContent />
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/stats"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={STAFF_ROLES} signInPath="/admin/login">
+                  <AdminStats />
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/data"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={STAFF_ROLES} signInPath="/admin/login">
+                  <AdminData />
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/staff"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={['manager', 'admin']} signInPath="/admin/login">
+                  <AdminStaff />
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/set-password"
+            element={AUTH_ENABLED ? <AdminSetPassword /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/admin/registrations"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={STAFF_ROLES} signInPath="/admin/login">
+                  <AdminRegistrations />
                 </RequireAuth>
               ) : (
                 <Navigate to="/" replace />
@@ -119,6 +178,7 @@ export default function SiteShell() {
   return (
     <AuthProvider>
       <Layout>
+        <TrafficTracker />
         <AnimatedRoutes />
       </Layout>
     </AuthProvider>

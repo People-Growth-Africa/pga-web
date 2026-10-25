@@ -153,6 +153,42 @@ export async function sendPasswordResetEmail(to: string, token: string): Promise
   });
 }
 
+export async function sendStaffInviteEmail(
+  to: string,
+  name: string,
+  token: string,
+): Promise<boolean> {
+  const link = `${appUrl()}/admin/set-password?token=${encodeURIComponent(token)}`;
+  return sendEmail({
+    to,
+    tag: 'staff',
+    subject: 'You have been invited to the People Growth Africa admin',
+    text: [
+      `Hi ${name},`,
+      '',
+      'A staff account has been created for you. Choose a password here:',
+      link,
+      '',
+      'This link works once and expires in 24 hours.',
+      'If you were not expecting this, you can ignore this message.',
+    ].join('\n'),
+    html: renderEmail({
+      preheader: 'Choose a password for your staff account.',
+      heading: 'Your staff account is ready',
+      paragraphs: [
+        `Hi ${name}, a staff account has been created for you. Choose a password to activate it.`,
+      ],
+      action: { label: 'Choose a password', url: link },
+      notes: [
+        'This link works once and expires in 24 hours.',
+        'If you were not expecting this, you can ignore this message.',
+      ],
+      reason: 'You are getting this because an administrator invited this address to the admin.',
+      site: appUrl(),
+    }),
+  });
+}
+
 /**
  * Where a lead notification goes. A dedicated mailbox, so one person leaving
  * does not silently send every enquiry into a dead account.
@@ -248,6 +284,57 @@ export async function sendPasswordChangedEmail(to: string): Promise<boolean> {
         'If it was not you, reset the password again immediately and reply to this message so we can help.',
       ],
       reason: 'You are getting this because the password on this account was just changed.',
+      site: appUrl(),
+    }),
+  });
+}
+
+/**
+ * A short receipt for an event place. Sent after the registration row is
+ * committed, so the caller treats a failure here as nothing more than a missing
+ * courtesy email: the place stays saved.
+ *
+ * The event is described from its slug because that is all the registration
+ * carries; the manager sends the agenda and joining link separately, so this
+ * message promises no date or link it cannot know.
+ */
+export async function sendRegistrationConfirmationEmail(
+  to: string,
+  name: string,
+  eventSlug: string,
+): Promise<boolean> {
+  const eventName = eventSlug
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+  const eventsLink = `${appUrl()}/events`;
+
+  return sendEmail({
+    to,
+    tag: 'registrations',
+    subject: `Registration confirmed: ${eventName}`,
+    text: [
+      `Hi ${name},`,
+      '',
+      `Your place is saved for ${eventName}.`,
+      '',
+      'Our team will email your joining link before the session. If you have a question in the meantime, reply to this message.',
+      '',
+      `See all events: ${eventsLink}`,
+      '',
+      'If you did not register, you can ignore this message.',
+    ].join('\n'),
+    html: renderEmail({
+      preheader: `Your place is saved for ${eventName}.`,
+      heading: 'Your place is saved',
+      paragraphs: [
+        `Hi ${name}, your registration for ${eventName} is confirmed.`,
+        'Our team will email your joining link before the session. If you have a question in the meantime, reply to this message.',
+      ],
+      action: { label: 'See all events', url: eventsLink },
+      notes: ['If you did not register for this event, you can ignore this message.'],
+      reason: 'You are getting this because this address registered for a People Growth Africa event.',
       site: appUrl(),
     }),
   });

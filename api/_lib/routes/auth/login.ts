@@ -1,6 +1,6 @@
 import { ApiError, clientIp, endpoint, parseJsonBody, safeRedirect, sendJson } from '../../http.js';
 import { loginSchema, parseInput } from '../../validation.js';
-import { findSessionUserById, findUserByEmail, setPassword } from '../../db.js';
+import { findSessionUserById, findUserByEmail, isStaffRole, setPassword } from '../../db.js';
 import { hashPassword, passwordNeedsUpgrade, spendPasswordTime, verifyPassword } from '../../security.js';
 import {
   assertSessionConfigured,
@@ -9,7 +9,7 @@ import {
   setSessionCookie,
 } from '../../session.js';
 import { enforceRateLimit } from '../../ratelimit.js';
-import { recordAuthEvent } from '../../audit.js';
+import { recordAudit, recordAuthEvent } from '../../audit.js';
 
 export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   const ip = clientIp(req);
@@ -40,6 +40,13 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
   }
 
+  // Checked after the password so the response cannot be used to learn that
+  // an address has a disabled account.
+  if (user.disabled_at !== null) {
+    await recordAuthEvent('login_failed_disabled', { userId: user.id, ip });
+    throw new ApiError(403, 'account_disabled', 'This account has been disabled. Contact an administrator.');
+  }
+
   // A hash made with fewer rounds than the current setting is upgraded here,
   // while the password is still in hand and has just been proved correct.
   // setPassword bumps token_version, so the session is minted from the row as
@@ -57,21 +64,28 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   });
   setSessionCookie(req, res, sessionToken, sessionTtlSeconds(user.role));
   await recordAuthEvent('login', { userId: user.id, ip });
+  if (isStaffRole(user.role)) {
+    await recordAudit('staff_login', { userId: user.id });
+  }
 
+  const staff = isStaffRole(user.role);
   sendJson(res, 200, {
     user: {
       id: user.id,
       role: user.role,
       email: user.email,
       emailVerified: user.email_verified,
+      mustChangePassword: user.must_change_password,
     },
-    // Managers get the content panel. Without a branch of their own they fall
-    // through to the employer dashboard, which is a page their role cannot use.
+    // Staff get the admin area. A forced password change goes straight to the
+    // set-password screen; every staff endpoint refuses until it is done.
     redirect: safeRedirect(
-      user.role === 'talent'
-        ? '/talent/dashboard'
-        : user.role === 'manager'
-          ? '/admin/content'
+      staff
+        ? user.must_change_password
+          ? '/admin/set-password'
+          : '/admin/stats'
+        : user.role === 'talent'
+          ? '/talent/dashboard'
           : '/employer/dashboard',
     ),
   });

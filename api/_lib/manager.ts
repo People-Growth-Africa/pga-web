@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { ApiError } from './http.js';
-import { findSessionUserById } from './db.js';
+import { findSessionUserById, isAdminRole } from './db.js';
 import {
   clearSessionCookie,
   hasSessionCookie,
@@ -51,7 +51,7 @@ export async function requireManager(
     );
   }
 
-  if (session.role !== 'manager') {
+  if (!isAdminRole(session.role)) {
     throw new ApiError(
       403,
       'manager_only',
@@ -65,7 +65,13 @@ export async function requireManager(
   // token working until it expired - which is exactly the window an attacker
   // holding a copied cookie needs.
   const user = await findSessionUserById(session.userId);
-  if (!user || user.role !== 'manager' || user.token_version !== session.tokenVersion) {
+  if (
+    !user ||
+    !isAdminRole(user.role) ||
+    user.disabled_at !== null ||
+    user.must_change_password ||
+    user.token_version !== session.tokenVersion
+  ) {
     clearSessionCookie(req, res);
     throw new ApiError(401, 'session_expired', 'Your session ended. Sign in again.');
   }

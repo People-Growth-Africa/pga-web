@@ -12,7 +12,23 @@
  * the promotion script is running. This type widening is so a signed in manager
  * is recognised, not so one can be made here.
  */
-export type Role = 'talent' | 'employer' | 'manager';
+export type Role =
+  | 'talent'
+  | 'employer'
+  | 'manager'
+  | 'admin'
+  | 'project_manager'
+  | 'hr_manager';
+
+export const STAFF_ROLES: Role[] = ['manager', 'admin', 'project_manager', 'hr_manager'];
+
+export function isStaffRole(role: Role | undefined): boolean {
+  return role !== undefined && STAFF_ROLES.includes(role);
+}
+
+export function isAdminRole(role: Role | undefined): boolean {
+  return role === 'manager' || role === 'admin';
+}
 
 export type TalentProfile = {
   name: string;
@@ -34,6 +50,8 @@ export type AuthUser = {
   emailVerified: boolean;
   /** Present on the signup response only; the profile carries it afterwards. */
   name?: string;
+  /** Present on the login response when the account must set a new password. */
+  mustChangePassword?: boolean;
   profile?: TalentProfile | EmployerProfile | null;
 };
 
@@ -89,7 +107,7 @@ export const NEED_OPTIONS = [
 
 /** Where each kind of account lands after signing in. */
 export function dashboardPath(role: Role): string {
-  if (role === 'manager') return '/admin/content';
+  if (isStaffRole(role)) return '/admin/stats';
   return role === 'talent' ? '/talent/dashboard' : '/employer/dashboard';
 }
 
@@ -118,7 +136,7 @@ function missingEndpointMessage(status: number): string {
 
 export async function authRequest<T>(
   path: string,
-  init?: { method?: 'GET' | 'POST' | 'DELETE' | 'PUT'; body?: unknown },
+  init?: { method?: 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH'; body?: unknown },
 ): Promise<ApiResult<T>> {
   const hasBody = init?.body !== undefined;
 

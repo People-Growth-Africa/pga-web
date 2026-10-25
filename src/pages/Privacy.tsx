@@ -138,6 +138,16 @@ export default function Privacy() {
       </div>
 
       <div>
+        <h2>Website visits</h2>
+        <p>
+          We count anonymous page visits so we can tell which pages are useful. The count uses no
+          tracking cookies and no advertising identifiers. Your IP address and browser name are used
+          only to avoid counting the same visitor twice in one day, then replaced with a salted hash
+          that is deleted after two days. Staff pages and known bots are not counted.
+        </p>
+      </div>
+
+      <div>
         <h2>Children</h2>
         <p>
           These accounts are for people aged 18 and over who are working or hiring. We do not

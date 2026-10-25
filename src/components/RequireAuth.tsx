@@ -12,10 +12,13 @@ import DashboardSkeleton from './dashboard/DashboardSkeleton';
  */
 export default function RequireAuth({
   role,
+  roles,
   children,
   signInPath = '/auth#login',
 }: {
-  role: Role;
+  role?: Role;
+  /** Accepted roles when more than one may open the page. */
+  roles?: Role[];
   children: ReactNode;
   /**
    * Where a signed out visitor is sent. The content admin has its own sign-in
@@ -44,8 +47,13 @@ export default function RequireAuth({
     return <Navigate to={signInPath} replace state={{ from: location.pathname }} />;
   }
 
-  if (user.role !== role) {
+  const allowed = roles ?? (role ? [role] : []);
+  if (allowed.length > 0 && !allowed.includes(user.role)) {
     return <Navigate to={dashboardPath(user.role)} replace />;
+  }
+
+  if (user.mustChangePassword && signInPath === '/admin/login') {
+    return <Navigate to="/admin/set-password" replace />;
   }
 
   return <>{children}</>;

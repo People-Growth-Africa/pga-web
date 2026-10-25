@@ -42,7 +42,9 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
 
   // setPassword also bumps token_version, which ends every existing session,
   // including one an attacker may already hold.
-  await setPassword(userId, await hashPassword(data.password));
+  // Choosing a password through the reset flow also completes the first-login
+  // requirement, whether the account was seeded or invited.
+  await setPassword(userId, await hashPassword(data.password), { clearMustChange: true });
   clearSessionCookie(req, res);
   await recordAuthEvent('password_reset', { userId, ip });
 

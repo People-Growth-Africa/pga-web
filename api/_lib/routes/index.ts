@@ -39,6 +39,8 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/auth/me': gatedAuth(async () => (await import('./auth/me.js')).default),
   '/auth/resend-verification': gatedAuth(async () => (await import('./auth/resend-verification.js')).default),
   '/auth/reset-password': gatedAuth(async () => (await import('./auth/reset-password.js')).default),
+  '/auth/set-password': gatedAuth(async () => (await import('./auth/set-password.js')).default),
+  '/auth/change-password': gatedAuth(async () => (await import('./auth/change-password.js')).default),
   '/auth/signup': gatedAuth(async () => (await import('./auth/signup.js')).default),
   '/auth/verify-email': gatedAuth(async () => (await import('./auth/verify-email.js')).default),
 
@@ -62,6 +64,17 @@ export const ROUTES: Record<string, RouteHandler> = {
   //     The panel's keep-alive: a manager editing for an hour sends nothing else,
   //     and the idle limit has to measure absence, not silence. --------------
   '/admin/ping': gatedAuth(async () => (await import('./admin-ping.js')).default),
+  //     Event registrations, read and exported by managers. Personal data, so
+  //     the handler checks the role on every request and nothing is cached.
+  '/admin/registrations': gatedAuth(async () => (await import('./admin-registrations.js')).default),
+  '/admin/registrations-export': gatedAuth(async () => (await import('./admin-registrations.js')).default),
+  //     Staff dashboard and data lists. All staff roles may read them; staff
+  //     account management is admin only inside the handler.
+  '/admin/stats': gatedAuth(async () => (await import('./admin-stats.js')).default),
+  '/admin/data': gatedAuth(async () => (await import('./admin-data.js')).default),
+  '/admin/data-export': gatedAuth(async () => (await import('./admin-data.js')).default),
+  '/admin/traffic': gatedAuth(async () => (await import('./admin-traffic.js')).default),
+  '/admin/staff': gatedAuth(async () => (await import('./admin-staff.js')).default),
 
   // --- A probe the forms read on load, so a missing database is known before
   //     a visitor fills anything in rather than after they press send. It is
@@ -106,8 +119,14 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/leads/consultation-booking': requiresDatabase(async () => (await import('./leads/consultation-booking.js')).default),
   '/leads/enquiry': requiresDatabase(async () => (await import('./leads/enquiry.js')).default),
   '/leads/event-registration': requiresDatabase(async () => (await import('./leads/event-registration.js')).default),
+  //     The public registration form's write-only endpoint. POST only; it
+  //     returns no registrant data and is rate limited per IP.
+  '/registrations': requiresDatabase(async () => (await import('./registrations.js')).default),
   '/newsletter/confirm': requiresDatabase(async () => (await import('./newsletter/confirm.js')).default),
   '/newsletter/subscribe': requiresDatabase(async () => (await import('./newsletter/subscribe.js')).default),
+  //     First-party traffic: one public write-only beacon and one daily cron.
+  '/track': requiresDatabase(async () => (await import('./track.js')).default),
+  '/cron/traffic-cleanup': requiresDatabase(async () => (await import('./cron-traffic.js')).default),
 };
 
 /**

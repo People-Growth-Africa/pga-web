@@ -8,14 +8,15 @@ import { authRequest, type ApiFailure, type ApiResult } from './authClient';
 
 export type LeadAcknowledged = { ok: boolean };
 
-export type EventRegistrationInput = {
+export type RegistrationInput = {
   eventSlug: string;
   name: string;
   email: string;
   phone: string;
-  organisation: string;
-  role: string;
-  question: string;
+  organization: string;
+  notes: string;
+  /** Honeypot. Always empty in a real browser and rejected by the server if not. */
+  website?: string;
 };
 
 export type ConsultationBookingInput = {
@@ -50,10 +51,10 @@ export function localIsoDate(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-export function submitEventRegistration(
-  input: EventRegistrationInput,
+export function submitRegistration(
+  input: RegistrationInput,
 ): Promise<ApiResult<LeadAcknowledged>> {
-  return authRequest<LeadAcknowledged>('/api/leads/event-registration', { body: input });
+  return authRequest<LeadAcknowledged>('/api/registrations', { body: input });
 }
 
 export function submitConsultationBooking(

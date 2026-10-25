@@ -73,13 +73,19 @@ export type SessionClaims = {
 };
 
 /** How long a fresh session for this role should live, in seconds. */
+const STAFF_ROLES = new Set(['manager', 'admin', 'project_manager', 'hr_manager']);
+
+export function isStaffSessionRole(role: Role): boolean {
+  return STAFF_ROLES.has(role);
+}
+
 export function sessionTtlSeconds(role: Role): number {
-  return role === 'manager' ? MANAGER_IDLE_SECONDS : SESSION_TTL_SECONDS;
+  return isStaffSessionRole(role) ? MANAGER_IDLE_SECONDS : SESSION_TTL_SECONDS;
 }
 
 /** The longest one sign-in may last, however active it is. */
 function absoluteLimitSeconds(role: Role): number {
-  return role === 'manager' ? MANAGER_ABSOLUTE_SECONDS : SESSION_TTL_SECONDS;
+  return isStaffSessionRole(role) ? MANAGER_ABSOLUTE_SECONDS : SESSION_TTL_SECONDS;
 }
 
 function nowSeconds(): number {
@@ -135,7 +141,7 @@ export async function refreshManagerSession(
   res: VercelResponse,
   session: SessionClaims,
 ): Promise<void> {
-  if (session.role !== 'manager') return;
+  if (!isStaffSessionRole(session.role)) return;
   if (nowSeconds() - session.issuedAt < SESSION_TOUCH_SECONDS) return;
 
   const token = await createSessionToken({
@@ -173,9 +179,17 @@ export async function readSession(req: VercelRequest): Promise<SessionClaims | n
     const ver = payload.ver;
     if (typeof payload.sub !== 'string' || typeof ver !== 'number') return null;
     // An allow list rather than a lookup: a token carrying any other value is
-    // refused outright. 'manager' belongs here or a signed in manager cannot
-    // reach anything - the admin endpoints read the role from this claim.
-    if (role !== 'talent' && role !== 'employer' && role !== 'manager') return null;
+    // refused outright. The admin endpoints read the role from this claim.
+    if (
+      role !== 'talent' &&
+      role !== 'employer' &&
+      role !== 'manager' &&
+      role !== 'admin' &&
+      role !== 'project_manager' &&
+      role !== 'hr_manager'
+    ) {
+      return null;
+    }
 
     // Tokens minted before this limit existed carry no `abs`; their `iat` is the
     // closest true answer, and it is the same day the token was made.

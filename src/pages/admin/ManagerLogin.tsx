@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { authRequest, type AuthUser } from '../../lib/authClient';
+import { authRequest, isStaffRole, type AuthUser } from '../../lib/authClient';
 import { AUTH_ENABLED } from '../../config/signup-links';
 
 /**
@@ -47,8 +47,8 @@ export default function ManagerLogin() {
   }
 
   // Already signed in as a manager: there is nothing to do on this page.
-  if (!expired && status === 'signedIn' && user?.role === 'manager') {
-    return <Navigate to="/admin/content" replace />;
+  if (!expired && status === 'signedIn' && isStaffRole(user?.role)) {
+    return <Navigate to={user?.mustChangePassword ? '/admin/set-password' : '/admin/stats'} replace />;
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -66,17 +66,17 @@ export default function ManagerLogin() {
       return;
     }
 
-    if (result.data.user.role !== 'manager') {
-      // A valid account, just not this one. Clear the cookie so the visitor is
-      // not left signed in as somebody who cannot reach the panel.
+    if (!isStaffRole(result.data.user.role)) {
+      // A valid account, just not one with staff access. Clear the cookie so
+      // the visitor is not left signed in as somebody who cannot reach the panel.
       await signOut();
       setSubmitting(false);
-      setFormError('That account is not a manager account, so it cannot open the content admin.');
+      setFormError('That account does not have staff access to the admin.');
       return;
     }
 
     setUser(result.data.user);
-    navigate(result.data.redirect ?? '/admin/content', { replace: true });
+    navigate(result.data.redirect ?? '/admin/stats', { replace: true });
   }
 
   return (
@@ -92,8 +92,8 @@ export default function ManagerLogin() {
             Content admin
           </h1>
           <p className="font-[family-name:var(--font-body)] text-sm text-charcoal/65 leading-relaxed mb-7">
-            For the People Growth Africa team. Sign in with your manager account to write, publish and
-            unpublish posts and events.
+            For the People Growth Africa team. Sign in with your staff account to open the dashboard,
+            data lists and publishing tools.
           </p>
 
           {expired && !formError && (
@@ -101,7 +101,7 @@ export default function ManagerLogin() {
               role="status"
               className="mb-5 rounded-xl border border-charcoal/15 bg-cream px-4 py-3 font-[family-name:var(--font-body)] text-sm text-charcoal/75"
             >
-              Your session ended. The panel signs out after an hour with no activity, and after 12
+              Your session ended. The panel signs out after 30 minutes with no activity, and after 8
               hours at most. Sign in again to carry on.
             </p>
           )}
@@ -115,12 +115,12 @@ export default function ManagerLogin() {
             </p>
           )}
 
-          {user && user.role !== 'manager' && (
+          {user && !isStaffRole(user.role) && (
             <p
               role="status"
               className="mb-5 rounded-xl border border-charcoal/15 bg-cream px-4 py-3 font-[family-name:var(--font-body)] text-sm text-charcoal/75"
             >
-              Signed in as {user.email}, which is not a manager account.{' '}
+              Signed in as {user.email}, which is not a staff account.{' '}
               <button
                 type="button"
                 onClick={() => void signOut()}

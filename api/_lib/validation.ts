@@ -501,7 +501,101 @@ export const postStatusSchema = z.strictObject({
   status: z.enum(POST_STATUS),
 });
 
+/**
+ * Event registration, stored in its own table rather than the shared lead
+ * tables: a manager filters and exports these by event, and the same address is
+ * only allowed once per event.
+ *
+ * `website` is the honeypot. It is a real key in the schema so a bot that fills
+ * every input is accepted by validation and then dropped by the handler, rather
+ * than being told which field gave it away.
+ */
+export const registrationSchema = z.strictObject({
+  eventSlug,
+  name: requiredText(NAME_MAX, 'full name'),
+  email,
+  phone: z
+    .string()
+    .trim()
+    .min(1, 'Enter your phone number.')
+    .max(20, 'Phone must be 20 characters or fewer.')
+    .regex(
+      /^\+?[0-9][0-9\s().-]{5,19}$/,
+      'Enter a phone number using digits, spaces, dashes or brackets.',
+    ),
+  organization: optionalText(ORGANISATION_MAX, 'organisation'),
+  notes: requiredText(
+    1000,
+    'notes',
+    'Tell us what you would like to get from this session.',
+  ),
+  website: z.string().trim().max(200).optional(),
+});
+
+export const registrationListQuerySchema = z.strictObject({
+  event: eventSlug.optional(),
+  search: z.string().trim().max(120).optional(),
+  page: z.coerce.number().int().min(1).max(100000).optional(),
+});
+
+export type RegistrationInput = z.infer<typeof registrationSchema>;
+export type RegistrationListQuery = z.infer<typeof registrationListQuerySchema>;
+
 export type PostCreateInput = z.infer<typeof postCreateSchema>;
 export type PostUpdateInput = z.infer<typeof postUpdateSchema>;
 export type PostListQuery = z.infer<typeof postListQuerySchema>;
 export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
+
+/* ── Staff ──────────────────────────────────────────────────────────────── */
+
+export const STAFF_ROLE_VALUES = ['admin', 'project_manager', 'hr_manager'] as const;
+
+export const staffCreateSchema = z.strictObject({
+  name: requiredText(NAME_MAX, 'full name'),
+  email,
+  role: z.enum(STAFF_ROLE_VALUES),
+});
+
+export const staffUpdateSchema = z.strictObject({
+  id: z.string().uuid('Choose a staff account.'),
+  disabled: z.boolean(),
+});
+
+export const staffInviteAcceptSchema = z.strictObject({
+  token: z.string().trim().min(20, 'That invitation link is not valid.').max(200),
+  password,
+});
+
+export const staffChangePasswordSchema = z.strictObject({
+  currentPassword: z.string().min(1, 'Enter your current password.').max(PASSWORD_MAX),
+  password,
+});
+
+/* ── Dashboard filters ─────────────────────────────────────────────────── */
+
+export const DATE_VALUE = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date in the form YYYY-MM-DD.');
+
+export const statsQuerySchema = z.strictObject({
+  range: z.enum(['7', '30', '90', 'all']).default('30'),
+});
+
+export const dataQuerySchema = z.strictObject({
+  type: z.enum(['registrations', 'subscriptions', 'consultations']),
+  page: z.coerce.number().int().min(1).max(100000).default(1),
+  search: z.string().trim().max(120).optional(),
+  from: DATE_VALUE.optional(),
+  to: DATE_VALUE.optional(),
+  event: eventSlug.optional(),
+});
+
+export const trackSchema = z.strictObject({
+  path: z.string().trim().min(1).max(300),
+  referrer: z.string().trim().max(300).optional(),
+  utmSource: z.string().trim().max(80).optional(),
+});
+
+export type StaffCreateInput = z.infer<typeof staffCreateSchema>;
+export type DataQuery = z.infer<typeof dataQuerySchema>;

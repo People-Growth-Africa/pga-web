@@ -243,9 +243,9 @@ async function allowManagerRole(sql) {
 
   await sql.query(
     `ALTER TABLE users
-        ADD CONSTRAINT users_role_check CHECK (role IN ('talent', 'employer', 'manager'))`,
+        ADD CONSTRAINT users_role_check CHECK (role IN ('talent', 'employer', 'manager', 'admin', 'project_manager', 'hr_manager'))`,
   );
-  console.log('  ok  users.role accepts manager');
+  console.log('  ok  users.role accepts manager and staff roles');
 }
 
 /**
@@ -261,9 +261,10 @@ async function allowManagerRole(sql) {
 const MANAGER_GUARD = `
   CREATE OR REPLACE FUNCTION users_guard_manager() RETURNS trigger AS $$
   BEGIN
-    IF NEW.role = 'manager'
-       AND coalesce(current_setting('pga.promote_manager', true), '') <> 'on' THEN
-      RAISE EXCEPTION 'manager accounts can only be created by scripts/promote-manager.mjs';
+    IF NEW.role NOT IN ('talent', 'employer')
+       AND coalesce(current_setting('pga.promote_manager', true), '') <> 'on'
+       AND coalesce(current_setting('pga.staff_write', true), '') <> 'on' THEN
+      RAISE EXCEPTION 'staff accounts can only be created by an admin endpoint or a setup script';
     END IF;
     RETURN NEW;
   END $$ LANGUAGE plpgsql`;

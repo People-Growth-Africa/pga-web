@@ -20,6 +20,11 @@ dist-ssr
 .env*
 !.env.example
 
+# A copy of real values gathered for pasting into the Vercel dashboard. Never
+# committed: it is a working file, not a template, and .env* above does not
+# match it.
+vercel-env-paste.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -36,3 +41,4 @@ dist-ssr
 
 # Locally rendered email previews, opened in the browser during design work.
 public/email-preview
+/freebuff-sites-build/
