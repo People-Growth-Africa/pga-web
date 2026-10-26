@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
 import { ApiError, endpoint, headerValue, sendJson } from '../http.js';
-import { cleanupTrafficHashes } from '../db.js';
+import { cleanupPendingNewsletterSubscribers, cleanupTrafficHashes } from '../db.js';
 
 /**
  * GET /api/cron/traffic-cleanup
@@ -10,6 +10,10 @@ import { cleanupTrafficHashes } from '../db.js';
  * style by simply requiring the exact bearer value; without it the endpoint is
  * closed rather than open. Visitor hashes only need to survive long enough to
  * deduplicate a daily visitor, so anything older than two days goes.
+ *
+ * The same daily pass clears newsletter signups that never confirmed: their
+ * link dies after 48 hours, and a pending row left for a week can only mislead
+ * whoever reads the subscriber list.
  */
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
   const secret = process.env.CRON_SECRET;
@@ -24,6 +28,9 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     throw new ApiError(401, 'unauthorized', 'Not allowed.');
   }
 
-  const deleted = await cleanupTrafficHashes();
-  sendJson(res, 200, { ok: true, deleted });
+  const [deleted, pendingSubscribersDeleted] = await Promise.all([
+    cleanupTrafficHashes(),
+    cleanupPendingNewsletterSubscribers(),
+  ]);
+  sendJson(res, 200, { ok: true, deleted, pendingSubscribersDeleted });
 });

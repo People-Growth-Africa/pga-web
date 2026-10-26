@@ -17,6 +17,17 @@ import {
   type PostType,
 } from './oversightClient';
 
+/* Row actions read as buttons, not as prose: the same pill shapes the content
+   desk uses, so the two panels feel like one product. */
+const smallOutline =
+  'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-charcoal/15 bg-white px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint';
+
+const smallPrimary =
+  'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-deep-green bg-deep-green px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta';
+
+const smallDanger =
+  'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-red-200 bg-white px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-red-600 transition-colors hover:bg-red-50';
+
 type View = 'list' | 'create' | 'edit';
 
 /**
@@ -197,32 +208,30 @@ export default function AdminOversight() {
                         {post.status}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-right text-sm">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditing(post);
-                          setEditorError(null);
-                          setView('edit');
-                        }}
-                        className="mr-3 font-semibold text-deep-green underline"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void toggle(post)}
-                        className="mr-3 font-semibold text-charcoal/70 underline"
-                      >
-                        {post.status === 'published' ? 'Unpublish' : 'Republish'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void remove(post)}
-                        className="font-semibold text-red-600 underline"
-                      >
-                        Delete
-                      </button>
+                    <td className="px-5 py-4">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditing(post);
+                            setEditorError(null);
+                            setView('edit');
+                          }}
+                          className={smallOutline}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void toggle(post)}
+                          className={post.status === 'published' ? smallOutline : smallPrimary}
+                        >
+                          {post.status === 'published' ? 'Unpublish' : 'Publish'}
+                        </button>
+                        <button type="button" onClick={() => void remove(post)} className={smallDanger}>
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

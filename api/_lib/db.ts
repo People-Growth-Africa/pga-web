@@ -1439,6 +1439,25 @@ export async function cleanupTrafficHashes(): Promise<number> {
   return rows.length;
 }
 
+/**
+ * Unconfirmed newsletter signups are housekeeping, not history.
+ *
+ * The confirmation link is only good for 48 hours, so a row still pending a
+ * week after the address first asked can never be confirmed by the mail that
+ * was sent; it only misleads whoever reads the subscriber list. A week leaves
+ * room for a weekend away, and an address that signs up again afterwards simply
+ * starts a fresh row.
+ */
+export async function cleanupPendingNewsletterSubscribers(): Promise<number> {
+  const rows = await query<{ email: string }>(
+    `DELETE FROM newsletter_subscribers
+      WHERE status = 'pending'
+        AND created_at < now() - interval '7 days'
+      RETURNING email`,
+  );
+  return rows.length;
+}
+
 export async function trafficTotals(
   from: string,
   to: string,
