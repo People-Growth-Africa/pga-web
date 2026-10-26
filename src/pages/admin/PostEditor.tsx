@@ -16,12 +16,22 @@ import {
   isChoiceQuestion,
   type RegistrationForm,
 } from '../../lib/registrationForm';
-import {
-  uploadCover,
-  type AdminCategory,
-  type AdminPost,
-  type PostDraft,
+import type {
+  uploadCover as uploadCoverFn,
+  AdminCategory,
+  AdminPost,
+  PostDraft,
 } from './contentClient';
+
+/**
+ * The editor is shared by the two staff portals, and each one talks to its own
+ * API prefix (`/api/admin/*` for oversight, `/api/content/*` for the content
+ * desk). Every call therefore arrives as a prop rather than being imported
+ * here: an editor that reaches for the content desk's upload on its own sends
+ * an administrator's image to a route that only a content manager may use, and
+ * the button answers "this area is for content managers".
+ */
+type UploadCover = typeof uploadCoverFn;
 
 /**
  * The create and edit form for one post.
@@ -73,6 +83,7 @@ export default function PostEditor({
   onCancel,
   onSubmit,
   onAddCategory,
+  uploadCover,
 }: {
   mode: EditorMode;
   /** The row being edited, or null when creating. */
@@ -87,6 +98,8 @@ export default function PostEditor({
   onSubmit: (draft: PostDraft) => void;
   /** Asks the parent to open the category dialog; returns the new category id. */
   onAddCategory: () => Promise<string | null>;
+  /** The calling portal's cover upload, so each panel posts to its own route. */
+  uploadCover: UploadCover;
 }) {
   const initial = useMemo(() => toDraft(post, initialType), [post, initialType]);
 
@@ -129,6 +142,16 @@ export default function PostEditor({
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * The status the server last confirmed, and what the panel is allowed to
+   * claim. While a save is in flight the clicked button's status is shown, so
+   * the chip follows the action; when the save comes back with an error the row
+   * is unchanged, so the chip falls back to the last confirmed status instead of
+   * claiming a publish that never happened.
+   */
+  const savedStatus = post?.status ?? 'draft';
+  const shownStatus: 'draft' | 'published' = error ? savedStatus : status;
 
   const chosenCategory = categories.find((category) => category.id === categoryId);
 
@@ -769,10 +792,10 @@ export default function PostEditor({
             <span className="font-[family-name:var(--font-body)] text-sm text-charcoal/55">Status:</span>
             <span
               className={`inline-flex px-3 py-1 rounded-full font-[family-name:var(--font-body)] text-[0.72rem] font-semibold uppercase tracking-wider ${
-                status === 'published' ? 'bg-deep-green text-white' : 'bg-cream text-charcoal/60'
+                shownStatus === 'published' ? 'bg-deep-green text-white' : 'bg-cream text-charcoal/60'
               }`}
             >
-              {status === 'published' ? 'Published' : 'Draft'}
+              {shownStatus === 'published' ? 'Published' : 'Draft'}
             </span>
           </div>
           {!canSubmit && (title.trim() !== '' || slug.trim() !== '') && (
@@ -792,7 +815,7 @@ export default function PostEditor({
             disabled={!canSubmit || saving}
             className="px-6 py-3 bg-white border border-charcoal/15 rounded-full font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal hover:bg-cream transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {mode === 'edit' && status === 'published' ? 'Save & unpublish' : ACTION_PHRASES.draft}
+            {mode === 'edit' && savedStatus === 'published' ? 'Save & unpublish' : ACTION_PHRASES.draft}
           </button>
           <button
             type="button"
@@ -803,7 +826,7 @@ export default function PostEditor({
             disabled={!canSubmit || saving}
             className="px-7 py-3 bg-deep-green text-white rounded-full font-[family-name:var(--font-body)] text-sm font-semibold hover:bg-terracotta transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? 'Saving…' : status === 'published' ? 'Save changes' : ACTION_PHRASES.publish}
+            {saving ? 'Saving…' : shownStatus === 'published' ? 'Save changes' : ACTION_PHRASES.publish}
           </button>
         </div>
       </div>

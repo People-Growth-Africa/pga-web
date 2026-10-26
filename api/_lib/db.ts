@@ -792,8 +792,8 @@ export async function insertPost(input: {
         registration_intro, registration_button_label, registration_form, status, published_at,
         author_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-             $16, $17, $18, $19::jsonb, $20,
-             CASE WHEN $20 = 'published' THEN now() ELSE NULL END, $21)
+             $16, $17, $18::jsonb, $19,
+             CASE WHEN $19 = 'published' THEN now() ELSE NULL END, $20)
      RETURNING id`,
     [
       input.type,

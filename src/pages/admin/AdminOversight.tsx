@@ -9,8 +9,10 @@ import {
   createPost,
   deletePost,
   listContent,
+  pingSession,
   setPostStatus,
   updatePost,
+  uploadCover,
   type AdminCategory,
   type AdminPost,
   type PostDraft,
@@ -75,6 +77,25 @@ export default function AdminOversight() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Writing an article for an hour sends no requests, and a staff session ends
+  // after thirty minutes without one. Real interaction is what says otherwise,
+  // so the save at the end of a long edit is not the first request in half an
+  // hour - which the server would answer with a 401 and a lost draft.
+  useEffect(() => {
+    let lastPing = Date.now();
+    const ping = () => {
+      const now = Date.now();
+      if (now - lastPing < 5 * 60 * 1000) return;
+      lastPing = now;
+      void pingSession();
+    };
+    const events = ['pointerdown', 'keydown', 'focus'] as const;
+    for (const event of events) window.addEventListener(event, ping);
+    return () => {
+      for (const event of events) window.removeEventListener(event, ping);
+    };
+  }, []);
 
   async function save(draft: PostDraft) {
     setSaving(true);
@@ -175,6 +196,7 @@ export default function AdminOversight() {
             }}
             onSubmit={(draft) => void save(draft)}
             onAddCategory={async () => null}
+            uploadCover={uploadCover}
           />
         ) : loading ? (
           <p className="rounded-2xl border border-charcoal/10 bg-white p-10 text-center text-sm text-charcoal/50">

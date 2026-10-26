@@ -14,6 +14,7 @@ import {
   pingSession,
   setPostStatus,
   updatePost,
+  uploadCover,
   type AdminCategory,
   type AdminPost,
   type PostDraft,
@@ -286,6 +287,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
             }}
             onSubmit={(draft) => void handleSubmit(draft)}
             onAddCategory={handleAddCategory}
+            uploadCover={uploadCover}
           />
         ) : (
           <>
