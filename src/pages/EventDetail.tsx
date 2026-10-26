@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import AnimateOnScroll from '../components/AnimateOnScroll';
-import ContentImage from '../components/ContentImage';
 import EventCard from '../components/EventCard';
 import EventRegistrationModal from '../components/EventRegistrationModal';
 import EventShareButton from '../components/EventShareButton';
@@ -88,6 +87,10 @@ export default function EventDetail() {
 
   const registrationUrl = isSafeHttpUrl(event.registrationUrl) ? event.registrationUrl : null;
   const detail = event.format;
+  // The cover a manager uploaded, full size where there is one and the
+  // thumbnail otherwise. It becomes the hero's backdrop rather than an image
+  // further down the page.
+  const heroImage = event.detailImageUrl ?? event.imageUrl;
   const related = splitEvents(
     mergeEvents(entries, live.posts).filter((candidate) => candidate.slug !== event.slug),
   );
@@ -131,8 +134,28 @@ export default function EventDetail() {
 
       {/* ── Hero ─────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-deep-green pb-[70px] pt-[140px]">
-        <div className="absolute -right-20 -top-20 h-[320px] w-[320px] rounded-full bg-terracotta/8" />
-        <div className="absolute -bottom-16 -left-14 h-[240px] w-[240px] rounded-full bg-brand-green/10" />
+        {/* The cover fills the band behind the title, softened and darkened so
+            the white heading stays legible over any photograph: a blurred green
+            scrim, then a wash that deepens towards the top and fades into the
+            solid green this section meets below. With no cover both layers sit
+            on the same green and the hero looks exactly as it always did. */}
+        {heroImage && (
+          <img
+            src={heroImage}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="eager"
+          />
+        )}
+        <div className="absolute inset-0 bg-deep-green/50 backdrop-blur-sm" />
+        <div className="absolute inset-0 bg-gradient-to-b from-deep-green/75 via-deep-green/45 to-deep-green" />
+        {!heroImage && (
+          <>
+            <div className="absolute -right-20 -top-20 h-[320px] w-[320px] rounded-full bg-terracotta/8" />
+            <div className="absolute -bottom-16 -left-14 h-[240px] w-[240px] rounded-full bg-brand-green/10" />
+          </>
+        )}
         <div className="relative z-[1] mx-auto max-w-[820px] px-6 text-center">
           <AnimateOnScroll>
             <Link
@@ -284,19 +307,6 @@ export default function EventDetail() {
           </aside>
         </div>
       </section>
-
-      {(event.detailImageUrl ?? event.imageUrl) && (
-        <section className="bg-white pb-14">
-          <div className="mx-auto max-w-[720px] px-6">
-            <ContentImage
-              src={event.detailImageUrl ?? event.imageUrl}
-              alt={event.title}
-              className="aspect-[16/9] w-full rounded-[20px]"
-              eager
-            />
-          </div>
-        </section>
-      )}
 
       {/* ── More events ──────────────────────────────── */}
       {relatedEvents.length > 0 && (
