@@ -115,6 +115,9 @@ export async function handleStaffLogin(
   sendJson(res, 200, {
     user: {
       id: user.id,
+      // Sent with the sign-in too, so the panel can greet the person straight
+      // away instead of waiting for the next session refresh.
+      name: user.name ?? null,
       role: user.role,
       email: user.email,
       emailVerified: user.email_verified,

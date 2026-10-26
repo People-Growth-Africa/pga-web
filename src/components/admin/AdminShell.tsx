@@ -82,6 +82,9 @@ export default function AdminShell({
     (item) => user?.role !== undefined && item.roles.includes(user.role),
   );
   const section = portal === 'content' ? 'Content desk' : 'Staff';
+  // Only the accounts that carry a name are greeted by it: a seeded or legacy
+  // row has none, and "Welcome back, null" is worse than nothing at all.
+  const firstName = user?.name?.trim().split(/\s+/)[0] ?? '';
   const loginPath = portal === 'content' ? '/content/login' : '/admin/login';
 
   async function handleSignOut() {
@@ -201,6 +204,11 @@ export default function AdminShell({
         <main className="mx-auto w-full max-w-[1280px] px-5 py-9 sm:px-8 lg:px-12 lg:py-14 xl:px-16">
           <div className="mb-8 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
+              {firstName && (
+                <p className="mb-2 font-[family-name:var(--font-body)] text-[0.92rem] text-charcoal/55">
+                  Welcome back, {firstName}.
+                </p>
+              )}
               <h1 className="font-[family-name:var(--font-heading)] text-[2.1rem] font-semibold leading-[1.05] tracking-[-0.02em] text-charcoal sm:text-[2.65rem]">
                 {title}
               </h1>

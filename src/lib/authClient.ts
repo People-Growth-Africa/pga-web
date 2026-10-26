@@ -85,8 +85,13 @@ export type AuthUser = {
   email: string;
   role: Role;
   emailVerified: boolean;
-  /** Present on the signup response only; the profile carries it afterwards. */
-  name?: string;
+  /**
+   * The account's own name. Null on staff rows created before names were
+   * collected (and on talent/employer accounts, whose name lives in their
+   * profile), so anything that greets a person by name has to cope with its
+   * absence.
+   */
+  name?: string | null;
   /** Present on the login response when the account must set a new password. */
   mustChangePassword?: boolean;
   profile?: TalentProfile | EmployerProfile | null;

@@ -15,6 +15,9 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
   sendJson(res, 200, {
     user: {
       id: user.id,
+      // Null for accounts made before a name was collected; the panel greets
+      // only the ones that have one.
+      name: user.name ?? null,
       email: user.email,
       role: user.role,
       emailVerified: user.email_verified,
