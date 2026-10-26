@@ -40,7 +40,16 @@ secret, how to inspect the audit log and how to report a problem.
   | Dashboard and traffic | yes | yes | no |
   | Registrations and personal data | yes | yes | no |
   | Blog posts, events, categories, uploads | yes | no | yes |
-  | Staff accounts and invitations | yes | no | no |
+  | Read the staff account list | yes | no | no |
+  | Invite, disable or edit a staff account | super administrator only | no | no |
+
+  "Super administrator" is one address, read from `SUPER_ADMIN_EMAIL` and defaulting to the
+  seeded `admin@peoplegrowthafrica.com`. It is an email rather than a fourth role on purpose: the
+  role column, the session audiences and every portal guard already understand "admin", so a new
+  role would have to be threaded through all of them for a single account. `requireSuperAdmin`
+  applies it to every staff write, so another administrator calling the endpoint directly is told
+  `super_admin_only` and nothing is changed. Moving the title is an environment change, not a
+  deploy, and no administrator can change their own email or role through the panel.
 
   The content routes accept the content cookie, and also the administrator cookie, because an
   administrator writes content too. They refuse every other portal by reading only the staff

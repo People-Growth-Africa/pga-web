@@ -62,9 +62,10 @@ category, summary and body. Publishing makes the page live within about a minute
 on `/blog` (or `/events`), in the sitemap and in the RSS-style feeds without a redeploy.
 
 Content managers can only reach the content desk. Administrators, project managers and HR
-managers use the administrator panel; only administrators can create staff accounts, and only
-administrators and content managers can edit posts and events. These limits are enforced by
-the API as well as hidden in the interface.
+managers use the administrator panel. Every administrator can see the staff list, but only the
+super administrator (`SUPER_ADMIN_EMAIL`, default `admin@peoplegrowthafrica.com`) can invite,
+disable or edit a staff account, and only administrators and content managers can edit posts and
+events. These limits are enforced by the API as well as hidden in the interface.
 
 The slug you choose becomes the web address, so `my-new-article` becomes
 `/blog/my-new-article`. Slugs cannot be reused by a second post.

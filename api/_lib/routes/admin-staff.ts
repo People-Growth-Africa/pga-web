@@ -1,35 +1,59 @@
 import { ApiError, endpoint, parseJsonBody, sendJson } from '../http.js';
-import { requireStaff } from '../staff.js';
-import { parseInput, staffCreateSchema, staffUpdateSchema } from '../validation.js';
+import { isSuperAdminEmail, requireStaff, requireSuperAdmin } from '../staff.js';
+import {
+  parseInput,
+  staffCreateSchema,
+  staffEditSchema,
+  staffUpdateSchema,
+} from '../validation.js';
 import {
   createStaffAccount,
   createStaffInvite,
+  findSessionUserById,
+  findStaffAccount,
   findUserByEmail,
+  isUniqueViolation,
   listStaffAccounts,
   setStaffDisabled,
+  updateStaffAccount,
 } from '../db.js';
 import { hashPassword, hashToken, newToken } from '../security.js';
 import { sendStaffInviteEmail } from '../email.js';
 import { recordAudit } from '../audit.js';
 
 /**
- * GET   /api/admin/staff  - staff accounts
- * POST  /api/admin/staff  - create one and email a 24 hour set-password link
- * PATCH /api/admin/staff  - disable or re-enable one
+ * GET   /api/admin/staff         - staff accounts, and whether this viewer may
+ *                                  change them
+ * POST  /api/admin/staff         - invite one: create it and email a 24 hour
+ *                                  set-password link
+ * PATCH /api/admin/staff         - disable or re-enable one
+ * PATCH /api/admin/staff-detail  - rewrite one's name, email or role
  *
- * Admin only. `requireStaff` re-reads the account row, so a disabled admin
- * cannot keep using a token they already hold.
+ * Reading the list is open to every administrator; the three writes are not.
+ * Only the super administrator - the single address in `SUPER_ADMIN_EMAIL`,
+ * defaulting to the seeded `admin@peoplegrowthafrica.com` - may invite,
+ * disable or edit. That is checked here on the server for each request, so
+ * another administrator calling the endpoint directly changes nothing even
+ * though the panel hides the buttons.
  */
 
 export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async (req, res) => {
-  const session = await requireStaff(req, res, { adminOnly: true });
+  const path = (req.url ?? '').split('?')[0]?.replace(/\/+$/, '') ?? '';
+  const editingDetails = path.endsWith('/staff-detail');
 
   if (req.method === 'GET') {
-    sendJson(res, 200, { staff: await listStaffAccounts() });
+    const session = await requireStaff(req, res, { adminOnly: true });
+    const viewer = await findSessionUserById(session.userId);
+    sendJson(res, 200, {
+      staff: await listStaffAccounts(),
+      canManage: isSuperAdminEmail(viewer?.email),
+    });
     return;
   }
 
-  if (req.method === 'POST') {
+  const { session, user } = await requireSuperAdmin(req, res);
+
+  if (req.method === 'POST' && !editingDetails) {
     const data = parseInput(staffCreateSchema, parseJsonBody(req));
     if (await findUserByEmail(data.email)) {
       throw new ApiError(409, 'email_in_use', 'An account with that email already exists.');
@@ -48,20 +72,7 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       throw new ApiError(500, 'staff_not_created', 'The account could not be created. Try again.');
     }
 
-    const token = newToken();
-    await createStaffInvite({
-      email: data.email,
-      role: data.role,
-      tokenHash: hashToken(token),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      createdBy: session.userId,
-    });
-    const emailSent = await sendStaffInviteEmail(
-      data.email,
-      data.name,
-      token,
-      data.role === 'content_manager' ? 'content' : 'admin',
-    );
+    const emailSent = await invite(data.email, data.name, data.role, user.id);
     await recordAudit('staff_created', {
       userId: session.userId,
       detail: `${data.email} as ${data.role}`,
@@ -74,6 +85,83 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       message: emailSent
         ? 'The account was created and the set-password link is on its way.'
         : 'The account was created, but the invitation email could not be sent. Check Resend and ask them to use Forgot password.',
+    });
+    return;
+  }
+
+  if (editingDetails) {
+    const data = parseInput(staffEditSchema, parseJsonBody(req));
+
+    const target = await findStaffAccount(data.id);
+    if (!target) {
+      throw new ApiError(404, 'staff_not_found', 'That staff account no longer exists.');
+    }
+
+    // A legacy row still says 'manager', which is not one of the roles this
+    // form offers: saving would quietly convert it. The migration owns that
+    // decision, so refuse rather than guess.
+    if (target.role === 'manager') {
+      throw new ApiError(
+        409,
+        'legacy_role',
+        'That account still holds the legacy manager role. Run the role migration before editing it.',
+      );
+    }
+
+    const isSelf = data.id === user.id;
+    const emailChanged = data.email.trim().toLowerCase() !== target.email.trim().toLowerCase();
+    const roleChanged = data.role !== target.role;
+
+    // A super administrator may correct their own name, but not hand away or
+    // rewrite the account that is allowed to do this: the title is the address,
+    // and changing it here would lock the panel out of its own controls.
+    if (isSelf && (emailChanged || roleChanged)) {
+      throw new ApiError(
+        400,
+        'cannot_edit_self',
+        'You can change your own name here, but not your email or role.',
+      );
+    }
+
+    const saved = await updateStaffAccount({
+      id: data.id,
+      name: data.name ? data.name : null,
+      email: data.email,
+      role: data.role,
+      // A new address has to be proved, and the set-password link is how this
+      // panel already does that: the flag forces the screen, the invite opens it.
+      resetPassword: emailChanged,
+    }).catch((error: unknown) => {
+      if (isUniqueViolation(error)) {
+        throw new ApiError(409, 'email_in_use', 'Another account already uses that email.', {
+          email: 'Another account already uses that email.',
+        });
+      }
+      throw error;
+    });
+
+    if (!saved) {
+      throw new ApiError(404, 'staff_not_found', 'That staff account no longer exists.');
+    }
+
+    let emailSent = false;
+    if (emailChanged) {
+      emailSent = await invite(data.email, data.name || data.email, data.role, user.id);
+    }
+
+    await recordAudit('staff_updated', {
+      userId: session.userId,
+      detail: `${target.email} -> ${data.email} as ${data.role}${emailChanged ? ' (re-invited)' : ''}`,
+    });
+
+    sendJson(res, 200, {
+      ok: true,
+      emailSent,
+      message: emailChanged
+        ? emailSent
+          ? 'Details saved. A set-password link is on its way to the new address.'
+          : 'Details saved, but the invitation email could not be sent. Ask them to use Forgot password.'
+        : 'Details saved.',
     });
     return;
   }
@@ -93,3 +181,24 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
   });
   sendJson(res, 200, { ok: true });
 });
+
+/**
+ * A 24 hour set-password link, emailed. Returns whether the email left the
+ * server; the account is usable either way, through Forgot password.
+ */
+async function invite(
+  email: string,
+  name: string,
+  role: 'admin' | 'project_manager' | 'hr_manager' | 'content_manager',
+  createdBy: string,
+): Promise<boolean> {
+  const token = newToken();
+  await createStaffInvite({
+    email,
+    role,
+    tokenHash: hashToken(token),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    createdBy,
+  });
+  return sendStaffInviteEmail(email, name, token, role === 'content_manager' ? 'content' : 'admin');
+}

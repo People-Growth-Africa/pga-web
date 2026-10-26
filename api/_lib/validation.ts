@@ -573,6 +573,24 @@ export const staffUpdateSchema = z.strictObject({
   disabled: z.boolean(),
 });
 
+/**
+ * The details an edit writes. All three travel together: the dialog starts
+ * from the current values, so a save always states the whole account rather
+ * than a patch that could leave two fields disagreeing.
+ */
+export const staffEditSchema = z.strictObject({
+  id: z.string().uuid('Choose a staff account.'),
+  // Optional here even though an invite requires one: accounts created before
+  // names were collected still need their role or address corrected.
+  name: z
+    .string()
+    .trim()
+    .max(NAME_MAX, `Full name must be ${NAME_MAX} characters or fewer.`)
+    .default(''),
+  email,
+  role: z.enum(STAFF_ROLE_VALUES),
+});
+
 export const staffInviteAcceptSchema = z.strictObject({
   token: z.string().trim().min(20, 'That invitation link is not valid.').max(200),
   password,

@@ -11,6 +11,8 @@
  *   - a project or HR manager can read the dashboard and data lists but not edit
  *     content or manage staff;
  *   - an administrator can do both jobs, using the administrator cookie;
+ *   - only the super administrator may invite, disable or edit staff accounts,
+ *     even though every administrator can read the list;
  *   - one portal's token cannot be replayed at the other portal.
  *
  * Test accounts carry an obvious prefix and are removed at the end.
@@ -23,6 +25,7 @@ const PASSWORD = 'Quiet-Harbour-7712';
 
 const STAFF = {
   admin: `${EMAIL_PREFIX}-admin@example.com`,
+  otherAdmin: `${EMAIL_PREFIX}-admin2@example.com`,
   project: `${EMAIL_PREFIX}-project@example.com`,
   hr: `${EMAIL_PREFIX}-hr@example.com`,
   content: `${EMAIL_PREFIX}-content@example.com`,
@@ -87,6 +90,9 @@ async function main() {
     process.exit(1);
   }
   process.env.AUTH_ENABLED = 'true';
+  // The suite's own administrator plays the super administrator, so the test
+  // does not depend on the real seeded address existing in this database.
+  process.env.SUPER_ADMIN_EMAIL = STAFF.admin;
   process.env.JWT_SECRET ??= 'test-roles-secret-that-is-long-enough-0123456789';
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -98,6 +104,7 @@ async function main() {
   const accounts = Object.entries(STAFF);
   const roles = {
     admin: 'admin',
+    otherAdmin: 'admin',
     project: 'project_manager',
     hr: 'hr_manager',
     content: 'content_manager',
@@ -321,6 +328,62 @@ async function main() {
       'An HR manager also cannot edit content',
       hrLogin.status === 200 && hrPosts.status === 403 && hrPosts.json?.code === 'admin_only',
       `${hrLogin.status}/${hrPosts.status}`,
+    );
+
+    // --- Only one administrator manages staff accounts ---------------------
+    const superAdminStaff = await call(baseUrl, '/api/admin/staff', {
+      cookie: `pga_admin_session=${adminLogin.admin}`,
+    });
+    check(
+      14,
+      'The super administrator is told it may manage staff accounts',
+      superAdminStaff.status === 200 && superAdminStaff.json?.canManage === true,
+      `${superAdminStaff.status}, canManage ${superAdminStaff.json?.canManage}`,
+    );
+
+    const otherAdminLogin = await call(baseUrl, '/api/admin/login', {
+      method: 'POST',
+      body: { email: STAFF.otherAdmin, password: PASSWORD },
+    });
+    const otherAdminCookie = `pga_admin_session=${otherAdminLogin.admin}`;
+    const otherAdminStaff = await call(baseUrl, '/api/admin/staff', {
+      cookie: otherAdminCookie,
+    });
+    const otherAdminInvite = await call(baseUrl, '/api/admin/staff', {
+      method: 'POST',
+      cookie: otherAdminCookie,
+      body: {
+        name: 'Should Not Exist',
+        email: `${EMAIL_PREFIX}-nope@example.com`,
+        role: 'content_manager',
+      },
+    });
+    const otherAdminDisable = await call(baseUrl, '/api/admin/staff', {
+      method: 'PATCH',
+      cookie: otherAdminCookie,
+      body: { id: ids[0], disabled: true },
+    });
+    const otherAdminEdit = await call(baseUrl, '/api/admin/staff-detail', {
+      method: 'PATCH',
+      cookie: otherAdminCookie,
+      body: {
+        id: ids[0],
+        name: 'Renamed By Nobody',
+        email: STAFF.project,
+        role: 'project_manager',
+      },
+    });
+    check(
+      15,
+      'A second administrator can read the list but cannot invite, disable or edit',
+      otherAdminLogin.status === 200 &&
+        otherAdminStaff.status === 200 &&
+        otherAdminStaff.json?.canManage === false &&
+        otherAdminInvite.status === 403 &&
+        otherAdminInvite.json?.code === 'super_admin_only' &&
+        otherAdminDisable.status === 403 &&
+        otherAdminEdit.status === 403,
+      `${otherAdminStaff.status}/${otherAdminInvite.status}/${otherAdminDisable.status}/${otherAdminEdit.status}`,
     );
   } finally {
     if (ids.length > 0) {

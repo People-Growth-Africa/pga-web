@@ -102,6 +102,8 @@ export function isAdminRole(role: Role): boolean {
 
 export type UserRow = {
   id: string;
+  /** Null on accounts that were created without one (a legacy or seeded row). */
+  name: string | null;
   email: string;
   role: Role;
   password_hash: string;
@@ -114,9 +116,9 @@ export type UserRow = {
 export type SessionUserRow = Omit<UserRow, 'password_hash'>;
 
 const USER_COLUMNS =
-  'id, email, role, password_hash, email_verified, token_version, must_change_password, disabled_at';
+  'id, name, email, role, password_hash, email_verified, token_version, must_change_password, disabled_at';
 const SESSION_USER_COLUMNS =
-  'id, email, role, email_verified, token_version, must_change_password, disabled_at';
+  'id, name, email, role, email_verified, token_version, must_change_password, disabled_at';
 
 export async function createTalentUser(input: {
   email: string;
@@ -1156,6 +1158,56 @@ export async function setStaffRole(id: string, role: StaffRole): Promise<boolean
     sql`SELECT set_config('pga.staff_write', 'on', true)`,
     sql`UPDATE users SET role = ${role}, token_version = token_version + 1
          WHERE id = ${id} RETURNING id`,
+  ]);
+  const rows = result[1] as { id: string }[] | undefined;
+  return Boolean(rows?.[0]);
+}
+
+/** One staff row by id, for the edit endpoint to compare against. */
+export async function findStaffAccount(id: string): Promise<StaffAccountRow | null> {
+  return queryOne<StaffAccountRow>(
+    `SELECT id, name, email, role, disabled_at, must_change_password,
+            ${isoTimestamp('users', 'created_at')} AS created_at
+       FROM users
+      WHERE id = $1
+        AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager')`,
+    [id],
+  );
+}
+
+/**
+ * Edits the details an administrator may change on another staff account.
+ *
+ * Runs in the same staff-write transaction as `createStaffAccount` and
+ * `setStaffRole`: the trigger on `users` refuses a role written from anywhere
+ * else, so the switch is what lets a role change through at all.
+ *
+ * `token_version` always moves, because every one of these edits ends the
+ * account's existing sessions — a rename is harmless, but a role or address
+ * change must not leave a cookie in the old role's hands. `resetPassword` sets
+ * the flag the portal reads to force the set-password screen; the caller sends
+ * the invitation that makes it reachable.
+ */
+export async function updateStaffAccount(input: {
+  id: string;
+  name: string | null;
+  email: string;
+  role: StaffRole;
+  resetPassword: boolean;
+}): Promise<boolean> {
+  const result = await sql.transaction([
+    sql`SELECT set_config('pga.staff_write', 'on', true)`,
+    sql`UPDATE users
+           SET name = ${input.name},
+               email = ${input.email},
+               role = ${input.role},
+               token_version = token_version + 1,
+               must_change_password = CASE
+                 WHEN ${input.resetPassword} THEN true
+                 ELSE must_change_password END
+         WHERE id = ${input.id}
+           AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager')
+         RETURNING id`,
   ]);
   const rows = result[1] as { id: string }[] | undefined;
   return Boolean(rows?.[0]);
