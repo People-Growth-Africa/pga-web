@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { canonicalUrl, blogMeta } from '../lib/pageMeta';
 
@@ -10,6 +10,7 @@ import SEO from '../components/SEO';
 import NewsletterSignup from '../components/NewsletterSignup';
 import { useContent } from '../hooks/useContent';
 import { useLivePosts } from '../hooks/useLivePosts';
+import { COPIED_FEEDBACK_MS, copyText } from '../lib/clipboard';
 import { isSafeHttpUrl } from '../lib/content';
 import {
   findBlog,
@@ -21,6 +22,18 @@ export default function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>();
   const { status: contentStatus, entries } = useContent();
   const live = useLivePosts();
+
+  // Copying says so out loud: the button turns into a tick and a short-lived
+  // "Link copied" appears beside the row, then both go back on their own.
+  const [linkCopied, setLinkCopied] = useState(false);
+  const copiedTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   const allPosts = useMemo(() => mergeBlogPosts(entries, live.posts), [entries, live.posts]);
   const categories = useMemo(() => mergeBlogCategories(allPosts), [allPosts]);
@@ -98,6 +111,17 @@ export default function BlogPostPage() {
   // page without a window, and a share link that depends on one would ship an
   // empty `url=` to every crawler and scraper that reads the prerendered HTML.
   const shareUrl = canonicalUrl(`/blog/${post.slug}`);
+
+  async function copyShareLink() {
+    try {
+      await copyText(shareUrl);
+    } catch {
+      return; // The browser refused the copy: leave the button as it was.
+    }
+    setLinkCopied(true);
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setLinkCopied(false), COPIED_FEEDBACK_MS);
+  }
 
   // Simple markdown-ish renderer for the content
   const renderContent = (content: string) => {
@@ -335,7 +359,7 @@ export default function BlogPostPage() {
                     if (navigator.share) {
                       void navigator.share({ title: post.title, url: shareUrl }).catch(() => {});
                     } else {
-                      void navigator.clipboard.writeText(shareUrl);
+                      void copyShareLink();
                     }
                   }}
                   className="w-10 h-10 rounded-full bg-mint flex items-center justify-center text-[#E1306C] hover:bg-[#E1306C] hover:text-white transition-colors"
@@ -360,15 +384,36 @@ export default function BlogPostPage() {
                   </svg>
                 </a>
                 <button
-                  onClick={() => { navigator.clipboard.writeText(shareUrl); }}
-                  className="w-10 h-10 rounded-full bg-mint flex items-center justify-center hover:bg-brand-green hover:text-white text-deep-green transition-colors"
-                  aria-label="Copy link"
+                  type="button"
+                  onClick={() => void copyShareLink()}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                    linkCopied
+                      ? 'bg-brand-green text-white'
+                      : 'bg-mint text-deep-green hover:bg-brand-green hover:text-white'
+                  }`}
+                  aria-label={linkCopied ? 'Link copied' : 'Copy link'}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                  </svg>
+                  {linkCopied ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                    </svg>
+                  )}
                 </button>
+                <span
+                  role="status"
+                  className={
+                    linkCopied
+                      ? 'self-center font-[family-name:var(--font-body)] text-sm font-semibold text-brand-green'
+                      : 'sr-only'
+                  }
+                >
+                  {linkCopied ? 'Link copied' : ''}
+                </span>
               </div>
             </div>
           </AnimateOnScroll>

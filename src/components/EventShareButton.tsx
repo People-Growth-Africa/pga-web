@@ -1,25 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { COPIED_FEEDBACK_MS, copyText } from '../lib/clipboard';
 
 const SITE_URL = 'https://www.peoplegrowthafrica.com';
 
 function eventUrl(slug: string): string {
   return `${SITE_URL}/events/${slug}`;
-}
-
-function copyText(value: string): Promise<void> {
-  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
-  return new Promise((resolve, reject) => {
-    const field = document.createElement('textarea');
-    field.value = value;
-    field.setAttribute('readonly', '');
-    field.style.position = 'fixed';
-    field.style.opacity = '0';
-    document.body.appendChild(field);
-    field.select();
-    const copied = document.execCommand('copy');
-    document.body.removeChild(field);
-    copied ? resolve() : reject(new Error('copy failed'));
-  });
 }
 
 type Props = {
@@ -34,7 +19,17 @@ export default function EventShareButton({ slug, title, labelled = false }: Prop
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
+  const copiedTimer = useRef<number | null>(null);
   const url = eventUrl(slug);
+
+  // The confirmation is a moment, not a state: put the row back once it has
+  // been read, and clear the timer if the card unmounts first.
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -68,10 +63,13 @@ export default function EventShareButton({ slug, title, labelled = false }: Prop
   async function copy() {
     try {
       await copyText(url);
-      setCopied(true);
     } catch {
       setOpen(false);
+      return;
     }
+    setCopied(true);
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
   }
 
   const whatsapp = `https://wa.me/?text=${encodeURIComponent(`${title} ${url}`)}`;
@@ -112,11 +110,31 @@ export default function EventShareButton({ slug, title, labelled = false }: Prop
             type="button"
             role="menuitem"
             onClick={() => void copy()}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left font-[family-name:var(--font-body)] text-sm text-charcoal hover:bg-cream focus:outline-none focus-visible:bg-cream cursor-pointer"
+            className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left font-[family-name:var(--font-body)] text-sm hover:bg-cream focus:outline-none focus-visible:bg-cream cursor-pointer ${
+              copied ? 'font-semibold text-brand-green' : 'text-charcoal'
+            }`}
           >
-            {copied ? 'Link copied' : 'Copy link'}
-            <span className="text-[0.72rem] font-semibold text-brand-green">{copied ? 'Done' : '⌘C'}</span>
+            {copied ? (
+              <span className="inline-flex items-center gap-2">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4 fill-none stroke-current stroke-2 stroke-linecap-round"
+                  aria-hidden="true"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Link copied
+              </span>
+            ) : (
+              'Copy link'
+            )}
+            {!copied && (
+              <span className="text-[0.72rem] font-semibold text-brand-green">⌘C</span>
+            )}
           </button>
+          <span role="status" className="sr-only">
+            {copied ? 'Link copied to the clipboard' : ''}
+          </span>
           <a role="menuitem" href={whatsapp} target="_blank" rel="noopener noreferrer" className="block rounded-xl px-3 py-2.5 font-[family-name:var(--font-body)] text-sm text-charcoal hover:bg-cream focus:outline-none focus-visible:bg-cream">
             WhatsApp
           </a>
