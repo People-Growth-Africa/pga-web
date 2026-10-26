@@ -47,7 +47,7 @@ Almost everything you'd want to update sits in three files, and you only ever ch
 
 | What you want to change | Where to find it |
 | :--- | :--- |
-| Blog articles and events | The content panel at `/admin` — stored in the database, no deploy needed |
+| Blog articles and events | The content panel at `/admin/content` (administrators) or `/content` (content managers) — stored in the database, no deploy needed |
 | The 15 service areas | `src/data/services.ts` |
 | Wording on a page itself | `src/pages/` — one file per page |
 | Photographs, logos and social share image | `public/images/` |
@@ -56,10 +56,15 @@ Almost everything you'd want to update sits in three files, and you only ever ch
 
 ### Adding a new article or event
 
-Articles and events are no longer written in code. Sign in to `/admin` with a manager
-account, choose **New post**, and fill in the title, category, summary and body. Publishing
-makes the page live within about a minute: it appears on `/blog` (or `/events`), in the
-sitemap and in the RSS-style feeds without a redeploy.
+Articles and events are no longer written in code. Administrators sign in at `/admin/login`
+and content managers at `/content/login`, choose **New post**, and fill in the title,
+category, summary and body. Publishing makes the page live within about a minute: it appears
+on `/blog` (or `/events`), in the sitemap and in the RSS-style feeds without a redeploy.
+
+Content managers can only reach the content desk. Administrators, project managers and HR
+managers use the administrator panel; only administrators can create staff accounts, and only
+administrators and content managers can edit posts and events. These limits are enforced by
+the API as well as hidden in the interface.
 
 The slug you choose becomes the web address, so `my-new-article` becomes
 `/blog/my-new-article`. Slugs cannot be reused by a second post.
@@ -67,11 +72,12 @@ The slug you choose becomes the web address, so `my-new-article` becomes
 Nothing is published by default. The site ships with no articles or events, and both
 sections show a friendly empty state until the first real one is ready.
 
-The panel signs a manager out after **an hour with no activity**, and after **12 hours**
-since sign-in however busy they were. Writing counts as activity, so a long editing
-session is not interrupted; stepping away for lunch is. When the session ends mid-edit
-the panel returns to the sign-in page and says why. **Sign out** sits in the strip at the
-top of the panel, next to a link back to the public site.
+The panel signs a staff member out after **30 minutes with no activity**, and after **8
+hours** since sign-in however busy they were. Writing counts as activity, so a long editing
+session is not interrupted; stepping away for lunch is. When the session ends mid-edit the
+panel returns to that portal's sign-in page and says why, then takes the person back to the
+page they were on. **Sign out** sits at the bottom of the panel sidebar, next to a link back
+to the public site.
 
 ### Pictures
 

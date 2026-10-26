@@ -1,5 +1,5 @@
 import { endpoint, sendJson } from '../http.js';
-import { requireStaff } from '../staff.js';
+import { requireAdminData } from '../staff.js';
 import { parseInput, statsQuerySchema } from '../validation.js';
 import { trafficDaily, trafficTop, trafficTotals } from '../db.js';
 import { previousWindow, rangeWindow } from '../dates.js';
@@ -11,7 +11,7 @@ import { previousWindow, rangeWindow } from '../dates.js';
  * hashes are not part of any response.
  */
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
-  await requireStaff(req, res);
+  await requireAdminData(req, res);
 
   const parsed = parseInput(statsQuerySchema, { range: req.query?.range });
   const { from, to } = rangeWindow(parsed.range);

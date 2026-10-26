@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { ApiError } from './http.js';
-import { findSessionUserById, isAdminRole, isStaffRole, type Role } from './db.js';
+import { findSessionUserById, isAdminPortalRole, isAdminRole, type Role } from './db.js';
 import {
   clearSessionCookie,
   hasSessionCookie,
@@ -11,29 +11,36 @@ import {
 } from './session.js';
 
 /**
- * Server-side staff authorization.
+ * Server-side authorization for the administrator portal.
  *
- * `manager` is the legacy name for an administrator. The dashboard and data
- * lists are open to all staff; staff account management is admin only. The role
- * always comes from the signed session and is re-checked against the row, so a
- * removed or disabled account stops working immediately.
+ * This guard reads the administrator cookie only. A content manager session is
+ * a different cookie with a different audience, so even if one is present it
+ * does not authenticate this portal. The role is then re-read from the account
+ * row, so a removed, demoted or disabled account stops working immediately.
+ *
+ * Dashboard and data lists are open to every administrator-portal role; staff
+ * account management is admin only.
  */
 export async function requireStaff(
   req: VercelRequest,
   res: VercelResponse,
   options: { adminOnly?: boolean } = {},
 ): Promise<SessionClaims> {
-  const session = await readSession(req);
+  const session = await readSession(req, 'admin');
 
   if (!session) {
-    if (hasSessionCookie(req)) {
+    const contentSession = await readSession(req, 'content');
+    if (contentSession?.role === 'content_manager') {
+      throw new ApiError(403, 'content_only', 'This area is for administrator-portal accounts.');
+    }
+    if (hasSessionCookie(req, 'admin')) {
       throw new ApiError(401, 'session_expired', 'Your session expired. Sign in again to carry on.');
     }
     throw new ApiError(401, 'sign_in_required', 'Sign in with a staff account to continue.');
   }
 
-  if (!isStaffRole(session.role)) {
-    throw new ApiError(403, 'staff_only', 'This area is for staff accounts.');
+  if (!isAdminPortalRole(session.role)) {
+    throw new ApiError(403, 'staff_only', 'This area is for administrator-portal accounts.');
   }
   if (options.adminOnly && !isAdminRole(session.role)) {
     throw new ApiError(403, 'admin_only', 'Only an administrator can do that.');
@@ -44,9 +51,10 @@ export async function requireStaff(
     !user ||
     user.disabled_at !== null ||
     user.role !== session.role ||
+    !isAdminPortalRole(user.role) ||
     user.token_version !== session.tokenVersion
   ) {
-    clearSessionCookie(req, res);
+    clearSessionCookie(req, res, 'admin');
     throw new ApiError(401, 'session_expired', 'Your session ended. Sign in again.');
   }
 
@@ -58,8 +66,35 @@ export async function requireStaff(
     );
   }
 
-  await refreshManagerSession(req, res, session);
+  await refreshManagerSession(req, res, session, 'admin');
   return session;
+}
+
+const ADMIN_DATA_ROLES = new Set(['admin', 'project_manager', 'hr_manager']);
+
+/**
+ * Personal-data and aggregate dashboard routes. This is an explicit allowlist,
+ * not "every staff role": a future role is excluded until someone deliberately
+ * adds it here. Content managers and legacy manager rows never pass.
+ */
+export async function requireAdminData(
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<SessionClaims> {
+  const session = await requireStaff(req, res);
+  if (!ADMIN_DATA_ROLES.has(session.role)) {
+    throw new ApiError(403, 'admin_data_only', 'This data is for administrator-portal accounts.');
+  }
+  return session;
+}
+
+/** The dashboard's content oversight is deliberately narrower than the data
+ * lists: only the admin role may change what the public sees. */
+export async function requireAdmin(
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<SessionClaims> {
+  return requireStaff(req, res, { adminOnly: true });
 }
 
 export type { Role };

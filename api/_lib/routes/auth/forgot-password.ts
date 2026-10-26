@@ -1,4 +1,4 @@
-import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../../http.js';
+import { clientIp, endpoint, parseJsonBody, sendJson } from '../../http.js';
 import { forgotPasswordSchema, parseInput } from '../../validation.js';
 import { findUserByEmail } from '../../db.js';
 import { issueToken } from '../../auth-tokens.js';
@@ -24,16 +24,10 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   // something an unauthenticated caller gets to learn.
   if (user) {
     const token = await issueToken(user.id, 'reset');
-    // A rejected send has to break the silence: someone locked out of their
-    // account waiting on a link that was never posted is worse than a 503.
     const sent = await sendPasswordResetEmail(user.email, token);
-    if (!sent) {
-      throw new ApiError(
-        503,
-        'email_send_failed',
-        'We could not send the email just now. Try again in a moment.',
-      );
-    }
+    // The answer is identical even when the provider is down. Log only the
+    // fact, never the recipient, message or link.
+    if (!sent) console.error('[auth] password reset email send failed');
     await recordAuthEvent('password_reset_requested', { userId: user.id, ip });
   } else {
     await recordAuthEvent('password_reset_unknown_email', { ip });

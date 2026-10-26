@@ -36,6 +36,7 @@ export const TALENT_FIELDS: string[] = [
   'Hospitality & Tourism',
   'Social Work & Community Development',
   'Public Administration',
+  'Technical & Vocational Training',
   'Other',
 ];
 

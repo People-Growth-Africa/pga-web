@@ -56,7 +56,7 @@ for (const row of existingChecks) {
 }
 await sql.query(
   `ALTER TABLE users ADD CONSTRAINT users_role_check
-     CHECK (role IN ('talent', 'employer', 'manager', 'admin', 'project_manager', 'hr_manager'))`,
+     CHECK (role IN ('talent', 'employer', 'manager', 'admin', 'project_manager', 'hr_manager', 'content_manager'))`,
 );
 
 const STATEMENTS = [
@@ -73,7 +73,7 @@ const STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS staff_invites (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
        email citext NOT NULL,
-       role text NOT NULL CHECK (role IN ('admin', 'project_manager', 'hr_manager')),
+       role text NOT NULL CHECK (role IN ('admin', 'project_manager', 'hr_manager', 'content_manager')),
        token_hash text NOT NULL,
        expires_at timestamptz NOT NULL,
        used_at timestamptz,
@@ -165,6 +165,31 @@ for (const [label, statement] of STATEMENTS) {
   }
   console.log(`  ok  ${label}`);
 }
+
+/*
+ * `CREATE TABLE IF NOT EXISTS` does not widen a check on an existing table, so
+ * an older staff_invites table would keep rejecting content_manager invites.
+ * Find the role check by its definition rather than its generated name and
+ * replace it, the same way the users check above is handled.
+ */
+const inviteRoleChecks = await sql.query(
+  `SELECT c.conname
+     FROM pg_constraint c
+     JOIN pg_class t ON t.oid = c.conrelid
+     JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public'
+      AND t.relname = 'staff_invites'
+      AND c.contype = 'c'
+      AND pg_get_constraintdef(c.oid) LIKE '%role%'`,
+);
+for (const row of inviteRoleChecks) {
+  await sql.query(`ALTER TABLE staff_invites DROP CONSTRAINT IF EXISTS "${row.conname}"`);
+}
+await sql.query(
+  `ALTER TABLE staff_invites ADD CONSTRAINT staff_invites_role_check
+     CHECK (role IN ('admin', 'project_manager', 'hr_manager', 'content_manager'))`,
+);
+console.log('  ok  staff invites accept content manager accounts');
 
 /*
  * The public signup guard. Talent and employer rows are always allowed; a

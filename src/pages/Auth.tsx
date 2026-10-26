@@ -37,7 +37,10 @@ const ROLE_CARDS: { value: Role; title: string; description: string }[] = [
   { value: 'employer', title: 'Employer', description: 'Hire talent or book a consultation' },
 ];
 
-const PANEL_COPY: Record<'login' | 'talent' | 'employer' | 'manager', { headline: string; text: string }> = {
+const PANEL_COPY: Record<
+  'login' | 'talent' | 'employer' | 'manager' | 'content_manager',
+  { headline: string; text: string }
+> = {
   login: {
     headline: 'Welcome back.',
     text: 'Log in to pick up where you left off.',
@@ -56,6 +59,10 @@ const PANEL_COPY: Record<'login' | 'talent' | 'employer' | 'manager', { headline
   manager: {
     headline: 'Welcome back.',
     text: 'Log in to manage and publish content for the site.',
+  },
+  content_manager: {
+    headline: 'Welcome back.',
+    text: 'Log in to write, publish and update the site’s stories and events.',
   },
 };
 

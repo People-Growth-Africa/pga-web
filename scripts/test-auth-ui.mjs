@@ -563,13 +563,14 @@ async function main() {
         .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
         .setSubject(managerRow.id)
         .setIssuer('peoplegrowthafrica.com')
-        .setAudience('pga-auth')
+        .setAudience('pga-admin')
         .setIssuedAt(nowSeconds)
         .setExpirationTime(nowSeconds + 3600)
         .sign(new TextEncoder().encode(process.env.JWT_SECRET));
       await context.addCookies([
         {
-          name: process.env.VERCEL_ENV === 'production' ? '__Host-session' : 'session',
+          name:
+            process.env.VERCEL_ENV === 'production' ? '__Host-pga-admin' : 'pga_admin_session',
           value: staleToken,
           url: baseUrl,
           httpOnly: true,
@@ -712,10 +713,16 @@ async function main() {
       };
 
       await page.goto(`${baseUrl}/events`, { waitUntil: 'networkidle' });
+      // Events now have pages of their own: the list card links to one, and the
+      // registration form opens from the button on that page.
+      await page.getByRole('link', { name: /Register free|Apply for a place/ }).first().click();
+      await page.waitForURL(/\/events\/./, { timeout: 15000 });
       await page.getByRole('button', { name: /Register free|Apply for a place/ }).first().click();
       await page.getByLabel('Full name *').fill('Ada Lead');
-      await page.getByLabel('Work email *').fill(leadEmails.event);
-      await page.getByLabel('Organisation / company *').fill('Lead Test Ltd');
+      await page.getByLabel('Email *').fill(leadEmails.event);
+      await page.getByLabel('Phone / WhatsApp *').fill('+234 800 000 0001');
+      await page.getByLabel(/Organisation \/ company/).fill('Lead Test Ltd');
+      await page.getByLabel('Notes *').fill('I would like to meet the team.');
       const registrationSent = await submit(
         page,
         page.getByRole('button', { name: /Reserve my free place|Apply for a place/ }).last(),

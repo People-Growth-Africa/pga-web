@@ -20,6 +20,9 @@ export interface EventItem {
   duration: string;
   format: string;
   description: string;
+  /** Manager-written copy for the registration form, when one is set. */
+  registrationIntro?: string | null;
+  registrationButtonLabel?: string | null;
   detailedAgenda?: string[];
   learningOutcomes: string[];
   targetAudience: string;

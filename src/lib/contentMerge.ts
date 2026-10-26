@@ -331,6 +331,8 @@ export function eventFromLive(post: LivePost, today: string = todayInLagos()): E
     origin: 'live',
     detailHref: `/events/${post.slug}`,
     registrationUrl: post.registrationUrl,
+    registrationIntro: post.registrationIntro,
+    registrationButtonLabel: post.registrationButtonLabel,
     eventEndDate: endDate,
     startTime,
     imageUrl: post.coverImageThumbUrl ?? post.coverImageUrl,

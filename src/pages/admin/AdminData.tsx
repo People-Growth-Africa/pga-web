@@ -1,17 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
-import { useAuth } from '../../hooks/useAuth';
-import { authRequest, isAdminRole, NETWORK_FAILURE, onSessionEnded } from '../../lib/authClient';
+import AdminShell from '../../components/admin/AdminShell';
+import { authRequest, NETWORK_FAILURE, onSessionEnded } from '../../lib/authClient';
 
 /**
- * /admin/data - all three data lists in one page, because a staff member
- * checking today's signups should not have to open three screens.
+ * /admin/data - all three personal-data lists in one screen.
  *
- * The table, the count, the search and the export all use the same server side
- * filters. The browser never receives more than one page except when it asks for
- * the CSV, which the server caps and audits.
+ * The table, count, search and export all use the same server-side filters. The
+ * browser never receives more than one page except when it asks for the CSV,
+ * which the server caps, audits and marks no-store.
  */
 
 type DataType = 'registrations' | 'subscriptions' | 'consultations';
@@ -24,10 +23,10 @@ type DataResponse = {
   events?: { event_slug: string; total: number }[];
 };
 
-const TABS: { value: DataType; label: string }[] = [
-  { value: 'registrations', label: 'Event registrations' },
-  { value: 'subscriptions', label: 'Email subscriptions' },
-  { value: 'consultations', label: 'Consultation bookings' },
+const TABS: { value: DataType; label: string; search: string }[] = [
+  { value: 'registrations', label: 'Event registrations', search: 'Name or email' },
+  { value: 'subscriptions', label: 'Email subscriptions', search: 'Email' },
+  { value: 'consultations', label: 'Consultation bookings', search: 'Name or email' },
 ];
 
 const COLUMNS: Record<DataType, { key: string; label: string }[]> = {
@@ -63,17 +62,14 @@ const COLUMNS: Record<DataType, { key: string; label: string }[]> = {
 
 const PAGE_SIZE = 25;
 
-function formatDate(value: string | null): string {
-  if (!value) return '—';
+function formatDateParts(value: string | null): { date: string; time: string } | null {
+  if (!value) return null;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  if (Number.isNaN(date.getTime())) return { date: value, time: '' };
+  return {
+    date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    time: date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+  };
 }
 
 export default function AdminData() {
@@ -91,11 +87,13 @@ export default function AdminData() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { user } = useAuth();
   const navigate = useNavigate();
 
   const endSession = useCallback(() => {
-    navigate('/admin/login?expired=1', { replace: true });
+    navigate('/admin/login?expired=1', {
+      replace: true,
+      state: { from: '/admin/data' },
+    });
   }, [navigate]);
   useEffect(() => onSessionEnded(() => endSession()), [endSession]);
 
@@ -179,78 +177,74 @@ export default function AdminData() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const columns = COLUMNS[type];
+  const allRegistrations = useMemo(
+    () => events.reduce((sum, item) => sum + item.total, 0),
+    [events],
+  );
+  const activeTab = TABS.find((tab) => tab.value === type) ?? TABS[0];
 
   return (
     <>
       <SEO title="Data | People Growth Africa" description="Staff data lists and CSV export." />
-      <section className="min-h-screen bg-cream/50 pt-[130px] pb-20">
-        <div className="mx-auto max-w-[1200px] px-6">
-          <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-charcoal/10 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <p className="text-[0.82rem] text-charcoal/70">
-              Signed in as <span className="font-semibold text-charcoal break-all">{user?.email}</span>
-              <span className="mt-0.5 block text-[0.72rem] text-charcoal/45">
-                This is personal data. Do not share these lists outside the team.
-              </span>
-            </p>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              <Link to="/admin/stats" className="min-h-[40px] rounded-full border border-charcoal/15 px-4 py-2 text-sm font-semibold text-charcoal hover:bg-cream">
-                ← Dashboard
-              </Link>
-              {isAdminRole(user?.role) && (
-                <Link to="/admin/content" className="min-h-[40px] rounded-full border border-charcoal/15 px-4 py-2 text-sm font-semibold text-charcoal hover:bg-cream">
-                  Content
-                </Link>
-              )}
-            </div>
-          </div>
-
-          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="mb-2 text-[0.78rem] font-semibold uppercase tracking-wider text-brand-green">Staff</p>
-              <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-charcoal sm:text-4xl">Data</h1>
-              <p className="mt-2 text-charcoal/60">Newest first, 25 per page.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void exportCsv()}
-              disabled={exporting || loading}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-full bg-deep-green px-6 py-3 text-sm font-semibold text-white hover:bg-terracotta disabled:opacity-60"
-            >
-              {exporting ? 'Preparing CSV…' : 'Export CSV'}
-            </button>
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-1 rounded-full border border-charcoal/15 bg-white p-1">
-            {TABS.map((tab) => (
+      <AdminShell
+        title="Data"
+        subtitle="Newest first, 25 per page. This is personal data, do not share it outside the team."
+        actions={
+          <button
+            type="button"
+            onClick={() => void exportCsv()}
+            disabled={exporting || loading}
+            className="inline-flex min-h-[44px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-deep-green px-6 py-2.5 font-[family-name:var(--font-body)] text-[0.9rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta disabled:opacity-60"
+          >
+            {exporting ? 'Preparing CSV…' : 'Export CSV'}
+          </button>
+        }
+      >
+        <div className="mb-5 flex flex-wrap gap-x-7 gap-y-2 border-b border-charcoal/15">
+          {TABS.map((tab) => {
+            const active = type === tab.value;
+            return (
               <button
                 key={tab.value}
                 type="button"
+                role="tab"
+                aria-selected={active}
                 onClick={() => {
                   setType(tab.value);
                   setPage(1);
                   setEventSlug('');
                 }}
-                className={`min-h-[38px] rounded-full px-3 py-2 text-xs font-semibold sm:text-sm ${
-                  type === tab.value ? 'bg-deep-green text-white' : 'text-charcoal/70 hover:bg-cream'
+                className={`-mb-px cursor-pointer border-0 border-b-2 bg-transparent px-0 pb-3 font-[family-name:var(--font-body)] text-[0.92rem] font-semibold transition-colors ${
+                  active
+                    ? 'border-deep-green text-deep-green'
+                    : 'border-transparent text-charcoal/55 hover:text-charcoal'
                 }`}
               >
                 {tab.label}
               </button>
-            ))}
-          </div>
+            );
+          })}
+        </div>
 
-          <div className="mb-5 grid gap-3 rounded-2xl border border-charcoal/10 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="flex flex-col gap-1 text-xs font-semibold text-charcoal/70">
+        <div className="mb-5 rounded-[16px] border border-charcoal/10 bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:p-5">
+          <div
+            className={`grid gap-4 ${
+              type === 'registrations'
+                ? 'lg:grid-cols-[1.35fr_0.8fr_0.8fr_1.1fr]'
+                : 'lg:grid-cols-[1.5fr_0.8fr_0.8fr]'
+            }`}
+          >
+            <label className={labelClass}>
               Search
               <input
                 type="search"
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Search…"
-                className="w-full rounded-[10px] border border-charcoal/20 px-3 py-2 text-sm font-normal focus:border-brand-green focus:outline-none"
+                placeholder={activeTab.search}
+                className={inputClass}
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs font-semibold text-charcoal/70">
+            <label className={labelClass}>
               From
               <input
                 type="date"
@@ -259,10 +253,11 @@ export default function AdminData() {
                   setFrom(event.target.value);
                   setPage(1);
                 }}
-                className="w-full rounded-[10px] border border-charcoal/20 px-3 py-2 text-sm font-normal focus:border-brand-green focus:outline-none"
+                placeholder="mm/dd/yyyy"
+                className={inputClass}
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs font-semibold text-charcoal/70">
+            <label className={labelClass}>
               To
               <input
                 type="date"
@@ -271,11 +266,12 @@ export default function AdminData() {
                   setTo(event.target.value);
                   setPage(1);
                 }}
-                className="w-full rounded-[10px] border border-charcoal/20 px-3 py-2 text-sm font-normal focus:border-brand-green focus:outline-none"
+                placeholder="mm/dd/yyyy"
+                className={inputClass}
               />
             </label>
-            {type === 'registrations' ? (
-              <label className="flex flex-col gap-1 text-xs font-semibold text-charcoal/70">
+            {type === 'registrations' && (
+              <label className={labelClass}>
                 Event
                 <select
                   value={eventSlug}
@@ -283,90 +279,154 @@ export default function AdminData() {
                     setEventSlug(event.target.value);
                     setPage(1);
                   }}
-                  className="w-full rounded-[10px] border border-charcoal/20 bg-white px-3 py-2 text-sm font-normal focus:border-brand-green focus:outline-none"
+                  className={inputClass}
                 >
                   <option value="">All events</option>
                   {events.map((event) => (
                     <option key={event.event_slug} value={event.event_slug}>
-                      {event.event_slug} ({event.total})
+                      {event.event_slug}
                     </option>
                   ))}
                 </select>
               </label>
-            ) : (
-              <div className="hidden lg:block" />
             )}
           </div>
+        </div>
 
-          {error && (
-            <p role="alert" className="mb-5 rounded-[10px] border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta">
-              {error}
-            </p>
-          )}
-
-          <p className="mb-3 text-xs font-semibold text-charcoal/60">
-            {total} {total === 1 ? 'row' : 'rows'} match the current filters.
+        {error && (
+          <p
+            role="alert"
+            className="mb-5 rounded-[12px] border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta"
+          >
+            {error}
           </p>
+        )}
 
-          <div className="overflow-hidden rounded-2xl border border-charcoal/10 bg-white">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-collapse text-left">
-                <thead>
-                  <tr className="border-b border-charcoal/10 bg-cream/60 text-[0.72rem] uppercase tracking-wider text-charcoal/60">
-                    {columns.map((column) => (
-                      <th key={column.key} className="px-4 py-3 font-semibold">{column.label}</th>
-                    ))}
+        <p className="mb-3 font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/55">
+          {type === 'registrations'
+            ? `${total} ${total === 1 ? 'row' : 'rows'} match the current filters${
+                allRegistrations > 0 ? ` · ${allRegistrations} registrations across events` : ''
+              }.`
+            : `${total} ${total === 1 ? 'row' : 'rows'} match the current filters.`}
+        </p>
+
+        <div className="overflow-hidden rounded-[16px] border border-charcoal/10 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.035)]">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-charcoal/10 bg-[#FAF8F3] text-[0.66rem] uppercase tracking-[0.12em] text-charcoal/50">
+                  {columns.map((column) => (
+                    <th key={column.key} className="px-4 py-3.5 font-semibold">
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-charcoal/50">
+                      Loading…
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-charcoal/50">Loading…</td></tr>
-                  ) : rows.length === 0 ? (
-                    <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-charcoal/50">Nothing matches these filters yet.</td></tr>
-                  ) : (
-                    rows.map((row, index) => (
-                      <tr key={`${row.email ?? 'row'}-${index}`} className="border-b border-charcoal/5 align-top text-sm text-charcoal last:border-0">
-                        {columns.map((column) => (
-                          <td key={column.key} className={`px-4 py-3 ${column.key === 'email' ? 'break-all' : ''} ${column.key === 'notes' ? 'max-w-[260px] whitespace-pre-wrap break-words text-charcoal/70' : ''}`}>
-                            {column.key === 'created_at'
-                              ? formatDate(row[column.key])
-                              : row[column.key] ?? '—'}
+                ) : rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-charcoal/50">
+                      Nothing matches these filters yet.
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((row, index) => (
+                    <tr
+                      key={`${row.email ?? 'row'}-${index}`}
+                      className="border-b border-charcoal/[0.07] align-top text-[0.88rem] text-charcoal last:border-0"
+                    >
+                      {columns.map((column) => {
+                        if (column.key === 'created_at') {
+                          const parts = formatDateParts(row[column.key]);
+                          return (
+                            <td key={column.key} className="whitespace-nowrap px-4 py-4 text-[0.8rem] text-charcoal/65">
+                              {parts ? (
+                                <>
+                                  <span className="block">{parts.date}</span>
+                                  <span className="block text-charcoal/50">{parts.time}</span>
+                                </>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                          );
+                        }
+                        if (column.key === 'event_slug' && row[column.key]) {
+                          return (
+                            <td key={column.key} className="px-4 py-4">
+                              <span className="inline-flex rounded-full bg-mint px-3 py-1 font-[family-name:var(--font-body)] text-[0.75rem] text-deep-green">
+                                {row[column.key]}
+                              </span>
+                            </td>
+                          );
+                        }
+                        return (
+                          <td
+                            key={column.key}
+                            className={`px-4 py-4 ${
+                              column.key === 'email' ? 'break-all' : ''
+                            } ${
+                              column.key === 'notes'
+                                ? 'max-w-[240px] whitespace-pre-wrap break-words text-charcoal/65'
+                                : ''
+                            } ${column.key === 'name' ? 'font-semibold' : ''}`}
+                          >
+                            {row[column.key] ?? '—'}
                           </td>
-                        ))}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                        );
+                      })}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
 
-          <div className="mt-5 flex flex-col items-center justify-between gap-3 sm:flex-row">
-            <p className="text-xs text-charcoal/55">
-              {total === 0 ? 'No rows' : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}`}
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-charcoal/10 px-5 py-4 sm:flex-row">
+            <p className="font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/50">
+              {total === 0
+                ? 'Showing 0 of 0'
+                : `Showing ${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, total)} of ${total}`}
             </p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setPage((current) => Math.max(1, current - 1))}
                 disabled={page <= 1 || loading}
-                className="min-h-[38px] rounded-full border border-charcoal/15 px-4 py-2 text-sm font-semibold hover:bg-cream disabled:opacity-50"
+                className={pagerButton}
               >
                 Previous
               </button>
-              <span className="text-xs text-charcoal/60">Page {page} of {totalPages}</span>
+              <span className="px-1 font-[family-name:var(--font-body)] text-[0.75rem] text-charcoal/50">
+                {page} / {totalPages}
+              </span>
               <button
                 type="button"
                 onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
                 disabled={page >= totalPages || loading}
-                className="min-h-[38px] rounded-full border border-charcoal/15 px-4 py-2 text-sm font-semibold hover:bg-cream disabled:opacity-50"
+                className={pagerButton}
               >
                 Next
               </button>
             </div>
           </div>
         </div>
-      </section>
+      </AdminShell>
     </>
   );
 }
+
+const labelClass =
+  'flex flex-col gap-1.5 font-[family-name:var(--font-body)] text-[0.78rem] font-medium text-charcoal/60';
+
+const inputClass =
+  'min-h-[46px] w-full rounded-[10px] border border-charcoal/15 bg-white px-3.5 py-2.5 font-[family-name:var(--font-body)] text-[0.9rem] font-normal text-charcoal placeholder:text-charcoal/35 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20';
+
+const pagerButton =
+  'inline-flex min-h-[38px] cursor-pointer items-center rounded-[8px] border border-charcoal/15 bg-white px-5 py-1.5 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint disabled:cursor-not-allowed disabled:opacity-40';

@@ -1,16 +1,25 @@
 import { ApiError, clientIp, endpoint, parseJsonBody, safeRedirect, sendJson } from '../../http.js';
 import { loginSchema, parseInput } from '../../validation.js';
-import { findSessionUserById, findUserByEmail, isStaffRole, setPassword } from '../../db.js';
+import { findSessionUserById, findUserByEmail, setPassword } from '../../db.js';
 import { hashPassword, passwordNeedsUpgrade, spendPasswordTime, verifyPassword } from '../../security.js';
 import {
   assertSessionConfigured,
   createSessionToken,
   sessionTtlSeconds,
-  setSessionCookie,
+  setOnlySessionCookie,
 } from '../../session.js';
 import { enforceRateLimit } from '../../ratelimit.js';
-import { recordAudit, recordAuthEvent } from '../../audit.js';
+import { recordAuthEvent } from '../../audit.js';
 
+/**
+ * POST /api/auth/login
+ *
+ * The public talent and employer door only. Staff accounts have two dedicated
+ * doors - `/admin/login` posts to /api/admin/login and `/content/login` to
+ * /api/content/login - and two separate cookies, so every staff role typed here
+ * is refused with the same generic answer as a wrong password and never leaves
+ * this endpoint with a session.
+ */
 export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   const ip = clientIp(req);
   const data = parseInput(loginSchema, parseJsonBody(req));
@@ -40,12 +49,23 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
   }
 
-  // Checked after the password so the response cannot be used to learn that
-  // an address has a disabled account.
+  // Checked after the password so the response cannot be used to learn that an
+  // address has a disabled account.
   if (user.disabled_at !== null) {
     await recordAuthEvent('login_failed_disabled', { userId: user.id, ip });
     throw new ApiError(403, 'account_disabled', 'This account has been disabled. Contact an administrator.');
   }
+
+  if (user.role !== 'talent' && user.role !== 'employer') {
+    // Every staff role belongs at its own door: admin, project manager and HR
+    // manager at /api/admin/login, content managers at /api/content/login, and a
+    // legacy manager has no portal at all. All of them get the same answer as a
+    // wrong password, so this endpoint cannot be used to enumerate accounts, and
+    // the rate limits and lockout above have already charged the attempt.
+    await recordAuthEvent('login_failed_wrong_portal', { userId: user.id, ip });
+    throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
+  }
+  const portal = 'public';
 
   // A hash made with fewer rounds than the current setting is upgraded here,
   // while the password is still in hand and has just been proved correct.
@@ -61,14 +81,13 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     userId: user.id,
     role: user.role,
     tokenVersion,
+    portal,
   });
-  setSessionCookie(req, res, sessionToken, sessionTtlSeconds(user.role));
+  // Signing in here also clears the other portal cookies, so one browser has
+  // one identity and a panel cannot keep showing a person who just left.
+  setOnlySessionCookie(req, res, sessionToken, sessionTtlSeconds(user.role), portal);
   await recordAuthEvent('login', { userId: user.id, ip });
-  if (isStaffRole(user.role)) {
-    await recordAudit('staff_login', { userId: user.id });
-  }
 
-  const staff = isStaffRole(user.role);
   sendJson(res, 200, {
     user: {
       id: user.id,
@@ -77,16 +96,6 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
       emailVerified: user.email_verified,
       mustChangePassword: user.must_change_password,
     },
-    // Staff get the admin area. A forced password change goes straight to the
-    // set-password screen; every staff endpoint refuses until it is done.
-    redirect: safeRedirect(
-      staff
-        ? user.must_change_password
-          ? '/admin/set-password'
-          : '/admin/stats'
-        : user.role === 'talent'
-          ? '/talent/dashboard'
-          : '/employer/dashboard',
-    ),
+    redirect: safeRedirect(user.role === 'talent' ? '/talent/dashboard' : '/employer/dashboard'),
   });
 });

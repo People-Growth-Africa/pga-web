@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
-import { useAuth } from '../../hooks/useAuth';
+import AdminShell from '../../components/admin/AdminShell';
 import { onSessionEnded } from '../../lib/authClient';
 import { livePostPath } from '../../lib/published';
 import CategoriesDialog from './CategoriesDialog';
@@ -17,27 +17,22 @@ import {
   type AdminCategory,
   type AdminPost,
   type PostDraft,
+  type PostType,
 } from './contentClient';
 
 /**
- * /admin/content - the manager's control panel.
+ * The content workspace, shared by `/admin/content` (administrators) and
+ * `/content` (content managers).
  *
- * Three views share this file because they share state: the list, the editor
- * and the dialogs all need the same posts, the same categories and the same
- * "something changed" refetch. Splitting them would mean threading that state
- * through three components for no gain in clarity.
- *
- * Feedback is inline banners rather than a toast: the site has no notification
- * system to reuse, and a toast that disappears is the wrong shape for an error
- * a manager needs to read before retrying. Success notices say what happened
- * ("Published", "Draft saved") and stay until the next action.
- *
- * The role check lives in RequireAuth and, more importantly, on every endpoint
- * this calls. This page hides nothing that the server would otherwise allow.
+ * The list, editor and dialogs share state, so they stay in one file. The page
+ * only chooses what to show; every request it makes is checked again by
+ * `requireContentManager`, which is also what stops a project or HR manager
+ * from reaching this screen through the administrator cookie.
  */
 
 type View = 'list' | 'create' | 'edit';
 type Notice = { kind: 'success' | 'error'; text: string } | null;
+type Portal = 'admin' | 'content';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -45,18 +40,13 @@ const STATUS_OPTIONS = [
   { value: 'published', label: 'Published' },
 ] as const;
 
-/**
- * The type switcher replaces the old category filter: a category is a topic on
- * a blog post now, not a content type, so filtering the list by one would answer
- * a question nobody is asking any more.
- */
 const TYPE_OPTIONS = [
   { value: '', label: 'All' },
   { value: 'blog', label: 'Blog' },
   { value: 'event', label: 'Events' },
 ] as const;
 
-export default function AdminContent() {
+export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) {
   const [posts, setPosts] = useState<AdminPost[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,6 +58,7 @@ export default function AdminContent() {
 
   const [view, setView] = useState<View>('list');
   const [editing, setEditing] = useState<AdminPost | null>(null);
+  const [createType, setCreateType] = useState<PostType>('blog');
   const [saving, setSaving] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -75,32 +66,19 @@ export default function AdminContent() {
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AdminPost | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
 
   const searchRef = useRef(search);
-
-  const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
-  /**
-   * The one way out of an ended session. Any admin call that comes back 401 has
-   * already been refused by the server, so the panel's job is to stop pretending
-   * it is signed in: read the session back, then hand the manager to the sign-in
-   * page with an explanation rather than a red banner on a page they cannot use.
-   *
-   * Only the navigation happens here. Emptying the session first would unmount
-   * this page through RequireAuth, which redirects to a bare /admin/login and
-   * drops the reason - and the page's exit animation keeps it rendered long
-   * enough for that redirect to win. The sign-in page reads the stale session
-   * back itself; see ManagerLogin.
-   */
   const endSession = useCallback(() => {
-    navigate('/admin/login?expired=1', { replace: true });
-  }, [navigate]);
+    // Carry the page being edited through the sign-in, so a session that ends
+    // mid-edit comes back to the content workspace rather than the dashboard.
+    navigate(portal === 'content' ? '/content/login?expired=1' : '/admin/login?expired=1', {
+      replace: true,
+      state: { from: portal === 'content' ? '/content' : '/admin/content' },
+    });
+  }, [navigate, portal]);
 
-  // Every refused admin call reports through this, wherever it came from - the
-  // list, the category dialog, a background refetch - so an ended session always
-  // ends the same way. See onSessionEnded in src/lib/authClient.ts.
   useEffect(() => onSessionEnded(() => endSession()), [endSession]);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
@@ -119,17 +97,10 @@ export default function AdminContent() {
 
   useEffect(() => {
     const controller = new AbortController();
-    // Same shape as AuthContext's first load: fetch, then set state. The
-    // cancellation only matters for the very first render - navigating away
-    // before the list answers should not write state into an unmounted view.
-    void (async () => {
-      await refresh(controller.signal);
-    })();
+    void refresh(controller.signal);
     return () => controller.abort();
   }, [refresh]);
 
-  // Type a letter, wait, then filter. The query runs against the server's own
-  // list so a search still works when the panel is holding a page of posts.
   useEffect(() => {
     searchRef.current = search;
     const timer = window.setTimeout(() => {
@@ -145,11 +116,8 @@ export default function AdminContent() {
     return () => window.clearTimeout(timer);
   }, [search, status, type]);
 
-  // Writing an article for an hour sends no requests at all, and a manager
-  // session ends after an hour of no requests. The limit is meant to measure
-  // being away from the keyboard, not being quiet, so real interaction is what
-  // says otherwise. Throttled, because every keypress is not a reason to call
-  // the server.
+  // Writing an article for an hour sends no requests, and a staff session ends
+  // after thirty minutes without one. Real interaction is what says otherwise.
   useEffect(() => {
     let lastPing = Date.now();
     const ping = () => {
@@ -169,6 +137,13 @@ export default function AdminContent() {
     () => new Map(categories.map((category) => [category.id, category])),
     [categories],
   );
+
+  function openCreate(nextType: PostType) {
+    setEditing(null);
+    setCreateType(nextType);
+    setEditorError(null);
+    setView('create');
+  }
 
   async function handleSubmit(draft: PostDraft) {
     setSaving(true);
@@ -230,8 +205,6 @@ export default function AdminContent() {
 
   async function handleAddCategory(): Promise<string | null> {
     setCategoriesOpen(true);
-    // The dialog writes the category itself; the parent refetches, so wait one
-    // tick for that refetch to land before reading the new id back.
     await new Promise((resolve) => window.setTimeout(resolve, 400));
     const result = await listContent({});
     if (result.ok) {
@@ -242,350 +215,269 @@ export default function AdminContent() {
     return null;
   }
 
-  /**
-   * Signing out ends the session on the server and lands on the sign-in page,
-   * which is where a manager who just left wants to be if they come back.
-   */
-  async function handleSignOut() {
-    setSigningOut(true);
-    await signOut();
-    navigate('/admin/login', { replace: true });
-  }
+  const heading =
+    view === 'list' ? 'Content' : editing ? 'Edit post' : createType === 'event' ? 'New event' : 'New post';
+  const subtitle =
+    view === 'list'
+      ? 'Oversee every blog post, event and announcement. Edit, unpublish or remove anything here.'
+      : undefined;
 
   return (
     <>
       <SEO
-        title="Content Admin | People Growth Africa"
+        title={portal === 'content' ? 'Content desk | People Growth Africa' : 'Content | People Growth Africa'}
         description="Publish blog posts and events on peoplegrowthafrica.com."
       />
 
-      <section className="min-h-screen bg-cream/50 pt-[130px] pb-20">
-        <div className="max-w-[1200px] mx-auto px-6">
-          {/* Who is signed in, how to leave, and when the panel leaves for them.
-              Sign out belongs here rather than only in a menu: the shell's
-              account control points at this page, so without this a manager had
-              no way out of the admin at all. */}
-          <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-charcoal/10 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <div className="min-w-0">
-              <p className="font-[family-name:var(--font-body)] text-[0.82rem] text-charcoal/70">
-                Signed in as{' '}
-                <span className="font-semibold text-charcoal break-all">{user?.email}</span>
-              </p>
-              <p className="mt-0.5 font-[family-name:var(--font-body)] text-[0.72rem] text-charcoal/45">
-                This panel signs out after 30 minutes with no activity, and after 8 hours at most.
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Link
-                to="/"
-                className="inline-flex min-h-[40px] items-center rounded-full border border-charcoal/15 px-4 py-2 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal transition-colors motion-reduce:transition-none hover:bg-cream"
-              >
-                View site
-              </Link>
-              <button
-                type="button"
-                onClick={() => void handleSignOut()}
-                disabled={signingOut}
-                className="inline-flex min-h-[40px] cursor-pointer items-center rounded-full border-2 border-deep-green px-4 py-2 font-[family-name:var(--font-body)] text-sm font-semibold text-deep-green transition-colors motion-reduce:transition-none hover:bg-deep-green hover:text-white disabled:opacity-70"
-              >
-                {signingOut ? 'Signing out…' : 'Sign out'}
-              </button>
-            </div>
-          </div>
-
-          {/* ── Header ────────────────────────────── */}
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
-            <div>
-              <p className="font-[family-name:var(--font-body)] text-[0.78rem] font-semibold uppercase tracking-wider text-brand-green mb-2">
-                Manager
-              </p>
-              <h1 className="font-[family-name:var(--font-heading)] text-3xl sm:text-4xl font-bold text-charcoal">
-                Content
-              </h1>
-              <p className="font-[family-name:var(--font-body)] text-charcoal/60 mt-2">
-                Write a blog post or list an event, and publish it straight to the site without a
-                developer.
-              </p>
-            </div>
-
-            {view === 'list' && (
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  to="/admin/stats"
-                  className="rounded-full border border-charcoal/15 bg-white px-5 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal transition-colors hover:border-brand-green hover:bg-mint"
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  to="/admin/data"
-                  className="rounded-full border border-charcoal/15 bg-white px-5 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal transition-colors hover:border-brand-green hover:bg-mint"
-                >
-                  Data
-                </Link>
-                <Link
-                  to="/admin/registrations"
-                  className="rounded-full border border-charcoal/15 bg-white px-5 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal transition-colors hover:border-brand-green hover:bg-mint"
-                >
-                  Registrations
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setCategoriesOpen(true)}
-                  className="px-5 py-3 bg-white border border-charcoal/15 rounded-full font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal hover:bg-mint hover:border-brand-green transition-colors cursor-pointer"
-                >
-                  Manage categories
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditing(null);
-                    setEditorError(null);
-                    setView('create');
-                  }}
-                  className="px-6 py-3 bg-deep-green text-white rounded-full font-[family-name:var(--font-body)] text-sm font-semibold hover:bg-terracotta transition-colors cursor-pointer"
-                >
-                  ＋ New post
-                </button>
-              </div>
-            )}
-          </div>
-
-          {notice && (
-            <div
-              role={notice.kind === 'error' ? 'alert' : 'status'}
-              className={`mb-6 flex items-start justify-between gap-4 rounded-2xl border px-4 py-3 font-[family-name:var(--font-body)] text-[0.9rem] ${
-                notice.kind === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-700'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              }`}
-            >
-              <span>{notice.text}</span>
-              <button
-                type="button"
-                onClick={() => setNotice(null)}
-                aria-label="Dismiss"
-                className="bg-transparent border-none cursor-pointer opacity-60 hover:opacity-100"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* ── Views ──────────────────────────────────── */}
-          {view !== 'list' ? (
-            <PostEditor
-              key={editing?.id ?? 'new'}
-              mode={view === 'create' ? 'create' : 'edit'}
-              post={editing}
-              categories={categories}
-              saving={saving}
-              error={editorError}
-              onCancel={() => {
-                setView('list');
-                setEditing(null);
-                setEditorError(null);
-              }}
-              onSubmit={(draft) => void handleSubmit(draft)}
-              onAddCategory={handleAddCategory}
-            />
-          ) : (
+      <AdminShell
+        portal={portal}
+        title={heading}
+        subtitle={subtitle}
+        actions={
+          view === 'list' ? (
             <>
-              {/* ── Filters ──────────────────────────────── */}
-              <div className="bg-white rounded-[20px] shadow-card p-4 sm:p-5 mb-7">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="sm:col-span-1">
-                    <label htmlFor="admin-search" className="sr-only">
-                      Search posts
-                    </label>
-                    <input
-                      id="admin-search"
-                      type="search"
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Search title or excerpt…"
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="admin-status" className="sr-only">
-                      Filter by status
-                    </label>
-                    <select
-                      id="admin-status"
-                      value={status}
-                      onChange={(event) => setStatus(event.target.value)}
-                      className={inputClass}
-                    >
-                      {STATUS_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
+              <button type="button" onClick={() => setCategoriesOpen(true)} className={secondaryButton}>
+                Categories
+              </button>
+              <button type="button" onClick={() => openCreate('event')} className={secondaryButton}>
+                + New event
+              </button>
+              <button type="button" onClick={() => openCreate('blog')} className={primaryButton}>
+                + New post
+              </button>
+            </>
+          ) : null
+        }
+      >
+        {notice && (
+          <div
+            role={notice.kind === 'error' ? 'alert' : 'status'}
+            className={`mb-6 flex items-start justify-between gap-4 rounded-2xl border px-4 py-3 font-[family-name:var(--font-body)] text-[0.9rem] ${
+              notice.kind === 'error'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            }`}
+          >
+            <span>{notice.text}</span>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              aria-label="Dismiss"
+              className="cursor-pointer border-0 bg-transparent opacity-60 hover:opacity-100"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {view !== 'list' ? (
+          <PostEditor
+            key={editing?.id ?? `new-${createType}`}
+            mode={view === 'create' ? 'create' : 'edit'}
+            post={editing}
+            initialType={createType}
+            categories={categories}
+            saving={saving}
+            error={editorError}
+            onCancel={() => {
+              setView('list');
+              setEditing(null);
+              setEditorError(null);
+            }}
+            onSubmit={(draft) => void handleSubmit(draft)}
+            onAddCategory={handleAddCategory}
+          />
+        ) : (
+          <>
+            <div className="mb-5 rounded-[16px] border border-charcoal/10 bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:p-5">
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(200px,0.7fr)_auto]">
+                <div>
+                  <label htmlFor="admin-search" className="sr-only">
+                    Search posts
+                  </label>
+                  <input
+                    id="admin-search"
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search title or excerpt"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="admin-status" className="sr-only">
+                    Filter by status
+                  </label>
+                  <select
+                    id="admin-status"
+                    value={status}
+                    onChange={(event) => setStatus(event.target.value)}
+                    className={inputClass}
+                  >
+                    {STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <span className="sr-only" id="admin-type-label">
+                    Filter by type
+                  </span>
+                  <div
+                    role="group"
+                    aria-labelledby="admin-type-label"
+                    className="flex h-full min-h-[46px] rounded-xl bg-cream/80 p-1"
+                  >
+                    {TYPE_OPTIONS.map((option) => {
+                      const active = type === option.value;
+                      return (
+                        <button
+                          key={option.value || 'all'}
+                          type="button"
+                          onClick={() => setType(option.value)}
+                          aria-pressed={active}
+                          className={`flex-1 cursor-pointer rounded-lg border-none px-3 py-2 font-[family-name:var(--font-body)] text-[0.85rem] font-semibold transition-colors ${
+                            active
+                              ? 'bg-deep-green text-white shadow-card'
+                              : 'bg-transparent text-charcoal/60 hover:text-deep-green'
+                          }`}
+                        >
                           {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <span className="sr-only" id="admin-type-label">
-                      Filter by type
-                    </span>
-                    <div
-                      role="group"
-                      aria-labelledby="admin-type-label"
-                      className="flex h-full rounded-xl bg-cream/80 p-1"
-                    >
-                      {TYPE_OPTIONS.map((option) => {
-                        const active = type === option.value;
-                        return (
-                          <button
-                            key={option.value || 'all'}
-                            type="button"
-                            onClick={() => setType(option.value)}
-                            aria-pressed={active}
-                            className={`flex-1 rounded-lg px-3 py-2 font-[family-name:var(--font-body)] text-[0.85rem] font-semibold transition-colors cursor-pointer border-none ${
-                              active
-                                ? 'bg-deep-green text-white shadow-card'
-                                : 'bg-transparent text-charcoal/60 hover:text-deep-green'
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* ── List ─────────────────────────────────── */}
-              {loadError ? (
-                <div
-                  role="alert"
-                  className="bg-white rounded-[20px] shadow-card p-8 text-center font-[family-name:var(--font-body)] text-red-600"
-                >
-                  {loadError}
-                </div>
-              ) : loading ? (
-                <div className="space-y-3" aria-busy="true">
-                  <p role="status" className="sr-only">
-                    Loading posts…
-                  </p>
-                  {[0, 1, 2].map((index) => (
-                    <div key={index} className="bg-white rounded-[20px] shadow-card p-5">
-                      <div className="h-5 w-1/3 rounded-full bg-charcoal/8 mb-3" />
-                      <div className="h-4 w-1/5 rounded-full bg-charcoal/6" />
-                    </div>
-                  ))}
-                </div>
-              ) : posts.length === 0 ? (
-                <div className="bg-white rounded-[20px] shadow-card p-10 text-center">
-                  <h2 className="font-[family-name:var(--font-heading)] text-xl font-semibold text-charcoal mb-2">
-                    {search || status || type ? 'No posts match those filters' : 'No posts yet'}
-                  </h2>
-                  <p className="font-[family-name:var(--font-body)] text-charcoal/60 mb-6">
-                    {search || status || type
-                      ? 'Try clearing the search or filters.'
-                      : 'Write your first post and it will appear on /blog or /events when you publish it.'}
-                  </p>
-                  {search || status || type ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearch('');
-                        setStatus('');
-                        setType('');
-                      }}
-                      className="px-6 py-3 bg-white border border-charcoal/15 rounded-full font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal hover:bg-cream transition-colors cursor-pointer"
+            {loadError ? (
+              <div
+                role="alert"
+                className="rounded-[16px] border border-red-200 bg-white p-8 text-center font-[family-name:var(--font-body)] text-red-600"
+              >
+                {loadError}
+              </div>
+            ) : loading ? (
+              <div className="space-y-3" aria-busy="true">
+                <p role="status" className="sr-only">
+                  Loading posts…
+                </p>
+                {[0, 1, 2].map((index) => (
+                  <div key={index} className="rounded-[16px] border border-charcoal/10 bg-white p-5">
+                    <div className="mb-3 h-5 w-1/3 rounded-full bg-charcoal/8" />
+                    <div className="h-4 w-1/5 rounded-full bg-charcoal/6" />
+                  </div>
+                ))}
+              </div>
+            ) : posts.length === 0 ? (
+              <div className="rounded-[16px] border border-charcoal/10 bg-white p-10 text-center">
+                <h2 className="mb-2 font-[family-name:var(--font-heading)] text-xl font-semibold text-charcoal">
+                  {search || status || type ? 'No posts match those filters' : 'No posts yet'}
+                </h2>
+                <p className="mb-6 font-[family-name:var(--font-body)] text-charcoal/60">
+                  {search || status || type
+                    ? 'Try clearing the search or filters.'
+                    : 'Write your first post and it will appear on /blog or /events when you publish it.'}
+                </p>
+                {search || status || type ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('');
+                      setStatus('');
+                      setType('');
+                    }}
+                    className={secondaryButton}
+                  >
+                    Clear filters
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => openCreate('blog')} className={primaryButton}>
+                    Create the first post
+                  </button>
+                )}
+              </div>
+            ) : (
+              <ul className="space-y-3.5">
+                {posts.map((post) => {
+                  const category = post.category_id ? categoryById.get(post.category_id) : undefined;
+                  const published = post.status === 'published';
+                  return (
+                    <li
+                      key={post.id}
+                      className="rounded-[16px] border border-charcoal/10 bg-white px-5 py-5 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:px-6"
                     >
-                      Clear filters
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setView('create')}
-                      className="px-6 py-3 bg-deep-green text-white rounded-full font-[family-name:var(--font-body)] text-sm font-semibold hover:bg-terracotta transition-colors cursor-pointer"
-                    >
-                      Create the first post
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <ul className="space-y-3">
-                  {posts.map((post) => {
-                    const category = post.category_id
-                      ? categoryById.get(post.category_id)
-                      : undefined;
-                    const published = post.status === 'published';
-                    return (
-                      <li
-                        key={post.id}
-                        className="bg-white rounded-[20px] shadow-card p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center gap-4"
-                      >
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2.5 mb-2">
-                            <span
-                              className={`inline-flex px-3 py-1 rounded-full font-[family-name:var(--font-body)] text-[0.7rem] font-semibold uppercase tracking-wider ${
-                                published ? 'bg-deep-green text-white' : 'bg-cream text-charcoal/55'
-                              }`}
-                            >
+                          <div className="mb-2 flex flex-wrap items-center gap-2.5">
+                            <Badge tone={published ? 'published' : 'draft'}>
                               {published ? 'Published' : 'Draft'}
-                            </span>
-                            <span className="inline-flex px-3 py-1 bg-terracotta/10 text-terracotta font-[family-name:var(--font-body)] text-[0.7rem] font-semibold rounded-full uppercase tracking-wider">
+                            </Badge>
+                            <Badge tone={post.type === 'event' ? 'event' : 'blog'}>
                               {post.type === 'event' ? 'Event' : 'Blog'}
-                            </span>
-                            {category && (
-                              <span className="inline-flex px-3 py-1 bg-mint text-deep-green font-[family-name:var(--font-body)] text-[0.7rem] font-semibold rounded-full uppercase tracking-wider">
-                                {category.name}
-                              </span>
-                            )}
+                            </Badge>
+                            {category && <Badge tone="category">{category.name}</Badge>}
                             <span className="font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
-                              {formatDate(post.published_at ?? post.updated_at)}
+                              {published
+                                ? formatDate(post.published_at ?? post.updated_at)
+                                : 'Not published'}
                             </span>
                           </div>
-                          <h2 className="font-[family-name:var(--font-heading)] text-[1.05rem] font-semibold text-charcoal leading-snug break-words">
+                          <h2 className="break-words font-[family-name:var(--font-heading)] text-[1.25rem] font-semibold leading-snug text-charcoal sm:text-[1.35rem]">
                             {post.title}
                           </h2>
-                          <p className="font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45 mt-1 break-all">
+                          <p className="mt-1 break-all font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/45">
                             {livePostPath(post)}
                           </p>
                         </div>
 
-                        <div className="flex flex-wrap gap-2 lg:justify-end">
-                          <ActionButton
-                            onClick={() => void handleToggleStatus(post)}
-                            tone={published ? 'quiet' : 'primary'}
-                          >
-                            {published ? 'Unpublish' : 'Publish'}
-                          </ActionButton>
-                          <ActionButton
+                        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                          <button
+                            type="button"
                             onClick={() => {
                               setEditing(post);
                               setEditorError(null);
                               setView('edit');
                             }}
-                            tone="quiet"
+                            className={smallOutline}
                           >
                             Edit
-                          </ActionButton>
-                          <ActionButton onClick={() => setPendingDelete(post)} tone="danger">
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleStatus(post)}
+                            className={published ? smallOutline : smallPrimary}
+                          >
+                            {published ? 'Unpublish' : 'Publish'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingDelete(post)}
+                            className={smallDanger}
+                          >
                             Delete
-                          </ActionButton>
+                          </button>
                           {published && (
                             <Link
                               to={livePostPath(post)}
-                              className="px-4 py-2 rounded-full font-[family-name:var(--font-body)] text-[0.82rem] font-medium text-deep-green hover:bg-mint transition-colors border border-transparent"
+                              className="inline-flex min-h-[38px] items-center rounded-full px-3 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-deep-green underline decoration-brand-green/40 underline-offset-2 hover:bg-mint"
                             >
                               View
                             </Link>
                           )}
                         </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </>
-          )}
-        </div>
-      </section>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        )}
+      </AdminShell>
 
       <CategoriesDialog
         open={categoriesOpen}
@@ -596,10 +488,9 @@ export default function AdminContent() {
         }}
       />
 
-      {/* ── Delete confirmation ──────────────────────── */}
       {pendingDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 backdrop-blur-sm p-6"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 p-6 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="delete-title"
@@ -607,14 +498,14 @@ export default function AdminContent() {
             if (event.target === event.currentTarget) setPendingDelete(null);
           }}
         >
-          <div className="bg-white w-full max-w-[440px] rounded-[24px] shadow-elevated p-7">
+          <div className="w-full max-w-[440px] rounded-[24px] bg-white p-7 shadow-elevated">
             <h2
               id="delete-title"
-              className="font-[family-name:var(--font-heading)] text-lg font-semibold text-charcoal mb-2"
+              className="mb-2 font-[family-name:var(--font-heading)] text-lg font-semibold text-charcoal"
             >
               Delete this post?
             </h2>
-            <p className="font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal/65 mb-6">
+            <p className="mb-6 font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal/65">
               “{pendingDelete.title}” will be removed from the site and the sitemap. This cannot be
               undone.
             </p>
@@ -623,14 +514,14 @@ export default function AdminContent() {
                 type="button"
                 onClick={() => void handleDelete()}
                 disabled={deleteBusy}
-                className="flex-1 px-6 py-3 bg-red-600 text-white rounded-full font-[family-name:var(--font-body)] text-sm font-semibold hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50"
+                className="flex-1 cursor-pointer rounded-full bg-red-600 px-6 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {deleteBusy ? 'Deleting…' : 'Delete post'}
               </button>
               <button
                 type="button"
                 onClick={() => setPendingDelete(null)}
-                className="px-6 py-3 bg-white border border-charcoal/15 rounded-full font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal hover:bg-cream transition-colors cursor-pointer"
+                className="cursor-pointer rounded-full border border-charcoal/15 bg-white px-6 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal hover:bg-cream"
               >
                 Cancel
               </button>
@@ -642,29 +533,27 @@ export default function AdminContent() {
   );
 }
 
-function ActionButton({
-  onClick,
+function Badge({
   tone,
   children,
 }: {
-  onClick: () => void;
-  tone: 'primary' | 'quiet' | 'danger';
+  tone: 'published' | 'draft' | 'event' | 'blog' | 'category';
   children: React.ReactNode;
 }) {
   const tones = {
-    primary: 'bg-deep-green text-white hover:bg-terracotta',
-    quiet: 'bg-cream text-charcoal hover:bg-mint hover:text-deep-green',
-    danger: 'bg-red-50 text-red-600 hover:bg-red-100',
+    published: 'bg-mint text-deep-green',
+    draft: 'bg-[#EAE5DC] text-charcoal/55',
+    event: 'bg-[#F8E6D6] text-[#A3571F]',
+    blog: 'bg-[#F3EBDD] text-[#8B6A40]',
+    category: 'bg-cream text-charcoal/60',
   } as const;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-4 py-2 rounded-full font-[family-name:var(--font-body)] text-[0.82rem] font-medium transition-colors border-none cursor-pointer ${tones[tone]}`}
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 font-[family-name:var(--font-body)] text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${tones[tone]}`}
     >
       {children}
-    </button>
+    </span>
   );
 }
 
@@ -674,5 +563,20 @@ function formatDate(iso: string): string {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+const primaryButton =
+  'inline-flex min-h-[44px] cursor-pointer items-center justify-center rounded-full border border-deep-green bg-deep-green px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.85rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta';
+
+const secondaryButton =
+  'inline-flex min-h-[44px] cursor-pointer items-center justify-center rounded-full border border-charcoal/15 bg-white px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.85rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint';
+
 const inputClass =
-  'w-full rounded-xl border border-charcoal/15 bg-white px-4 py-3 font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal placeholder:text-charcoal/35 focus:outline-none focus:border-brand-green focus:ring-2 focus:ring-brand-green/25 transition-colors';
+  'w-full rounded-xl border border-charcoal/15 bg-white px-4 py-3 font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal placeholder:text-charcoal/35 transition-colors focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/25';
+
+const smallOutline =
+  'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-charcoal/15 bg-white px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint';
+
+const smallPrimary =
+  'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-deep-green bg-deep-green px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta';
+
+const smallDanger =
+  'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-red-200 bg-white px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-red-600 transition-colors hover:bg-red-50';

@@ -56,7 +56,12 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       createdBy: session.userId,
     });
-    const emailSent = await sendStaffInviteEmail(data.email, data.name, token);
+    const emailSent = await sendStaffInviteEmail(
+      data.email,
+      data.name,
+      token,
+      data.role === 'content_manager' ? 'content' : 'admin',
+    );
     await recordAudit('staff_created', {
       userId: session.userId,
       detail: `${data.email} as ${data.role}`,

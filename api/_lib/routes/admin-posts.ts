@@ -8,8 +8,8 @@ import {
   parseJsonBody,
   sendJson,
 } from '../http.js';
-import { requireManager } from '../manager.js';
-import { recordAuthEvent } from '../audit.js';
+import { requireAdmin } from '../staff.js';
+import { recordAudit, recordAuthEvent } from '../audit.js';
 import {
   parseInput,
   postByIdSchema,
@@ -25,6 +25,7 @@ import {
   isUniqueViolation,
   listCategories,
   listPostsForAdmin,
+  recordPostSlugRedirect,
   updatePost,
 } from '../db.js';
 import { enforceRateLimit } from '../ratelimit.js';
@@ -39,10 +40,11 @@ import { announcePostChange } from '../indexnow.js';
  * POST /api/admin/post-status  - publish or unpublish one post
  * DELETE /api/admin/post?id=   - delete
  *
- * Every one of them starts with `requireManager`, which reads the role out of
- * the signed session. The admin UI is hidden from everyone else, but a talent
- * or employer session is a perfectly valid cookie and could call these directly
- * without it.
+ * Every one of them starts with the guard it is built with: `requireAdmin` for
+ * these /api/admin oversight routes, `requireContentManager` for the content
+ * desk's copies. The role comes out of the signed staff session. The panel is
+ * hidden from everyone else, but a talent or employer session is a perfectly
+ * valid cookie and could call these directly without it.
  *
  * Slugs are the one thing worth calling out. A collision is reported as a field
  * error rather than silently suffixed: a manager who types a title, gets
@@ -63,20 +65,27 @@ async function writeRateLimit(userId: string, name: string): Promise<void> {
   });
 }
 
-export default endpoint({ methods: ['GET', 'PUT', 'POST', 'DELETE'], csrf: true }, async (req, res) => {
-  const manager = await requireManager(req, res);
-  const path = (req.url ?? '').split('?')[0]?.replace(/\/+$/, '') ?? '';
+export function makePostsHandler(
+  guard: (req: VercelRequest, res: VercelResponse) => Promise<{ userId: string }>,
+) {
+  return endpoint({ methods: ['GET', 'PUT', 'POST', 'DELETE'], csrf: true }, async (req, res) => {
+    const manager = await guard(req, res);
+    const path = (req.url ?? '').split('?')[0]?.replace(/\/+$/, '') ?? '';
 
-  if (req.method === 'GET') return listHandler(req, res);
-  if (path === '/api/admin/post') {
-    if (req.method === 'DELETE') return deleteHandler(req, res, manager.userId);
-    return updateHandler(req, res, manager.userId);
-  }
-  if (path === '/api/admin/post-status') return statusHandler(req, res, manager.userId);
-  if (req.method === 'PUT') return createHandler(req, res, manager.userId);
+    if (req.method === 'GET') return listHandler(req, res);
+    if (path.endsWith('/post')) {
+      if (req.method === 'DELETE') return deleteHandler(req, res, manager.userId);
+      return updateHandler(req, res, manager.userId);
+    }
+    if (path.endsWith('/post-status')) return statusHandler(req, res, manager.userId);
+    if (req.method === 'PUT') return createHandler(req, res, manager.userId);
 
-  return listHandler(req, res);
-});
+    return listHandler(req, res);
+  });
+}
+
+/** /api/admin/posts, /api/admin/post, /api/admin/post-status — admin oversight. */
+export default makePostsHandler(requireAdmin);
 
 async function listHandler(req: VercelRequest, res: VercelResponse): Promise<void> {
   const query = req.query ?? {};
@@ -118,6 +127,8 @@ function postColumnsFrom(data: {
   locationText?: string | null;
   isOnline?: boolean;
   registrationUrl?: string | null;
+  registrationIntro?: string | null;
+  registrationButtonLabel?: string | null;
   status: 'draft' | 'published';
 }) {
   return {
@@ -136,6 +147,8 @@ function postColumnsFrom(data: {
     locationText: data.locationText ?? null,
     isOnline: Boolean(data.isOnline),
     registrationUrl: data.registrationUrl ?? null,
+    registrationIntro: data.registrationIntro ?? null,
+    registrationButtonLabel: data.registrationButtonLabel ?? null,
     status: data.status,
   };
 }
@@ -160,6 +173,10 @@ async function createHandler(req: VercelRequest, res: VercelResponse, userId: st
     // draft changes nothing public and sends nothing.
     if (post) {
       announcePostChange({ type: post.type, slug: post.slug, status: post.status, previous: null });
+      await recordAudit('post_created', {
+        userId,
+        detail: `${post.type}/${post.slug} (${post.status})`,
+      });
     }
     sendJson(res, 201, { post });
   } catch (error) {
@@ -186,6 +203,10 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
     });
     if (!updated) throw new ApiError(500, 'not_saved', 'The post could not be saved. Try again.');
 
+    if (existing.slug !== data.slug) {
+      await recordPostSlugRedirect(existing.type, existing.slug, existing.id);
+    }
+
     // The two files a cover is made of are replaced together. Whatever the row
     // used to point at and no longer does is deleted here: object storage has no
     // cascade, and a replaced cover would otherwise sit in the store forever.
@@ -204,6 +225,10 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
         slug: post.slug,
         status: post.status,
         previous: existing.status,
+      });
+      await recordAudit('post_updated', {
+        userId,
+        detail: `${post.type}/${post.slug} (${post.status})`,
       });
     }
     sendJson(res, 200, { post });
@@ -246,6 +271,8 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
     locationText: existing.location_text,
     isOnline: existing.is_online,
     registrationUrl: existing.registration_url,
+    registrationIntro: existing.registration_intro,
+    registrationButtonLabel: existing.registration_button_label,
     status,
   });
   if (!updated) throw new ApiError(500, 'not_saved', 'That change could not be saved. Try again.');
@@ -264,6 +291,10 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
     userId,
     ip: clientIp(req),
   });
+  await recordAudit(status === 'published' ? 'post_published' : 'post_unpublished', {
+    userId,
+    detail: `${existing.type}/${existing.slug}`,
+  });
   sendJson(res, 200, { post });
 }
 
@@ -280,6 +311,10 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, userId: st
   // Deleting the row is the point; the cover files go with it.
   await deleteCoverBlobs([existing.cover_image_url, existing.cover_image_thumb_url]);
   await recordAuthEvent('admin_post_delete', { userId, ip: clientIp(req) });
+  await recordAudit('post_deleted', {
+    userId,
+    detail: `${existing.type}/${existing.slug}`,
+  });
 
   // A published URL is about to 404. IndexNow has no delete verb: submitting the
   // URL is how an engine is told to recrawl and drop it. A draft never had a

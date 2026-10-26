@@ -1,5 +1,5 @@
 import { endpoint, sendJson } from '../http.js';
-import { requireStaff } from '../staff.js';
+import { requireAdminData } from '../staff.js';
 import { parseInput, statsQuerySchema } from '../validation.js';
 import {
   dailyCounts,
@@ -13,8 +13,8 @@ import { fillDays, rangeWindow } from '../dates.js';
  * GET /api/admin/stats?range=7|30|90|all
  *
  * Aggregates only. No name, email or phone leaves this endpoint, which is what
- * makes it safe to render on a dashboard rather than a data list. Open to every
- * staff role; the role check is in `requireStaff`.
+ * makes it safe to render on a dashboard rather than a data list. Open to the
+ * `requireAdminData` allowlist only - admin, project manager and HR manager.
  */
 
 function withChange(stats: CategoryStats): CategoryStats & { change: number } {
@@ -28,7 +28,7 @@ function withChange(stats: CategoryStats): CategoryStats & { change: number } {
 }
 
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
-  await requireStaff(req, res);
+  await requireAdminData(req, res);
 
   // Only the range is read: the rewrite that reaches this function also puts
   // `path` in the query string, and a strict schema would reject it.

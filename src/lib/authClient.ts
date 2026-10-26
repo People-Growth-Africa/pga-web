@@ -18,16 +18,53 @@ export type Role =
   | 'manager'
   | 'admin'
   | 'project_manager'
-  | 'hr_manager';
+  | 'hr_manager'
+  | 'content_manager';
 
-export const STAFF_ROLES: Role[] = ['manager', 'admin', 'project_manager', 'hr_manager'];
+/** Staff who use the administrator portal. Content managers and legacy
+ * 'manager' rows are excluded; the migration maps those rows to real roles. */
+export const ADMIN_PORTAL_ROLES: Role[] = ['admin', 'project_manager', 'hr_manager'];
+
+/** The content desk is exclusively for content managers. Administrators have
+ * their own oversight route under /admin. */
+export const CONTENT_EDITOR_ROLES: Role[] = ['content_manager'];
+
+/** The content desk's own sign-in and pages. */
+export const CONTENT_MANAGER_ROLES: Role[] = ['content_manager'];
+
+/** Every staff account, across both portals. */
+export const STAFF_ROLES: Role[] = [...ADMIN_PORTAL_ROLES, 'content_manager'];
 
 export function isStaffRole(role: Role | undefined): boolean {
   return role !== undefined && STAFF_ROLES.includes(role);
 }
 
+export function isAdminPortalRole(role: Role | undefined): boolean {
+  return role !== undefined && ADMIN_PORTAL_ROLES.includes(role);
+}
+
+export function isContentManagerRole(role: Role | undefined): boolean {
+  return role === 'content_manager';
+}
+
+export function isContentEditorRole(role: Role | undefined): boolean {
+  return role !== undefined && CONTENT_EDITOR_ROLES.includes(role);
+}
+
 export function isAdminRole(role: Role | undefined): boolean {
-  return role === 'manager' || role === 'admin';
+  return role === 'admin';
+}
+
+export function roleLabel(role: Role | undefined): string {
+  if (role === 'admin') return 'Administrator';
+  // A legacy row still needs a readable label before the migration maps it.
+  if (role === 'manager') return 'Legacy manager (migrate me)';
+  if (role === 'project_manager') return 'Project manager';
+  if (role === 'hr_manager') return 'HR manager';
+  if (role === 'content_manager') return 'Content manager';
+  if (role === 'talent') return 'Talent';
+  if (role === 'employer') return 'Employer';
+  return 'Staff';
 }
 
 export type TalentProfile = {
@@ -107,7 +144,8 @@ export const NEED_OPTIONS = [
 
 /** Where each kind of account lands after signing in. */
 export function dashboardPath(role: Role): string {
-  if (isStaffRole(role)) return '/admin/stats';
+  if (role === 'content_manager') return '/content';
+  if (isAdminPortalRole(role)) return '/admin/stats';
   return role === 'talent' ? '/talent/dashboard' : '/employer/dashboard';
 }
 
@@ -183,7 +221,10 @@ export async function authRequest<T>(
       },
     };
 
-    if (path.startsWith('/api/admin/') && isSessionEnded(result.failure)) {
+    if (
+      (path.startsWith('/api/admin/') || path.startsWith('/api/content/')) &&
+      isSessionEnded(result.failure)
+    ) {
       for (const listener of sessionEndedListeners) listener(result.failure);
     }
 

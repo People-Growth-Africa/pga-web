@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 
 import { renderEmail, renderLeadEmail } from './email-template.js';
+import { counterKey } from './security.js';
 
 /**
  * Transactional email. When RESEND_API_KEY is not configured the message is
@@ -55,18 +56,11 @@ async function sendEmail(message: {
       );
       return false;
     }
-    // Only the text is printed: the HTML would bury the log, and the confirm
-    // link the tests read out of it would appear three times over.
+    // Never print the recipient, body or links. A short keyed tag is enough to
+    // correlate a local run without putting a reset link in a log.
     console.warn(
-      [
-        `[${tag}] RESEND_API_KEY is not set, so no email was sent. Message follows.`,
-        `To: ${message.to}`,
-        `Subject: ${message.subject}`,
-        message.text,
-      ].join('\n'),
+      `[${tag}] email not sent: RESEND_API_KEY is not configured (recipient ${counterKey(message.to).slice(0, 12)})`,
     );
-    // The log stands in for the send locally and on preview, so the caller
-    // carrying on as if it worked is what keeps those flows testable.
     return true;
   }
 
@@ -81,12 +75,14 @@ async function sendEmail(message: {
       ...(message.replyTo ? { replyTo: message.replyTo } : {}),
     });
     if (error) {
-      console.error(`[${tag}] email send failed`, error);
+      console.error(`[${tag}] email send failed (${error.name ?? 'provider_error'})`);
       return false;
     }
     return true;
   } catch (error) {
-    console.error(`[${tag}] email send threw`, error);
+    console.error(
+      `[${tag}] email send threw (${error instanceof Error ? error.name : 'unknown'})`,
+    );
     return false;
   }
 }
@@ -157,12 +153,16 @@ export async function sendStaffInviteEmail(
   to: string,
   name: string,
   token: string,
+  portal: 'admin' | 'content' = 'admin',
 ): Promise<boolean> {
-  const link = `${appUrl()}/admin/set-password?token=${encodeURIComponent(token)}`;
+  const content = portal === 'content';
+  const link = `${appUrl()}/${content ? 'content' : 'admin'}/set-password?token=${encodeURIComponent(token)}`;
   return sendEmail({
     to,
     tag: 'staff',
-    subject: 'You have been invited to the People Growth Africa admin',
+    subject: content
+      ? 'You have been invited to the People Growth Africa content desk'
+      : 'You have been invited to the People Growth Africa admin',
     text: [
       `Hi ${name},`,
       '',
@@ -174,16 +174,16 @@ export async function sendStaffInviteEmail(
     ].join('\n'),
     html: renderEmail({
       preheader: 'Choose a password for your staff account.',
-      heading: 'Your staff account is ready',
+      heading: content ? 'Your content desk account is ready' : 'Your staff account is ready',
       paragraphs: [
-        `Hi ${name}, a staff account has been created for you. Choose a password to activate it.`,
+        `Hi ${name}, a ${content ? 'content manager' : 'staff'} account has been created for you. Choose a password to activate it.`,
       ],
       action: { label: 'Choose a password', url: link },
       notes: [
         'This link works once and expires in 24 hours.',
         'If you were not expecting this, you can ignore this message.',
       ],
-      reason: 'You are getting this because an administrator invited this address to the admin.',
+      reason: `You are getting this because an administrator invited this address to the ${content ? 'content desk' : 'admin'}.`,
       site: appUrl(),
     }),
   });
@@ -335,6 +335,41 @@ export async function sendRegistrationConfirmationEmail(
       action: { label: 'See all events', url: eventsLink },
       notes: ['If you did not register for this event, you can ignore this message.'],
       reason: 'You are getting this because this address registered for a People Growth Africa event.',
+      site: appUrl(),
+    }),
+  });
+}
+
+/**
+ * Sent when someone tries to sign up with an address that already has an
+ * account. The signup response is the same for every address; this notice is
+ * how the real account holder learns about the attempt without handing the
+ * caller an account-existence oracle.
+ */
+export async function sendExistingAccountEmail(to: string): Promise<boolean> {
+  const loginLink = `${appUrl()}/auth#login`;
+  return sendEmail({
+    to,
+    tag: 'signup-existing',
+    subject: 'Someone tried to create a People Growth Africa account',
+    text: [
+      'Someone used this email address to try to create a People Growth Africa account.',
+      '',
+      'An account already exists for this address, so nothing changed. If it was you, log in or reset your password:',
+      loginLink,
+      '',
+      'If it was not you, you can ignore this message.',
+    ].join('\n'),
+    html: renderEmail({
+      preheader: 'No account was created; this address already has one.',
+      heading: 'This address already has an account',
+      paragraphs: [
+        'Someone used this email address to try to create a People Growth Africa account. Nothing changed.',
+        'If it was you, log in or reset your password below.',
+      ],
+      action: { label: 'Go to sign in', url: loginLink },
+      notes: ['If it was not you, you can ignore this message.'],
+      reason: 'You are getting this because a signup was attempted for this address.',
       site: appUrl(),
     }),
   });

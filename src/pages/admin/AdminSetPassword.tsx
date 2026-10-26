@@ -5,20 +5,38 @@ import SEO from '../../components/SEO';
 import { useAuth } from '../../hooks/useAuth';
 import { authRequest } from '../../lib/authClient';
 
+type Portal = 'admin' | 'content';
+
 /**
- * /admin/set-password
+ * /admin/set-password and /content/set-password
  *
  * Two entrances, one form: an invitation link carries a one-time token, and a
- * seeded administrator arrives signed in with `mustChangePassword` set. The
- * server decides whether the token or the current password is the credential.
+ * seeded or newly assigned account arrives signed in with `mustChangePassword`
+ * set. The server decides whether the token or the current password is the
+ * credential.
  */
-export default function AdminSetPassword() {
+export default function AdminSetPassword({ portal = 'admin' }: { portal?: Portal }) {
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const inviteMode = token !== '';
 
   const { user, refresh } = useAuth();
   const navigate = useNavigate();
+
+  const config =
+    portal === 'content'
+      ? {
+          label: 'Content desk',
+          login: '/content/login',
+          home: '/content',
+          description: 'Your content desk password is required before you can publish.',
+        }
+      : {
+          label: 'Staff admin',
+          login: '/admin/login',
+          home: '/admin/stats',
+          description: 'Your temporary password must be replaced before you can open the admin.',
+        };
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
@@ -57,7 +75,7 @@ export default function AdminSetPassword() {
     setDone(true);
     if (!inviteMode) {
       await refresh();
-      navigate('/admin/stats', { replace: true });
+      navigate(config.home, { replace: true });
     }
   }
 
@@ -68,7 +86,7 @@ export default function AdminSetPassword() {
         <div className="mx-auto max-w-[520px] px-6">
           <div className="rounded-2xl border border-charcoal/10 bg-white p-6 sm:p-8">
             <p className="mb-2 text-[0.75rem] font-semibold uppercase tracking-[0.14em] text-brand-green">
-              Staff admin
+              {config.label}
             </p>
             <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-charcoal">
               {inviteMode ? 'Choose your password' : 'Set a new password'}
@@ -76,14 +94,14 @@ export default function AdminSetPassword() {
             <p className="mt-2 text-sm text-charcoal/60">
               {inviteMode
                 ? 'This invitation works once and expires 24 hours after it was sent.'
-                : 'Your temporary password must be replaced before you can open the admin.'}
+                : config.description}
             </p>
 
             {done ? (
               <div className="mt-6 rounded-xl border border-brand-green/30 bg-mint/50 p-4 text-sm text-charcoal">
                 <p className="font-semibold">Your password is set.</p>
-                <Link to="/admin/login" className="mt-2 inline-block font-semibold text-deep-green underline">
-                  Sign in to the admin
+                <Link to={config.login} className="mt-2 inline-block font-semibold text-deep-green underline">
+                  Sign in to {portal === 'content' ? 'the content desk' : 'the admin'}
                 </Link>
               </div>
             ) : (
@@ -143,7 +161,7 @@ export default function AdminSetPassword() {
                   {busy ? 'Saving…' : 'Save password'}
                 </button>
                 {!inviteMode && user && (
-                  <Link to="/admin/login" className="block text-center text-xs text-charcoal/50 underline">
+                  <Link to={config.login} className="block text-center text-xs text-charcoal/50 underline">
                     Sign in as someone else
                   </Link>
                 )}

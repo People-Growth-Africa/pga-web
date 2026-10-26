@@ -1,8 +1,9 @@
 import type { VercelResponse } from '@vercel/node';
 
 import { endpoint, sendJson } from '../http.js';
-import { requireStaff } from '../staff.js';
+import { requireAdminData } from '../staff.js';
 import { recordAudit } from '../audit.js';
+import { csvRows } from '../csv.js';
 import { parseInput, registrationListQuerySchema } from '../validation.js';
 import {
   countRegistrations,
@@ -17,10 +18,11 @@ import {
  * GET /api/admin/registrations        - paginated list, filter and search
  * GET /api/admin/registrations-export - the same filter, as CSV
  *
- * Both begin with `requireManager`, so a talent or employer session - or no
- * session at all - is refused before a row is read. The responses carry names,
- * emails and phone numbers, and `sendJson` marks them no-store; the CSV does the
- * same.
+ * Both begin with `requireAdminData`, whose allowlist is admin, project manager
+ * and HR manager only, so a talent, employer, content-manager session - or no
+ * session at all - is refused before a row is read. The
+ * responses carry names, emails and phone numbers, and `sendJson` marks them
+ * no-store; the CSV does the same.
  */
 
 const PAGE_SIZE = 25;
@@ -29,30 +31,17 @@ function str(value: string | string[] | undefined): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
 
-/** One CSV cell, quoted, with a leading apostrophe on anything a spreadsheet
- * would otherwise run as a formula. Newlines are flattened so one registration
- * stays on one row. */
-function csvCell(value: string | null): string {
-  let text = (value ?? '').replace(/\r?\n/g, ' ').trim();
-  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function csvRow(row: RegistrationRow): string {
-  return [
-    csvCell(row.event_slug),
-    csvCell(row.name),
-    csvCell(row.email),
-    csvCell(row.phone),
-    csvCell(row.organization),
-    csvCell(row.notes),
-    csvCell(row.created_at),
-  ].join(',');
-}
-
 function sendCsv(res: VercelResponse, rows: RegistrationRow[], eventSlug?: string): void {
   const header = ['Event', 'Name', 'Email', 'Phone', 'Organization', 'Notes', 'Registered at'];
-  const body = [header.map(csvCell).join(','), ...rows.map(csvRow)].join('\r\n');
+  const body = [header, ...rows.map((row) => [
+    row.event_slug,
+    row.name,
+    row.email,
+    row.phone,
+    row.organization,
+    row.notes,
+    row.created_at,
+  ])];
   const today = new Date().toISOString().slice(0, 10);
   const label = eventSlug ?? 'all-events';
 
@@ -61,11 +50,11 @@ function sendCsv(res: VercelResponse, rows: RegistrationRow[], eventSlug?: strin
   res.setHeader('Content-Disposition', `attachment; filename="registrations-${label}-${today}.csv"`);
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.send(`\uFEFF${body}\r\n`);
+  res.send(csvRows(body));
 }
 
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
-  const session = await requireStaff(req, res);
+  const session = await requireAdminData(req, res);
 
   const query = req.query ?? {};
   const parsePage = (raw: string | undefined) => {

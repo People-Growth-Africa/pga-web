@@ -72,6 +72,8 @@ export interface EventMeta {
    * unless their text says otherwise, so this is optional.
    */
   isOnline?: boolean;
+  /** A free event gets a schema.org Offer at price 0. */
+  isFree?: boolean;
 }
 
 export interface BreadcrumbItem {
@@ -212,7 +214,9 @@ export function eventMeta(event: EventMetaSource): PageMeta {
   return {
     path: `/events/${event.slug}`,
     title: event.title,
-    description: clampDescription(event.subtitle),
+    description: clampDescription(
+      `${event.date}${event.time ? ` at ${event.time}` : ''}: ${event.subtitle}`,
+    ),
     image: event.detailImageUrl ?? event.imageUrl ?? DEFAULT_IMAGE,
     type: 'website',
     event: {
@@ -221,6 +225,7 @@ export function eventMeta(event: EventMetaSource): PageMeta {
       // An online event has nowhere to be: a Place naming "Online" would be a
       // lie to a calendar, so it gets a VirtualLocation instead.
       ...(event.isOnline ? { isOnline: true } : { location: event.format }),
+      ...(!event.price || /free/i.test(event.price) ? { isFree: true } : {}),
     },
     // Events carry the same trail as articles. Without it the built-in event
     // pages were the only ones on the site with no BreadcrumbList, while the
@@ -343,6 +348,17 @@ export function buildPageSchema(meta: PageMeta): Record<string, unknown> | null 
       image: absoluteUrl(meta.image),
       url: canonicalUrl(meta.path),
       organizer: { '@type': 'Organization', '@id': ORG_ID },
+      ...(meta.event.isFree
+        ? {
+            offers: {
+              '@type': 'Offer',
+              price: '0',
+              priceCurrency: 'NGN',
+              availability: 'https://schema.org/InStock',
+              url: canonicalUrl(meta.path),
+            },
+          }
+        : {}),
     };
   }
 

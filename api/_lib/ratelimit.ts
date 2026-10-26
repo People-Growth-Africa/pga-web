@@ -94,17 +94,23 @@ export async function enforceRateLimit(options: RateLimitCheck): Promise<void> {
       const result = await limiter.limit(identifier);
       allowed = result.success;
       retryAfterSeconds = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
-    } catch (error) {
-      // If the limiter itself is unavailable, serve the request rather than lock
-      // every user out, but say so in the logs.
-      console.error('[auth] rate limiter unavailable, allowing request', error);
-      allowed = true;
+    } catch {
+      // Credential endpoints fail closed. A limiter outage must not turn into an
+      // unlimited password guessing window.
+      console.error('[auth] rate limiter unavailable; refusing credential request');
+      throw new ApiError(
+        503,
+        'rate_limit_unavailable',
+        'Sign-in and password changes are paused for a moment. Try again shortly.',
+      );
     }
   } else {
     if (!warnedAboutFallback) {
       warnedAboutFallback = true;
       console.warn(
-        '[auth] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set, so rate limits are counted per serverless instance rather than globally.',
+        process.env.VERCEL_ENV === 'production'
+          ? '[auth] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set in production; rate limits are per instance and will not stop a distributed attack.'
+          : '[auth] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set, so rate limits are counted per serverless instance rather than globally.',
       );
     }
     const decision = memoryAllow(`${name}:${identifier}`, limit, windowSeconds);

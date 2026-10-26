@@ -21,13 +21,13 @@ import TalentDashboard from './pages/TalentDashboard';
 import EmployerDashboard from './pages/EmployerDashboard';
 import AdminContent from './pages/admin/AdminContent';
 import AdminData from './pages/admin/AdminData';
-import AdminRegistrations from './pages/admin/AdminRegistrations';
+import AdminOversight from './pages/admin/AdminOversight';
 import AdminSetPassword from './pages/admin/AdminSetPassword';
 import AdminStaff from './pages/admin/AdminStaff';
 import AdminStats from './pages/admin/AdminStats';
 import ManagerLogin from './pages/admin/ManagerLogin';
 import TrafficTracker from './components/TrafficTracker';
-import { STAFF_ROLES } from './lib/authClient';
+import { ADMIN_PORTAL_ROLES } from './lib/authClient';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import NotFound from './pages/NotFound';
@@ -101,12 +101,13 @@ function AnimatedRoutes() {
             path="/admin/login"
             element={AUTH_ENABLED ? <ManagerLogin /> : <Navigate to="/" replace />}
           />
+          <Route path="/admin/content" element={<Navigate to="/admin/oversight" replace />} />
           <Route
-            path="/admin/content"
+            path="/admin/oversight"
             element={
               AUTH_ENABLED ? (
-                <RequireAuth roles={['manager', 'admin']} signInPath="/admin/login">
-                  <AdminContent />
+                <RequireAuth roles={['admin']} signInPath="/admin/login">
+                  <AdminOversight />
                 </RequireAuth>
               ) : (
                 <Navigate to="/" replace />
@@ -117,7 +118,7 @@ function AnimatedRoutes() {
             path="/admin/stats"
             element={
               AUTH_ENABLED ? (
-                <RequireAuth roles={STAFF_ROLES} signInPath="/admin/login">
+                <RequireAuth roles={ADMIN_PORTAL_ROLES} signInPath="/admin/login">
                   <AdminStats />
                 </RequireAuth>
               ) : (
@@ -129,7 +130,7 @@ function AnimatedRoutes() {
             path="/admin/data"
             element={
               AUTH_ENABLED ? (
-                <RequireAuth roles={STAFF_ROLES} signInPath="/admin/login">
+                <RequireAuth roles={ADMIN_PORTAL_ROLES} signInPath="/admin/login">
                   <AdminData />
                 </RequireAuth>
               ) : (
@@ -141,7 +142,7 @@ function AnimatedRoutes() {
             path="/admin/staff"
             element={
               AUTH_ENABLED ? (
-                <RequireAuth roles={['manager', 'admin']} signInPath="/admin/login">
+                <RequireAuth roles={['admin']} signInPath="/admin/login">
                   <AdminStaff />
                 </RequireAuth>
               ) : (
@@ -153,12 +154,24 @@ function AnimatedRoutes() {
             path="/admin/set-password"
             element={AUTH_ENABLED ? <AdminSetPassword /> : <Navigate to="/" replace />}
           />
+          {/* One canonical data screen. The old registrations page is kept as a
+              redirect so existing bookmarks land on the matching tab. */}
+          <Route path="/admin/registrations" element={<Navigate to="/admin/data" replace />} />
+          {/* The content desk has its own door, cookie and page. */}
           <Route
-            path="/admin/registrations"
+            path="/content/login"
+            element={AUTH_ENABLED ? <ManagerLogin portal="content" /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/content/set-password"
+            element={AUTH_ENABLED ? <AdminSetPassword portal="content" /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/content"
             element={
               AUTH_ENABLED ? (
-                <RequireAuth roles={STAFF_ROLES} signInPath="/admin/login">
-                  <AdminRegistrations />
+                <RequireAuth roles={['content_manager']} signInPath="/content/login">
+                  <AdminContent portal="content" />
                 </RequireAuth>
               ) : (
                 <Navigate to="/" replace />

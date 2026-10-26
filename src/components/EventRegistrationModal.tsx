@@ -258,7 +258,8 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                 noValidate
               >
                 <p className="text-xs md:text-sm text-charcoal/70 leading-relaxed mb-4">
-                  Fill in the short form below to reserve your place and receive the agenda.
+                  {event.registrationIntro?.trim() ||
+                    'Fill in the short form below to reserve your place and receive the agenda.'}
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -399,9 +400,8 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                   >
                     {isSubmitting
                       ? 'Saving your place…'
-                      : event.type === 'mentorship'
-                      ? 'Apply for a place'
-                      : 'Reserve my free place'}
+                      : event.registrationButtonLabel?.trim() ||
+                        (event.type === 'mentorship' ? 'Apply for a place' : 'Reserve my free place')}
                   </button>
                   <p className="text-center text-[0.7rem] text-charcoal/50 mt-2">
                     We will email your joining link before the session.

@@ -1,12 +1,16 @@
 import { endpoint, sendJson } from '../../http.js';
-import { requireSession } from '../../current-user.js';
+import { requireAnySession } from '../../current-user.js';
 import { getEmployerProfile, getTalentProfile } from '../../db.js';
 
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
-  const user = await requireSession(req, res);
+  const { user } = await requireAnySession(req, res);
 
   const profile =
-    user.role === 'talent' ? await getTalentProfile(user.id) : await getEmployerProfile(user.id);
+    user.role === 'talent'
+      ? await getTalentProfile(user.id)
+      : user.role === 'employer'
+        ? await getEmployerProfile(user.id)
+        : null;
 
   sendJson(res, 200, {
     user: {

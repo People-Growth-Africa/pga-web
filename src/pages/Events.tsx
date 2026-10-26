@@ -178,9 +178,9 @@ export default function Events() {
                   <h2 className="font-[family-name:var(--font-heading)] text-2xl md:text-3xl font-semibold text-charcoal mb-6">
                     Upcoming events
                   </h2>
-                  {/* Four cards across on a large screen; tablets and phones keep
-                      two and one column. */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                  {/* Three cards across on a large screen so a typical title
+                      fits in two lines; tablets and phones keep two and one. */}
+                  <div className="grid auto-rows-fr grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
                     {upcoming.map(renderCard)}
                   </div>
                 </div>
@@ -195,7 +195,7 @@ export default function Events() {
                   <p className="text-sm text-charcoal/55 mb-6">
                     Sessions that have already run. Each page keeps the details and any recording link.
                   </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                  <div className="grid auto-rows-fr grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
                     {past.map(renderCard)}
                   </div>
                 </div>

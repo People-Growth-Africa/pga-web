@@ -1,11 +1,6 @@
 # Standard web crawlers
 User-agent: *
 Allow: /
-# The admin panel and its API are for signed in managers only; a crawler
-Disallow: /admin
-Disallow: /admin/
-Disallow: /api/admin
-Disallow: /api/admin/
 
 # Search engines, named so a future disallow cannot accidentally catch them
 User-agent: Bingbot

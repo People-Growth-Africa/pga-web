@@ -49,9 +49,14 @@ export function isRestrictViolation(error: unknown): boolean {
 /**
  * Account roles.
  *
- * 'manager' is the original admin role and is kept as an alias for 'admin' so
- * existing accounts and sessions keep working. Talent and employer are the only
- * roles public signup may write; the rest are staff roles, guarded by a trigger.
+ * 'manager' is a legacy role kept only so the migration script can find and map
+ * old rows. It is not an administrator any more: no guard or page accepts it.
+ * Talent and employer are the only roles public signup may write; the rest are
+ * staff roles, guarded by a trigger.
+ *
+ * `content_manager` is deliberately not an administrator. It has its own login,
+ * cookie and API guard, and can only reach the content tools; data exports,
+ * staff accounts and the dashboard stay behind the administrator portal.
  */
 export type Role =
   | 'talent'
@@ -59,18 +64,40 @@ export type Role =
   | 'manager'
   | 'admin'
   | 'project_manager'
-  | 'hr_manager';
+  | 'hr_manager'
+  | 'content_manager';
 
-export type StaffRole = 'admin' | 'project_manager' | 'hr_manager';
+export type StaffRole = 'admin' | 'project_manager' | 'hr_manager' | 'content_manager';
 
 export const MANAGER_ROLE: Role = 'manager';
 
-export function isStaffRole(role: Role): boolean {
-  return 'manager admin project_manager hr_manager'.split(' ').includes(role);
+/**
+ * Administrator-portal accounts. The legacy 'manager' role is deliberately not
+ * here: it may still appear on an old row until the migration script maps it,
+ * but it no longer opens any admin endpoint or page.
+ */
+export function isAdminPortalRole(role: Role): boolean {
+  return role === 'admin' || role === 'project_manager' || role === 'hr_manager';
 }
 
+/** The content desk is for content managers only. Administrators have their
+ * own oversight routes and never use the content manager's API. */
+export function isContentEditorRole(role: Role): boolean {
+  return role === 'content_manager';
+}
+
+export function isContentManagerRole(role: Role): boolean {
+  return role === 'content_manager';
+}
+
+/** Every staff account, across both portals. */
+export function isStaffRole(role: Role): boolean {
+  return isAdminPortalRole(role) || isContentManagerRole(role);
+}
+
+/** The one role that may create or disable staff accounts. */
 export function isAdminRole(role: Role): boolean {
-  return role === 'admin' || role === 'manager';
+  return role === 'admin';
 }
 
 export type UserRow = {
@@ -552,6 +579,8 @@ export type PostRow = {
   location_text: string | null;
   is_online: boolean;
   registration_url: string | null;
+  registration_intro: string | null;
+  registration_button_label: string | null;
   status: PostStatus;
   published_at: string | null;
   created_at: string;
@@ -564,7 +593,8 @@ const POST_COLUMNS = `p.id, p.type, p.slug, p.title, p.excerpt, p.body, p.catego
          p.cover_image_url, p.cover_image_thumb_url, p.link_label, p.link_url,
          ${isoTimestamp('p', 'event_start')} AS event_start,
          ${isoTimestamp('p', 'event_end')} AS event_end,
-         p.location_text, p.is_online, p.registration_url, p.status,
+         p.location_text, p.is_online, p.registration_url,
+         p.registration_intro, p.registration_button_label, p.status,
          ${isoTimestamp('p', 'published_at')} AS published_at,
          ${isoTimestamp('p', 'created_at')} AS created_at,
          ${isoTimestamp('p', 'updated_at')} AS updated_at,
@@ -700,6 +730,15 @@ export async function findPublishedPostBySlug(slug: string): Promise<PostRow | n
   );
 }
 
+/** A public registration may only name an event that is actually live. */
+export async function isPublishedEventSlug(slug: string): Promise<boolean> {
+  const row = await queryOne<{ id: string }>(
+    `SELECT id FROM posts WHERE slug = $1 AND type = 'event' AND status = 'published' LIMIT 1`,
+    [slug],
+  );
+  return Boolean(row);
+}
+
 export async function findPostById(id: string): Promise<PostRow | null> {
   return queryOne<PostRow>(`SELECT ${POST_COLUMNS} ${POST_FROM} WHERE p.id = $1`, [id]);
 }
@@ -720,6 +759,8 @@ export async function insertPost(input: {
   locationText: string | null;
   isOnline: boolean;
   registrationUrl: string | null;
+  registrationIntro: string | null;
+  registrationButtonLabel: string | null;
   status: PostStatus;
   authorId: string;
 }): Promise<string | null> {
@@ -727,9 +768,9 @@ export async function insertPost(input: {
     `INSERT INTO posts
        (type, slug, title, excerpt, body, category_id, cover_image_url, cover_image_thumb_url,
         link_label, link_url, event_start, event_end, location_text, is_online, registration_url,
-        status, published_at, author_id)
+        registration_intro, registration_button_label, status, published_at, author_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-             $16, CASE WHEN $16 = 'published' THEN now() ELSE NULL END, $17)
+             $16, $17, $18, CASE WHEN $18 = 'published' THEN now() ELSE NULL END, $19)
      RETURNING id`,
     [
       input.type,
@@ -747,6 +788,8 @@ export async function insertPost(input: {
       input.locationText,
       input.isOnline,
       input.registrationUrl,
+      input.registrationIntro,
+      input.registrationButtonLabel,
       input.status,
       input.authorId,
     ],
@@ -776,6 +819,8 @@ export async function updatePost(input: {
   locationText: string | null;
   isOnline: boolean;
   registrationUrl: string | null;
+  registrationIntro: string | null;
+  registrationButtonLabel: string | null;
   status: PostStatus;
 }): Promise<{ id: string } | null> {
   return queryOne<{ id: string }>(
@@ -795,9 +840,11 @@ export async function updatePost(input: {
             location_text = $14,
             is_online = $15,
             registration_url = $16,
-            status = $17,
+            registration_intro = $17,
+            registration_button_label = $18,
+            status = $19,
             published_at = CASE
-              WHEN $17 = 'published' THEN coalesce(published_at, now())
+              WHEN $19 = 'published' THEN coalesce(published_at, now())
               ELSE NULL END,
             updated_at = now()
       WHERE id = $1
@@ -819,6 +866,8 @@ export async function updatePost(input: {
       input.locationText,
       input.isOnline,
       input.registrationUrl,
+      input.registrationIntro,
+      input.registrationButtonLabel,
       input.status,
     ],
   );
@@ -845,6 +894,34 @@ export async function listPublishedSlugs(): Promise<
   return query<{ slug: string; type: PostType; updated_at: string }>(
     `SELECT slug, type, ${isoTimestamp('posts', 'updated_at')} AS updated_at
        FROM posts WHERE status = 'published' ORDER BY slug`,
+  );
+}
+
+/** The current slug for an old one, so a shared link keeps working. */
+export async function findPostSlugRedirect(
+  type: PostType,
+  oldSlug: string,
+): Promise<{ slug: string } | null> {
+  return queryOne<{ slug: string }>(
+    `SELECT p.slug
+       FROM post_slug_redirects r
+       JOIN posts p ON p.id = r.post_id
+      WHERE r.type = $1 AND r.old_slug = $2 AND p.status = 'published'`,
+    [type, oldSlug],
+  );
+}
+
+/** Remember the old URL when a manager changes a published slug. */
+export async function recordPostSlugRedirect(
+  type: PostType,
+  oldSlug: string,
+  postId: string,
+): Promise<void> {
+  await query(
+    `INSERT INTO post_slug_redirects (type, old_slug, post_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (type, old_slug) DO UPDATE SET post_id = EXCLUDED.post_id`,
+    [type, oldSlug, postId],
   );
 }
 
@@ -999,7 +1076,7 @@ export async function listStaffAccounts(): Promise<StaffAccountRow[]> {
     `SELECT id, name, email, role, disabled_at, must_change_password,
             ${isoTimestamp('users', 'created_at')} AS created_at
        FROM users
-      WHERE role IN ('manager', 'admin', 'project_manager', 'hr_manager')
+      WHERE role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager')
       ORDER BY created_at ASC`,
   );
 }
@@ -1026,7 +1103,7 @@ export async function setStaffDisabled(id: string, disabled: boolean): Promise<b
         SET disabled_at = ${disabled ? 'now()' : 'NULL'},
             token_version = token_version + 1
       WHERE id = $1
-        AND role IN ('manager', 'admin', 'project_manager', 'hr_manager')
+        AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager')
       RETURNING id`,
     [id],
   );

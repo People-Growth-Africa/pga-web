@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
-import { useAuth } from '../../hooks/useAuth';
-import { authRequest, isAdminRole, onSessionEnded } from '../../lib/authClient';
+import AdminShell from '../../components/admin/AdminShell';
+import { authRequest, onSessionEnded } from '../../lib/authClient';
 
 /**
  * /admin/stats - the staff dashboard.
@@ -139,11 +139,13 @@ export default function AdminStats() {
     Object.fromEntries(CATEGORY_META.map((item) => [item.key, true])),
   );
 
-  const { user } = useAuth();
   const navigate = useNavigate();
 
   const endSession = useCallback(() => {
-    navigate('/admin/login?expired=1', { replace: true });
+    navigate('/admin/login?expired=1', {
+      replace: true,
+      state: { from: '/admin/stats' },
+    });
   }, [navigate]);
 
   useEffect(() => onSessionEnded(() => endSession()), [endSession]);
@@ -202,56 +204,26 @@ export default function AdminStats() {
   return (
     <>
       <SEO title="Dashboard | People Growth Africa" description="Staff dashboard for registrations and site activity." />
-      <section className="min-h-screen bg-cream/50 pt-[130px] pb-20">
-        <div className="mx-auto max-w-[1200px] px-6">
-          <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-charcoal/10 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <div className="min-w-0">
-              <p className="text-[0.82rem] text-charcoal/70">
-                Signed in as <span className="font-semibold text-charcoal break-all">{user?.email}</span>
-              </p>
-              <p className="mt-0.5 text-[0.72rem] text-charcoal/45">
-                {user?.role?.replace('_', ' ')} · this panel is for staff only.
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              {isAdminRole(user?.role) && (
-                <Link to="/admin/content" className="min-h-[40px] rounded-full border border-charcoal/15 px-4 py-2 text-sm font-semibold text-charcoal hover:bg-cream">
-                  Content
-                </Link>
-              )}
-              <Link to="/admin/data" className="min-h-[40px] rounded-full border border-charcoal/15 px-4 py-2 text-sm font-semibold text-charcoal hover:bg-cream">
-                Data
-              </Link>
-              {user?.role === 'admin' || user?.role === 'manager' ? (
-                <Link to="/admin/staff" className="min-h-[40px] rounded-full border border-charcoal/15 px-4 py-2 text-sm font-semibold text-charcoal hover:bg-cream">
-                  Staff
-                </Link>
-              ) : null}
-            </div>
+      <AdminShell
+        title="Dashboard"
+        subtitle="Registrations, signups and website traffic in one place."
+        actions={
+          <div className="inline-flex flex-wrap rounded-full border border-charcoal/15 bg-white p-1">
+            {RANGES.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setRange(option.value)}
+                className={`min-h-[36px] cursor-pointer rounded-full border-0 px-3 py-1.5 font-[family-name:var(--font-body)] text-xs font-semibold transition-colors ${
+                  range === option.value ? 'bg-deep-green text-white' : 'text-charcoal/70 hover:bg-cream'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-
-          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="mb-2 text-[0.78rem] font-semibold uppercase tracking-wider text-brand-green">Staff</p>
-              <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-charcoal sm:text-4xl">Dashboard</h1>
-              <p className="mt-2 text-charcoal/60">Registrations, signups and website traffic in one place.</p>
-            </div>
-            <div className="inline-flex flex-wrap rounded-full border border-charcoal/15 bg-white p-1">
-              {RANGES.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setRange(option.value)}
-                  className={`min-h-[36px] rounded-full px-3 py-1.5 text-xs font-semibold ${
-                    range === option.value ? 'bg-deep-green text-white' : 'text-charcoal/70 hover:bg-cream'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
+        }
+      >
           {error && (
             <p role="alert" className="mb-5 rounded-[10px] border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta">
               {error}
@@ -386,8 +358,7 @@ export default function AdminStats() {
               </div>
             </>
           )}
-        </div>
-      </section>
+      </AdminShell>
     </>
   );
 }

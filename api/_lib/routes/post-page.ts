@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-import { findPublishedPostBySlug, type PostType } from '../db.js';
+import { findPostSlugRedirect, findPublishedPostBySlug, type PostType } from '../db.js';
 import {
   renderFallbackArticle,
   renderGoneHead,
@@ -62,6 +62,17 @@ export default async function postPage(req: VercelRequest, res: VercelResponse):
   // A slug only belongs on its own route: /blog/<an-event> is a 404, not a
   // duplicate of the event page under a URL that claims it is an article.
   if (!row || row.type !== type) {
+    // A manager may have corrected a slug after the link was shared. The old
+    // URL keeps working rather than breaking every WhatsApp forward.
+    const redirect = await findPostSlugRedirect(type, slug);
+    if (redirect) {
+      res.statusCode = 301;
+      res.setHeader('Location', `/${type === 'blog' ? 'blog' : 'events'}/${redirect.slug}`);
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.end();
+      return;
+    }
+
     // A page that was withdrawn on purpose answers 410, not 404: the URL is not
     // waiting for anything, and the crawler can drop it. Checked after the
     // database so a slug that is published again renders its real page, never

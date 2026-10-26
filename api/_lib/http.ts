@@ -49,6 +49,9 @@ const ALLOWED_REDIRECTS = new Set([
   '/admin/content',
   '/admin/stats',
   '/admin/set-password',
+  '/content',
+  '/content/login',
+  '/content/set-password',
 ]);
 
 export function safeRedirect(path: string): string {
@@ -182,12 +185,23 @@ export function assertTrustedOrigin(req: VercelRequest): void {
   throw new ApiError(403, 'bad_origin', 'Request blocked.');
 }
 
-/** Client IP as seen through Vercel's proxy. Used for rate limits and audit. */
+/**
+ * Client IP as seen through Vercel's proxy. Used for rate limits and audit.
+ *
+ * `x-forwarded-for` is client-controlled: an attacker can prepend anything.
+ * Prefer Vercel's own headers, then take the right-most address a trusted proxy
+ * appended rather than the left-most value the caller wrote.
+ */
 export function clientIp(req: VercelRequest): string {
+  const vercelForwarded =
+    headerValue(req.headers['x-vercel-forwarded-for']) ?? headerValue(req.headers['x-real-ip']);
+  if (vercelForwarded) return vercelForwarded.trim();
+
   const forwarded = headerValue(req.headers['x-forwarded-for']);
   if (forwarded) {
-    const first = forwarded.split(',')[0];
-    if (first) return first.trim();
+    const parts = forwarded.split(',').map((part) => part.trim()).filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last) return last;
   }
   return req.socket?.remoteAddress ?? 'unknown';
 }
@@ -226,8 +240,10 @@ export function endpoint(
         });
         return;
       }
-      // Never leak an internal message or stack to the client.
-      console.error('[auth] unhandled error', method, req.url, describeError(error));
+      // Never leak an internal message or stack to the client. Log only the
+      // pathname: the query string can carry an email, a token or a search term.
+      const pathname = (req.url ?? '').split('?')[0] ?? '';
+      console.error('[auth] unhandled error', method, pathname, describeError(error));
       sendJson(res, 500, {
         error: 'Something went wrong on our side. Try again in a moment.',
         code: 'server_error',

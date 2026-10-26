@@ -50,6 +50,8 @@ type PublicPost = {
   locationText: string | null;
   isOnline: boolean;
   registrationUrl: string | null;
+  registrationIntro: string | null;
+  registrationButtonLabel: string | null;
   publishedAt: string | null;
   updatedAt: string;
 };
@@ -72,6 +74,8 @@ function toPublicPost(row: PostRow): PublicPost {
     locationText: row.location_text,
     isOnline: row.is_online,
     registrationUrl: row.registration_url,
+    registrationIntro: row.registration_intro,
+    registrationButtonLabel: row.registration_button_label,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
   };

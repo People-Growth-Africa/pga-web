@@ -2,7 +2,7 @@ import { authRequest, NETWORK_FAILURE, type ApiFailure } from '../../lib/authCli
 import { compressCover, CoverError } from '../../lib/coverImage';
 
 /**
- * The admin panel's calls to /api/admin/*.
+ * The content desk's calls to /api/content/*.
  *
  * Everything goes through `authRequest`, which sends the session cookie and
  * folds a network failure and an HTTP failure into one result. None of these
@@ -33,6 +33,8 @@ export type AdminPost = {
   location_text: string | null;
   is_online: boolean;
   registration_url: string | null;
+  registration_intro: string | null;
+  registration_button_label: string | null;
   status: 'draft' | 'published';
   published_at: string | null;
   created_at: string;
@@ -65,6 +67,8 @@ export type PostDraft = {
   locationText: string | null;
   isOnline: boolean;
   registrationUrl: string | null;
+  registrationIntro: string | null;
+  registrationButtonLabel: string | null;
   status: 'draft' | 'published';
 };
 
@@ -82,7 +86,7 @@ export async function listContent(filters: {
   if (filters.search) query.set('search', filters.search);
   const suffix = query.toString() ? `?${query.toString()}` : '';
 
-  return authRequest(`/api/admin/posts${suffix}`, { method: 'GET' });
+  return authRequest(`/api/content/posts${suffix}`, { method: 'GET' });
 }
 
 /**
@@ -94,36 +98,36 @@ export async function listContent(filters: {
  * session through the normal failure path.
  */
 export async function pingSession(): Promise<void> {
-  await authRequest('/api/admin/ping', { method: 'GET' });
+  await authRequest('/api/content/ping', { method: 'GET' });
 }
 
 export async function createPost(draft: PostDraft): Promise<Result<{ post: AdminPost }>> {
-  return authRequest('/api/admin/posts', { method: 'PUT', body: draft });
+  return authRequest('/api/content/posts', { method: 'PUT', body: draft });
 }
 
 export async function updatePost(
   id: string,
   draft: PostDraft,
 ): Promise<Result<{ post: AdminPost }>> {
-  return authRequest('/api/admin/post', { method: 'PUT', body: { id, ...draft } });
+  return authRequest('/api/content/post', { method: 'PUT', body: { id, ...draft } });
 }
 
 export async function setPostStatus(
   id: string,
   status: 'draft' | 'published',
 ): Promise<Result<{ post: AdminPost }>> {
-  return authRequest('/api/admin/post-status', { method: 'POST', body: { id, status } });
+  return authRequest('/api/content/post-status', { method: 'POST', body: { id, status } });
 }
 
 export async function deletePost(id: string): Promise<Result<{ ok: boolean }>> {
-  return authRequest(`/api/admin/post?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return authRequest(`/api/content/post?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 export async function createCategory(
   name: string,
   slug: string,
 ): Promise<Result<{ category: AdminCategory }>> {
-  return authRequest('/api/admin/categories', { method: 'POST', body: { name, slug } });
+  return authRequest('/api/content/categories', { method: 'POST', body: { name, slug } });
 }
 
 export async function updateCategory(
@@ -131,7 +135,7 @@ export async function updateCategory(
   name: string,
   slug: string,
 ): Promise<Result<{ category: AdminCategory }>> {
-  return authRequest('/api/admin/category', { method: 'PUT', body: { id, name, slug } });
+  return authRequest('/api/content/category', { method: 'PUT', body: { id, name, slug } });
 }
 
 export async function deleteCategory(
@@ -140,7 +144,7 @@ export async function deleteCategory(
 ): Promise<Result<{ ok: boolean; movedPosts: number }>> {
   const query = new URLSearchParams({ id });
   if (moveTo) query.set('moveTo', moveTo);
-  return authRequest(`/api/admin/category?${query.toString()}`, { method: 'DELETE' });
+  return authRequest(`/api/content/category?${query.toString()}`, { method: 'DELETE' });
 }
 
 /**
@@ -200,7 +204,7 @@ export async function uploadCover(
   return { ok: true, data: { url: full.data.url, thumbUrl: thumb.data.url } };
 }
 
-/** One file to /api/admin/upload, reported as a share of its own progress. */
+/** One file to /api/content/upload, reported as a share of its own progress. */
 async function postImage(
   file: File,
   variant: 'full' | 'thumb',
@@ -209,7 +213,7 @@ async function postImage(
   const base64 = await readAsBase64(file, onProgress);
 
   try {
-    const response = await fetch('/api/admin/upload', {
+    const response = await fetch('/api/content/upload', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },

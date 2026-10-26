@@ -59,6 +59,7 @@ const BUILT_IN_SLUGS = new Set<string>([
 export default function PostEditor({
   mode,
   post,
+  initialType = 'blog',
   categories,
   saving,
   error,
@@ -69,6 +70,8 @@ export default function PostEditor({
   mode: EditorMode;
   /** The row being edited, or null when creating. */
   post: AdminPost | null;
+  /** Which type a new post opens on. Editing uses the row's own type. */
+  initialType?: LivePostType;
   categories: AdminCategory[];
   saving: boolean;
   /** A failure from the last save, shown above the form. */
@@ -78,7 +81,7 @@ export default function PostEditor({
   /** Asks the parent to open the category dialog; returns the new category id. */
   onAddCategory: () => Promise<string | null>;
 }) {
-  const initial = useMemo(() => toDraft(post), [post]);
+  const initial = useMemo(() => toDraft(post, initialType), [post, initialType]);
 
   const [type, setType] = useState<LivePostType>(initial.type);
   const [title, setTitle] = useState(initial.title);
@@ -98,6 +101,10 @@ export default function PostEditor({
   const [locationText, setLocationText] = useState(initial.locationText ?? '');
   const [isOnline, setIsOnline] = useState(initial.isOnline);
   const [registrationUrl, setRegistrationUrl] = useState(initial.registrationUrl ?? '');
+  const [registrationIntro, setRegistrationIntro] = useState(initial.registrationIntro ?? '');
+  const [registrationButtonLabel, setRegistrationButtonLabel] = useState(
+    initial.registrationButtonLabel ?? '',
+  );
   const [status, setStatus] = useState<'draft' | 'published'>(initial.status);
   const [previewing, setPreviewing] = useState(false);
   // Fields whose required-value message may be shown. Visiting one (or changing
@@ -169,6 +176,8 @@ export default function PostEditor({
       locationText: isEvent && !isOnline ? locationText.trim() || null : null,
       isOnline: isEvent ? isOnline : false,
       registrationUrl: isEvent ? registrationUrl.trim() || null : null,
+      registrationIntro: isEvent ? registrationIntro.trim() || null : null,
+      registrationButtonLabel: isEvent ? registrationButtonLabel.trim() || null : null,
       status: nextStatus,
     };
   }
@@ -398,6 +407,38 @@ export default function PostEditor({
                 value={registrationUrl}
                 onChange={(event) => setRegistrationUrl(event.target.value)}
                 placeholder="https://example.com/register"
+                className={inputClass}
+              />
+            </Field>
+
+            <Field
+              label="Registration form intro"
+              htmlFor="event-registration-intro"
+              hint="Shown above the form. Leave empty for the default copy."
+            >
+              <textarea
+                id="event-registration-intro"
+                value={registrationIntro}
+                onChange={(event) => setRegistrationIntro(event.target.value)}
+                maxLength={500}
+                rows={3}
+                placeholder="Tell guests what to expect from this session."
+                className={inputClass}
+              />
+            </Field>
+
+            <Field
+              label="Registration button label"
+              htmlFor="event-registration-label"
+              hint="Optional. Defaults to Reserve my free place."
+            >
+              <input
+                id="event-registration-label"
+                type="text"
+                value={registrationButtonLabel}
+                onChange={(event) => setRegistrationButtonLabel(event.target.value)}
+                maxLength={60}
+                placeholder="Reserve my free place"
                 className={inputClass}
               />
             </Field>
@@ -773,10 +814,10 @@ function Toggle({
   );
 }
 
-function toDraft(post: AdminPost | null): PostDraft {
+function toDraft(post: AdminPost | null, initialType: LivePostType = 'blog'): PostDraft {
   if (!post) {
     return {
-      type: 'blog',
+      type: initialType,
       slug: '',
       title: '',
       excerpt: '',
@@ -791,6 +832,8 @@ function toDraft(post: AdminPost | null): PostDraft {
       locationText: null,
       isOnline: false,
       registrationUrl: null,
+      registrationIntro: null,
+      registrationButtonLabel: null,
       status: 'draft',
     };
   }
@@ -811,6 +854,8 @@ function toDraft(post: AdminPost | null): PostDraft {
     locationText: post.location_text,
     isOnline: post.is_online,
     registrationUrl: post.registration_url,
+    registrationIntro: post.registration_intro,
+    registrationButtonLabel: post.registration_button_label,
     status: post.status,
   };
 }

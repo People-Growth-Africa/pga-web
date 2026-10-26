@@ -43,7 +43,7 @@ function publicPath(raw: string): { path: string; utmSource: string } | null {
   if (url.origin !== 'https://www.peoplegrowthafrica.com') return null;
   let path = url.pathname.replace(/\/{2,}/g, '/');
   if (path.length > 1) path = path.replace(/\/+$/, '');
-  if (path.startsWith('/admin') || path.startsWith('/api')) return null;
+  if (path.startsWith('/admin') || path.startsWith('/content') || path.startsWith('/api')) return null;
   if (!PUBLIC_EXACT.has(path) && !PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix))) {
     return null;
   }

@@ -34,6 +34,11 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/auth/account': gatedAuth(async () => (await import('./auth/account.js')).default),
   '/auth/forgot-password': gatedAuth(async () => (await import('./auth/forgot-password.js')).default),
   '/auth/login': gatedAuth(async () => (await import('./auth/login.js')).default),
+  //     Separate staff doors: the administrator portal and the content desk
+  //     each have their own endpoint, cookie and audience. Neither shares the
+  //     public door above. -----------------------------------------------
+  '/admin/login': gatedAuth(async () => (await import('./auth/admin-login.js')).default),
+  '/content/login': gatedAuth(async () => (await import('./auth/content-login.js')).default),
   '/auth/logout': gatedAuth(async () => (await import('./auth/logout.js')).default),
   '/auth/logout-all': gatedAuth(async () => (await import('./auth/logout-all.js')).default),
   '/auth/me': gatedAuth(async () => (await import('./auth/me.js')).default),
@@ -61,6 +66,16 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/admin/categories': gatedAuth(async () => (await import('./admin-categories.js')).default),
   '/admin/category': gatedAuth(async () => (await import('./admin-categories.js')).default),
   '/admin/upload': gatedAuth(async () => (await import('./admin-upload.js')).default),
+  //     Content desk endpoints. These are a different prefix, cookie and guard
+  //     from the admin oversight routes above; a content manager cannot reach
+  //     /api/admin/* and an administrator cannot reach /api/content/*.
+  '/content/posts': gatedAuth(async () => (await import('./content-posts.js')).default),
+  '/content/post': gatedAuth(async () => (await import('./content-posts.js')).default),
+  '/content/post-status': gatedAuth(async () => (await import('./content-posts.js')).default),
+  '/content/categories': gatedAuth(async () => (await import('./content-categories.js')).default),
+  '/content/category': gatedAuth(async () => (await import('./content-categories.js')).default),
+  '/content/upload': gatedAuth(async () => (await import('./content-upload.js')).default),
+  '/content/ping': gatedAuth(async () => (await import('./content-ping.js')).default),
   //     The panel's keep-alive: a manager editing for an hour sends nothing else,
   //     and the idle limit has to measure absence, not silence. --------------
   '/admin/ping': gatedAuth(async () => (await import('./admin-ping.js')).default),

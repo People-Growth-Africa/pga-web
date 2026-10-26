@@ -1,3 +1,5 @@
+import { timingSafeEqual } from 'node:crypto';
+
 import { ApiError, endpoint, headerValue, sendJson } from '../http.js';
 import { cleanupTrafficHashes } from '../db.js';
 
@@ -15,7 +17,10 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     throw new ApiError(503, 'cron_not_configured', 'CRON_SECRET is not set.');
   }
   const authorization = headerValue(req.headers.authorization) ?? '';
-  if (authorization !== `Bearer ${secret}`) {
+  const expected = `Bearer ${secret}`;
+  const supplied = Buffer.from(authorization);
+  const wanted = Buffer.from(expected);
+  if (supplied.length !== wanted.length || !timingSafeEqual(supplied, wanted)) {
     throw new ApiError(401, 'unauthorized', 'Not allowed.');
   }
 

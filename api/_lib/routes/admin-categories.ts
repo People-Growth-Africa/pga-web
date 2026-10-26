@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { ApiError, endpoint, parseJsonBody, sendJson } from '../http.js';
-import { requireManager } from '../manager.js';
+import { requireAdmin } from '../staff.js';
 import {
   categoryCreateSchema,
   categoryDeleteSchema,
@@ -36,23 +36,27 @@ import { markContentChanged } from '../content/version.js';
  * only thing standing between a manager and orphaned rows.
  */
 
-const CATEGORY_PATHS = new Set(['/api/admin/categories', '/api/admin/category']);
+export function makeCategoriesHandler(
+  guard: (req: VercelRequest, res: VercelResponse) => Promise<{ userId: string }>,
+) {
+  return endpoint(
+    { methods: ['GET', 'POST', 'PUT', 'DELETE'], csrf: true },
+    async (req: VercelRequest, res: VercelResponse) => {
+      const manager = await guard(req, res);
+      const path = (req.url ?? '').split('?')[0]?.replace(/\/+$/, '') ?? '';
+      if (!path.endsWith('/categories') && !path.endsWith('/category')) {
+        throw new ApiError(404, 'not_found', 'No such endpoint.');
+      }
 
-export default endpoint(
-  { methods: ['GET', 'POST', 'PUT', 'DELETE'], csrf: true },
-  async (req: VercelRequest, res: VercelResponse) => {
-    const manager = await requireManager(req, res);
-    const path = (req.url ?? '').split('?')[0]?.replace(/\/+$/, '') ?? '';
-    if (!CATEGORY_PATHS.has(path)) {
-      throw new ApiError(404, 'not_found', 'No such endpoint.');
-    }
+      if (req.method === 'GET') return listHandler(res);
+      if (req.method === 'POST') return createHandler(req, res, manager.userId);
+      if (req.method === 'PUT') return renameHandler(req, res, manager.userId);
+      return deleteHandler(req, res, manager.userId);
+    },
+  );
+}
 
-    if (req.method === 'GET') return listHandler(res);
-    if (req.method === 'POST') return createHandler(req, res, manager.userId);
-    if (req.method === 'PUT') return renameHandler(req, res, manager.userId);
-    return deleteHandler(req, res, manager.userId);
-  },
-);
+export default makeCategoriesHandler(requireAdmin);
 
 async function listHandler(res: VercelResponse): Promise<void> {
   sendJson(res, 200, { categories: await listCategories() });

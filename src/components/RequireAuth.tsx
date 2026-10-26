@@ -52,8 +52,11 @@ export default function RequireAuth({
     return <Navigate to={dashboardPath(user.role)} replace />;
   }
 
-  if (user.mustChangePassword && signInPath === '/admin/login') {
-    return <Navigate to="/admin/set-password" replace />;
+  if (user.mustChangePassword) {
+    const passwordPath = signInPath.startsWith('/content')
+      ? '/content/set-password'
+      : '/admin/set-password';
+    return <Navigate to={passwordPath} replace />;
   }
 
   return <>{children}</>;

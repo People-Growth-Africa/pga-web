@@ -1,6 +1,6 @@
 import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../http.js';
 import { parseInput, registrationSchema } from '../validation.js';
-import { insertRegistration, isUniqueViolation } from '../db.js';
+import { insertRegistration, isPublishedEventSlug, isUniqueViolation } from '../db.js';
 import { sendRegistrationConfirmationEmail } from '../email.js';
 import { enforceRateLimit } from '../ratelimit.js';
 
@@ -29,6 +29,19 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     sendJson(res, 201, { ok: true });
     return;
   }
+
+  if (!(await isPublishedEventSlug(data.eventSlug))) {
+    throw new ApiError(404, 'event_not_found', 'That event is not open for registration.');
+  }
+
+  // The confirmation email budget is per address, so one address cannot be used
+  // to flood a third party's inbox through the public form.
+  await enforceRateLimit({
+    name: 'registration-email',
+    identifier: data.email,
+    limit: 3,
+    windowSeconds: 3600,
+  });
 
   try {
     const id = await insertRegistration({

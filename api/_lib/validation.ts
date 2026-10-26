@@ -385,6 +385,8 @@ const postFields = {
   locationText: optionalLine(LOCATION_MAX, 'Location'),
   isOnline: z.boolean().optional(),
   registrationUrl: linkUrl,
+  registrationIntro: optionalLine(500, 'Registration intro'),
+  registrationButtonLabel: optionalLine(60, 'Button label'),
   status: z.enum(POST_STATUS),
 };
 
@@ -446,6 +448,8 @@ function normalisePost<T extends PostValues>(value: T): T {
     locationText: null,
     isOnline: false,
     registrationUrl: null,
+    registrationIntro: null,
+    registrationButtonLabel: null,
   };
 }
 
@@ -548,7 +552,12 @@ export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
 
 /* ── Staff ──────────────────────────────────────────────────────────────── */
 
-export const STAFF_ROLE_VALUES = ['admin', 'project_manager', 'hr_manager'] as const;
+export const STAFF_ROLE_VALUES = [
+  'admin',
+  'project_manager',
+  'hr_manager',
+  'content_manager',
+] as const;
 
 export const staffCreateSchema = z.strictObject({
   name: requiredText(NAME_MAX, 'full name'),

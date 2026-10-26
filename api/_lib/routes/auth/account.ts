@@ -2,7 +2,7 @@ import { ApiError, clientIp, endpoint, parseJsonBody, safeRedirect, sendJson } f
 import { deleteAccountSchema, parseInput } from '../../validation.js';
 import { deleteUser, findUserByEmail } from '../../db.js';
 import { verifyPassword } from '../../security.js';
-import { clearSessionCookie } from '../../session.js';
+import { clearAllSessionCookies } from '../../session.js';
 import { requireSession } from '../../current-user.js';
 import { enforceRateLimit } from '../../ratelimit.js';
 import { recordAuthEvent } from '../../audit.js';
@@ -29,7 +29,7 @@ export default endpoint({ methods: ['DELETE'], csrf: true }, async (req, res) =>
 
   // Profiles, tokens and audit rows referencing this user cascade or are detached.
   await deleteUser(user.id);
-  clearSessionCookie(req, res);
+  clearAllSessionCookies(req, res);
   await recordAuthEvent('account_deleted', { userId: null, ip });
 
   sendJson(res, 200, { ok: true, redirect: safeRedirect('/') });

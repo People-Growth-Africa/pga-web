@@ -21,10 +21,11 @@ export async function recordAuthEvent(
       event,
       ipHash: options.ipHash ?? hashIp(options.ip),
     });
-  } catch (error) {
+  } catch {
     // A missing audit row must never turn into a failed signup or login, but it
-    // should be visible in the logs.
-    console.error('[auth] audit write failed', event, error);
+    // should be visible in the logs. Do not attach the raw error: a driver
+    // message can contain the row values, including an email address.
+    console.error('[auth] audit write failed', event);
   }
 }
 
@@ -39,7 +40,7 @@ export async function recordAudit(
 ): Promise<void> {
   try {
     await insertAuditLog({ userId: options.userId, action, detail: options.detail });
-  } catch (error) {
-    console.error('[audit] write failed', action, error);
+  } catch {
+    console.error('[audit] write failed', action);
   }
 }

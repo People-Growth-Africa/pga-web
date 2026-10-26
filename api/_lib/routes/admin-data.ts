@@ -1,7 +1,7 @@
 import type { VercelResponse } from '@vercel/node';
 
 import { endpoint, sendJson } from '../http.js';
-import { requireStaff } from '../staff.js';
+import { requireAdminData } from '../staff.js';
 import { parseInput, dataQuerySchema } from '../validation.js';
 import {
   countConsultations,
@@ -17,29 +17,20 @@ import {
   type DataFilter,
 } from '../db.js';
 import { recordAudit } from '../audit.js';
+import { csvRows } from '../csv.js';
 import { todayIso } from '../dates.js';
 
 /**
  * GET /api/admin/data?type=registrations|subscriptions|consultations
  * GET /api/admin/data-export  (the same filters, as CSV)
  *
- * Every staff role may read and export these lists. No endpoint here answers
- * without `requireStaff`, and every response is no-store because the rows carry
- * names, emails and phone numbers.
+ * Only admin, project manager and HR manager may read and export these lists.
+ * The allowlist is explicit in `requireAdminData`, so content managers and any
+ * future role are refused by default. Every response is no-store because the
+ * rows carry names, emails and phone numbers.
  */
 
 const PAGE_SIZE = 25;
-
-/** One CSV cell. Quotes are doubled, and a leading formula marker is defused. */
-function csvCell(value: string | number | null | undefined): string {
-  let text = String(value ?? '');
-  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function csv(rows: (string | number | null | undefined)[][]): string {
-  return `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}\r\n`;
-}
 
 function sendCsv(res: VercelResponse, filename: string, rows: (string | number | null | undefined)[][]): void {
   res.status(200);
@@ -47,7 +38,7 @@ function sendCsv(res: VercelResponse, filename: string, rows: (string | number |
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.send(csv(rows));
+  res.send(csvRows(rows));
 }
 
 function str(value: string | string[] | undefined): string | undefined {
@@ -55,7 +46,7 @@ function str(value: string | string[] | undefined): string | undefined {
 }
 
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
-  const session = await requireStaff(req, res);
+  const session = await requireAdminData(req, res);
   const query = req.query ?? {};
   const parsed = parseInput(dataQuerySchema, {
     type: query.type,

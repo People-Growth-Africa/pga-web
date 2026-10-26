@@ -18,12 +18,12 @@ import {
   assertSessionConfigured,
   createSessionToken,
   sessionTtlSeconds,
-  setSessionCookie,
+  setOnlySessionCookie,
 } from '../../session.js';
 import { enforceRateLimit } from '../../ratelimit.js';
 import { recordAuthEvent } from '../../audit.js';
 import { issueToken } from '../../auth-tokens.js';
-import { sendVerificationEmail } from '../../email.js';
+import { sendExistingAccountEmail, sendVerificationEmail } from '../../email.js';
 
 export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   const ip = clientIp(req);
@@ -73,7 +73,15 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
           });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new ApiError(409, 'email_taken', 'That email already has an account. Log in instead.');
+      // Same status and wording as a fresh signup. The real account holder gets
+      // a notice, never the caller, so this cannot be used to test an address.
+      await sendExistingAccountEmail(data.email);
+      await recordAuthEvent('signup_existing_email_notice', { ip });
+      sendJson(res, 201, {
+        ok: true,
+        message: 'Check your email for the next step.',
+      });
+      return;
     }
     throw error;
   }
@@ -92,7 +100,7 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     role: created.role,
     tokenVersion: 0,
   });
-  setSessionCookie(req, res, sessionToken, sessionTtlSeconds(created.role));
+  setOnlySessionCookie(req, res, sessionToken, sessionTtlSeconds(created.role), 'public');
   await recordAuthEvent('signup', { userId: created.id, ip });
 
   // The profile travels with the response so the dashboard renders real values

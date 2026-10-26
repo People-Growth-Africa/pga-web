@@ -62,10 +62,14 @@ function skip(number, description, reason) {
 
 /** One caller: its own cookie, so a manager and a talent never blur together. */
 function makeClient(origin) {
-  let cookie = null;
+  // A real browser keeps one entry per cookie name. A portal sign-in clears the
+  // other two cookies in the same response, so a single "last header wins"
+  // variable would keep the empty public cookie and lose the staff one.
+  const cookieJar = new Map();
 
   return async function call(path, options = {}) {
     const { method = 'POST', body, headers = {} } = options;
+    const cookie = [...cookieJar].map(([name, value]) => `${name}=${value}`).join('; ');
     const response = await fetch(`${origin}${path}`, {
       method,
       headers: {
@@ -79,7 +83,13 @@ function makeClient(origin) {
     const setCookie = response.headers.getSetCookie?.() ?? [];
     for (const entry of setCookie) {
       const pair = entry.split(';')[0];
-      if (pair && pair.includes('=')) cookie = pair;
+      if (!pair) continue;
+      const separator = pair.indexOf('=');
+      if (separator === -1) continue;
+      const name = pair.slice(0, separator);
+      const value = pair.slice(separator + 1);
+      if (value) cookieJar.set(name, value);
+      else cookieJar.delete(name);
     }
 
     const text = await response.text();
@@ -246,7 +256,10 @@ async function main() {
             ON CONFLICT (email) DO UPDATE SET role = 'manager', email_verified = true`,
     ]);
 
-    const managerLogin = await manager('/api/auth/login', {
+    // Staff have their own doors now. The public sign-in refuses this account,
+    // so the manager signs in through the administrator portal and receives the
+    // administrator cookie that the content tools also accept.
+    const managerLogin = await manager('/api/admin/login', {
       body: { email: MANAGER_EMAIL, password: PASSWORD },
     });
     // The redirect matters as much as the status: it is what the page follows
@@ -255,10 +268,10 @@ async function main() {
     // employer does exactly that.
     check(
       3,
-      'the manager can sign in and is sent to the content panel',
+      'the manager can sign in through the administrator door and is sent to the staff dashboard',
       managerLogin.status >= 200 &&
         managerLogin.status < 300 &&
-        managerLogin.json?.redirect === '/admin/content',
+        managerLogin.json?.redirect === '/admin/stats',
       `status ${managerLogin.status}, redirect ${managerLogin.json?.redirect ?? 'none'}`,
     );
 
@@ -276,7 +289,7 @@ async function main() {
     check(
       5,
       'admin list refuses a talent session',
-      adminTalent.status === 403,
+      adminTalent.status === 401 && adminTalent.json?.code === 'sign_in_required',
       `status ${adminTalent.status} ${adminTalent.json?.code ?? ''}`,
     );
 
@@ -284,16 +297,16 @@ async function main() {
     check(
       6,
       'upload endpoint refuses a talent session',
-      uploadTalent.status === 403,
-      `status ${uploadTalent.status}`,
+      uploadTalent.status === 401 && uploadTalent.json?.code === 'sign_in_required',
+      `status ${uploadTalent.status} ${uploadTalent.json?.code ?? ''}`,
     );
 
     const categoriesTalent = await talent('/api/admin/categories', { method: 'GET' });
     check(
       7,
       'categories endpoint refuses a talent session',
-      categoriesTalent.status === 403,
-      `status ${categoriesTalent.status}`,
+      categoriesTalent.status === 401 && categoriesTalent.json?.code === 'sign_in_required',
+      `status ${categoriesTalent.status} ${categoriesTalent.json?.code ?? ''}`,
     );
 
     const adminManager = await manager('/api/admin/posts', { method: 'GET' });
@@ -882,14 +895,15 @@ async function main() {
     const [managerRow] = await sql`SELECT id, token_version FROM users WHERE email = ${MANAGER_EMAIL}`;
     const secret = new TextEncoder().encode(process.env.JWT_SECRET);
     const nowSeconds = Math.floor(Date.now() / 1000);
-    const cookieName = process.env.VERCEL_ENV === 'production' ? '__Host-session' : 'session';
+    const cookieName =
+      process.env.VERCEL_ENV === 'production' ? '__Host-pga-admin' : 'pga_admin_session';
 
     async function mintManager({ issuedAt, expiresAt, absoluteStart }) {
       return new SignJWT({ role: 'manager', ver: managerRow.token_version, abs: absoluteStart })
         .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
         .setSubject(managerRow.id)
         .setIssuer('peoplegrowthafrica.com')
-        .setAudience('pga-auth')
+        .setAudience('pga-admin')
         .setIssuedAt(issuedAt)
         .setExpirationTime(expiresAt)
         .sign(secret);
@@ -915,7 +929,7 @@ async function main() {
     );
     check(
       61,
-      'a manager signed in for more than 12 hours is refused, however active they were',
+      'a manager signed in for more than 8 hours is refused, however active they were',
       absoluteExpired.status === 401 && absoluteExpired.json?.code === 'session_expired',
       `status ${absoluteExpired.status}, code ${absoluteExpired.json?.code ?? 'none'}`,
     );
@@ -929,7 +943,7 @@ async function main() {
     );
     check(
       62,
-      'a manager session left idle for over an hour is refused, and says it expired',
+      'a manager session left idle for over half an hour is refused, and says it expired',
       idleExpired.status === 401 && idleExpired.json?.code === 'session_expired',
       `status ${idleExpired.status}, code ${idleExpired.json?.code ?? 'none'}`,
     );
@@ -944,7 +958,7 @@ async function main() {
     check(
       63,
       'a working manager is let through and their session is renewed',
-      stillActive.status === 200 && /Max-Age=3600\b/.test(renewedCookie),
+      stillActive.status === 200 && /Max-Age=1800\b/.test(renewedCookie),
       `status ${stillActive.status}, set-cookie ${renewedCookie ? 'present' : 'missing'}`,
     );
 
@@ -966,9 +980,9 @@ async function main() {
     const loginCookie = managerLogin.headers?.get('set-cookie') ?? '';
     check(
       66,
-      'the cookie a manager signs in with lasts one hour, not the seven days others get',
-      /Max-Age=3600\b/.test(loginCookie),
-      loginCookie ? loginCookie.replace(/session=[^;]+/, 'session=…') : 'no set-cookie',
+      'the cookie a manager signs in with lasts half an hour, not the seven days others get',
+      /Max-Age=1800\b/.test(loginCookie),
+      loginCookie ? loginCookie.replace(/pga_admin_session=[^;]+/, 'pga_admin_session=…') : 'no set-cookie',
     );
 
     /* ── Cover media ─────────────────────────────────────────────────────── */

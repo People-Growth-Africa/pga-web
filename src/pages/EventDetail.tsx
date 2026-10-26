@@ -5,6 +5,7 @@ import AnimateOnScroll from '../components/AnimateOnScroll';
 import ContentImage from '../components/ContentImage';
 import EventCard from '../components/EventCard';
 import EventRegistrationModal from '../components/EventRegistrationModal';
+import EventShareButton from '../components/EventShareButton';
 import SafeContent from '../components/SafeContent';
 import PostBody from '../components/PostBody';
 import SEO from '../components/SEO';
@@ -271,6 +272,9 @@ export default function EventDetail() {
             </dl>
 
             <div className="mt-6">{registerButton}</div>
+            <div className="mt-3 flex justify-center">
+              <EventShareButton slug={event.slug} title={event.title} labelled />
+            </div>
 
             {event.price && (
               <p className="mt-3 text-center font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/50">
@@ -303,7 +307,7 @@ export default function EventDetail() {
                 More events
               </h2>
             </AnimateOnScroll>
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid auto-rows-fr grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
               {relatedEvents.map((candidate) => (
                 <AnimateOnScroll key={candidate.id} className="h-full">
                   <EventCard

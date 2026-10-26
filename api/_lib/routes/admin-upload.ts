@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import { coverUrl } from '../cover-url.js';
 import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../http.js';
-import { requireManager } from '../manager.js';
+import { requireAdmin } from '../staff.js';
 import { enforceRateLimit } from '../ratelimit.js';
 import { recordAuthEvent } from '../audit.js';
 
@@ -93,8 +93,11 @@ function bodyError(field: string, message: string): ApiError {
   return new ApiError(400, 'validation_failed', message, { [field]: message });
 }
 
-export default endpoint({ methods: ['POST'], csrf: true }, async (req: VercelRequest, res: VercelResponse) => {
-  const manager = await requireManager(req, res);
+export function makeUploadHandler(
+  guard: (req: VercelRequest, res: VercelResponse) => Promise<{ userId: string }>,
+) {
+  return endpoint({ methods: ['POST'], csrf: true }, async (req: VercelRequest, res: VercelResponse) => {
+    const manager = await guard(req, res);
 
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     throw new ApiError(
@@ -163,14 +166,18 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req: VercelReq
 
   await recordAuthEvent('admin_upload', { userId: manager.userId, ip: clientIp(req) });
 
-  sendJson(res, 201, {
-    url: stored.url,
-    pathname: stored.pathname,
-    variant,
-    size: buffer.length,
-    contentType: TYPES[type].contentType,
+    sendJson(res, 201, {
+      url: stored.url,
+      pathname: stored.pathname,
+      variant,
+      size: buffer.length,
+      contentType: TYPES[type].contentType,
+    });
   });
-});
+}
+
+/** /api/admin/upload — admin oversight. */
+export default makeUploadHandler(requireAdmin);
 
 /**
  * Stores one cover and returns the URL a page should use for it.

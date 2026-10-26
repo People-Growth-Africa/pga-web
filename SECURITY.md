@@ -15,27 +15,47 @@ secret, how to inspect the audit log and how to report a problem.
 - Login answers with one message and one status for an unknown email and a wrong password, and
   spends the same time on both paths so timing cannot reveal which emails are registered.
 
-**Sessions**
+**Sessions and access**
 
-- A JWT signed with HS256 (jose), 7 day expiry, with the issuer `peoplegrowthafrica.com` and the
-  audience `pga-auth` set and checked. The algorithm is pinned, so a token claiming `none` or a
-  different algorithm is refused.
-- Carried in an httpOnly, SameSite=Lax, Path=/ cookie, and Secure whenever the request is https.
-  The name is `__Host-session` on the production deployment and `session` everywhere else, so a
-  subdomain cannot overwrite it in production.
+- A JWT signed with HS256 (jose), with the issuer `peoplegrowthafrica.com` set and checked. The
+  algorithm is pinned, so a token claiming `none` or a different algorithm is refused.
+- There are three separate cookies and three separate audiences. A token minted for one portal is
+  refused by the others even though the same secret signed it, so a content manager session cannot
+  be replayed at the administrator API.
+
+  | Portal | Sign-in | Cookie | Audience | Accounts |
+  | :--- | :--- | :--- | :--- | :--- |
+  | Public | `/auth` | `__Host-session` / `session` | `pga-auth` | talent, employer |
+  | Administrator | `/admin/login` | `__Host-pga-admin` / `pga_admin_session` | `pga-admin` | admin, manager, project manager, HR manager |
+  | Content desk | `/content/login` | `__Host-pga-content` / `pga_content_session` | `pga-content` | content manager |
+
+- Public sessions last 7 days. Staff sessions have two limits: 30 minutes without an authenticated
+  request, sliding on real activity, and a hard 8 hour ceiling per sign-in. Every request re-reads
+  the account row, so a disabled, demoted or deleted account stops working immediately, whatever
+  its cookie still claims.
+- Permissions are checked on the server, not only by hiding pages:
+
+  | Capability | Administrator | Project / HR manager | Content manager |
+  | :--- | :---: | :---: | :---: |
+  | Dashboard and traffic | yes | yes | no |
+  | Registrations and personal data | yes | yes | no |
+  | Blog posts, events, categories, uploads | yes | no | yes |
+  | Staff accounts and invitations | yes | no | no |
+
+  The content routes accept the content cookie, and also the administrator cookie, because an
+  administrator writes content too. They refuse every other portal by reading only the staff
+  cookies, and `requireContentManager` still rejects a project or HR manager by role.
 - The token carries `token_version`, which is re-checked against the database on every
-  authenticated request, together with the account's role. Raising the version ends every session
-  at once, which is what the password reset flow and "log out on all devices" do.
-- Logging out expires the browser's cookie. Sessions are self contained, so a token copied out of
-  the cookie before that moment stays valid until it expires; reset and log out on all devices are
-  the actions that revoke a token that is already in someone else's hands.
+  authenticated request. Raising the version ends every session at once, which is what password
+  reset, "log out on all devices" and ordinary sign-out do.
 - The server refuses to start when `JWT_SECRET` is missing or shorter than 32 characters.
 
 **Requests and input**
 
 - Every endpoint validates its body with zod strict schemas: unknown keys are rejected, strings are
-  trimmed and length capped, emails are lowercased, and the role must be exactly `talent` or
-  `employer`.
+  trimmed and length capped, and emails are lowercased. Public sign-up accepts only `talent` or
+  `employer`; a staff role can only be created by an administrator, and the database trigger
+  refuses a staff row written outside the staff-management path.
 - Bodies over 8 KB are refused with 413 before parsing.
 - State changing requests must come from the site's own origin (the Origin header is compared with
   the request host), on top of the SameSite cookie.
@@ -152,8 +172,6 @@ you when a fix ships.
   before responding); the identical response and the 3 per hour per email limit make this
   impractical to use for enumeration.
 - Preview deployments share the production database unless a Neon branch is attached, so test
-  signups would be real rows.
-- A plain logout cannot revoke a token that was already copied off the device, because the session
-  is a self contained JWT with no server side record. Closing that gap means storing one row per
-  session and deleting it on logout, which is cheap here because every authenticated request
-already reads the database once to check `token_version`.
+  signups would be real rows.- The staff idle window is measured per request, not per keystroke. The panel sends a keep-alive
+  while someone is genuinely typing, but a background tab with no interaction still ages out.
+

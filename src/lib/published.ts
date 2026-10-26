@@ -30,6 +30,8 @@ export type LivePost = {
   locationText: string | null;
   isOnline: boolean;
   registrationUrl: string | null;
+  registrationIntro: string | null;
+  registrationButtonLabel: string | null;
   publishedAt: string | null;
   updatedAt: string;
 };
