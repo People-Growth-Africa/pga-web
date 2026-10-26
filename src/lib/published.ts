@@ -32,6 +32,8 @@ export type LivePost = {
   registrationUrl: string | null;
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
+  /** The event's editable form, rendered by the registration modal. */
+  registrationForm: unknown | null;
   publishedAt: string | null;
   updatedAt: string;
 };

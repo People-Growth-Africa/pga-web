@@ -4,6 +4,7 @@ import { endpoint, sendJson } from '../http.js';
 import { requireAdminData } from '../staff.js';
 import { recordAudit } from '../audit.js';
 import { csvRows } from '../csv.js';
+import { formatAnswersForCsv } from '../registration-form.js';
 import { parseInput, registrationListQuerySchema } from '../validation.js';
 import {
   countRegistrations,
@@ -32,7 +33,7 @@ function str(value: string | string[] | undefined): string | undefined {
 }
 
 function sendCsv(res: VercelResponse, rows: RegistrationRow[], eventSlug?: string): void {
-  const header = ['Event', 'Name', 'Email', 'Phone', 'Organization', 'Notes', 'Registered at'];
+  const header = ['Event', 'Name', 'Email', 'Phone', 'Organization', 'Notes', 'Answers', 'Registered at'];
   const body = [header, ...rows.map((row) => [
     row.event_slug,
     row.name,
@@ -40,6 +41,7 @@ function sendCsv(res: VercelResponse, rows: RegistrationRow[], eventSlug?: strin
     row.phone,
     row.organization,
     row.notes,
+    formatAnswersForCsv(row.answers),
     row.created_at,
   ])];
   const today = new Date().toISOString().slice(0, 10);

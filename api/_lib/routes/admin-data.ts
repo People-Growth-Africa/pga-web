@@ -18,6 +18,7 @@ import {
 } from '../db.js';
 import { recordAudit } from '../audit.js';
 import { csvRows } from '../csv.js';
+import { formatAnswersForCsv } from '../registration-form.js';
 import { todayIso } from '../dates.js';
 
 /**
@@ -87,7 +88,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     if (exporting) {
       const rows = await listRegistrationsForExport(filter);
       sendCsv(res, `registrations-${parsed.event ?? 'all-events'}-${todayIso()}.csv`, [
-        ['Event', 'Name', 'Email', 'Phone', 'Organization', 'Notes', 'Registered at'],
+        ['Event', 'Name', 'Email', 'Phone', 'Organization', 'Notes', 'Answers', 'Registered at'],
         ...rows.map((row) => [
           row.event_slug,
           row.name,
@@ -95,6 +96,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
           row.phone,
           row.organization,
           row.notes,
+          formatAnswersForCsv(row.answers),
           row.created_at,
         ]),
       ]);

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ApiError } from './http.js';
+import { registrationFormSaveSchema } from './registration-form.js';
 
 /**
  * Server side validation is the real check. These schemas are strict, so a
@@ -387,6 +388,7 @@ const postFields = {
   registrationUrl: linkUrl,
   registrationIntro: optionalLine(500, 'Registration intro'),
   registrationButtonLabel: optionalLine(60, 'Button label'),
+  registrationForm: registrationFormSaveSchema.nullable().optional(),
   status: z.enum(POST_STATUS),
 };
 
@@ -450,6 +452,7 @@ function normalisePost<T extends PostValues>(value: T): T {
     registrationUrl: null,
     registrationIntro: null,
     registrationButtonLabel: null,
+    registrationForm: null,
   };
 }
 
@@ -514,25 +517,25 @@ export const postStatusSchema = z.strictObject({
  * every input is accepted by validation and then dropped by the handler, rather
  * than being told which field gave it away.
  */
+/**
+ * A registration, either against an event's editable form or - for a page
+ * cached before forms existed - the fixed fields. `answers` is keyed by the id
+ * of the question that asked it; the handler checks those against the form the
+ * event actually carries, which is the only place the rules live.
+ */
 export const registrationSchema = z.strictObject({
   eventSlug,
-  name: requiredText(NAME_MAX, 'full name'),
-  email,
-  phone: z
-    .string()
-    .trim()
-    .min(1, 'Enter your phone number.')
-    .max(20, 'Phone must be 20 characters or fewer.')
-    .regex(
-      /^\+?[0-9][0-9\s().-]{5,19}$/,
-      'Enter a phone number using digits, spaces, dashes or brackets.',
-    ),
+  answers: z
+    .record(
+      z.string().regex(/^[A-Za-z0-9_-]{1,40}$/, 'That question could not be found.'),
+      z.union([z.string().max(5000), z.array(z.string().max(500)).max(20)]),
+    )
+    .optional(),
+  name: optionalText(NAME_MAX, 'full name'),
+  email: email.optional(),
+  phone: optionalText(PHONE_MAX, 'phone'),
   organization: optionalText(ORGANISATION_MAX, 'organisation'),
-  notes: requiredText(
-    1000,
-    'notes',
-    'Tell us what you would like to get from this session.',
-  ),
+  notes: optionalText(1000, 'notes'),
   website: z.string().trim().max(200).optional(),
 });
 

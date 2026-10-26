@@ -1,5 +1,6 @@
 import { authRequest, NETWORK_FAILURE, type ApiFailure } from '../../lib/authClient';
 import { compressCover, CoverError } from '../../lib/coverImage';
+import type { RegistrationForm } from '../../lib/registrationForm';
 
 /**
  * The content desk's calls to /api/content/*.
@@ -35,6 +36,8 @@ export type AdminPost = {
   registration_url: string | null;
   registration_intro: string | null;
   registration_button_label: string | null;
+  /** The saved registration form, or null while the event uses the built-in fields. */
+  registration_form: unknown | null;
   status: 'draft' | 'published';
   published_at: string | null;
   created_at: string;
@@ -69,6 +72,7 @@ export type PostDraft = {
   registrationUrl: string | null;
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
+  registrationForm: RegistrationForm | null;
   status: 'draft' | 'published';
 };
 

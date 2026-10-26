@@ -52,6 +52,8 @@ type PublicPost = {
   registrationUrl: string | null;
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
+  /** The event's form, so the public modal renders what the panel saved. */
+  registrationForm: unknown | null;
   publishedAt: string | null;
   updatedAt: string;
 };
@@ -76,6 +78,7 @@ function toPublicPost(row: PostRow): PublicPost {
     registrationUrl: row.registration_url,
     registrationIntro: row.registration_intro,
     registrationButtonLabel: row.registration_button_label,
+    registrationForm: row.registration_form,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
   };

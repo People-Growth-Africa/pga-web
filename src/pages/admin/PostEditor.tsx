@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import PostBody from '../../components/PostBody';
+import RegistrationFormBuilder from '../../components/admin/RegistrationFormBuilder';
 import { eventsList } from '../../data/events';
 import { blogPosts } from '../../data/posts';
 import {
@@ -9,6 +10,12 @@ import {
   slugify,
   type LivePostType,
 } from '../../lib/published';
+import {
+  coerceRegistrationForm,
+  defaultRegistrationForm,
+  isChoiceQuestion,
+  type RegistrationForm,
+} from '../../lib/registrationForm';
 import {
   uploadCover,
   type AdminCategory,
@@ -105,6 +112,12 @@ export default function PostEditor({
   const [registrationButtonLabel, setRegistrationButtonLabel] = useState(
     initial.registrationButtonLabel ?? '',
   );
+  const [registrationForm, setRegistrationForm] = useState<RegistrationForm>(
+    () => coerceRegistrationForm(initial.registrationForm) ?? defaultRegistrationForm(),
+  );
+  // How many answers this event has already collected. A change to a live form
+  // is allowed, but the editor is told it only affects new responses.
+  const [responseCount, setResponseCount] = useState<number | null>(null);
   const [status, setStatus] = useState<'draft' | 'published'>(initial.status);
   const [previewing, setPreviewing] = useState(false);
   // Fields whose required-value message may be shown. Visiting one (or changing
@@ -118,6 +131,25 @@ export default function PostEditor({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const chosenCategory = categories.find((category) => category.id === categoryId);
+
+  const editingEventSlug = mode === 'edit' && post?.type === 'event' ? post.slug : null;
+  useEffect(() => {
+    if (!editingEventSlug) return;
+    let active = true;
+    fetch(`/api/admin/registrations?event=${encodeURIComponent(editingEventSlug)}`, {
+      credentials: 'include',
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: { total?: unknown } | null) => {
+        if (active && payload && typeof payload.total === 'number') setResponseCount(payload.total);
+      })
+      .catch(() => {
+        // A count is a courtesy; not having it must not block the editor.
+      });
+    return () => {
+      active = false;
+    };
+  }, [editingEventSlug]);
   const section = type === 'blog' ? 'blog' : 'events';
 
   function markTouched(field: string) {
@@ -158,6 +190,39 @@ export default function PostEditor({
     setUploadError(null);
   }
 
+  /** Trims what the builder collected; empty option lines are dropped here. */
+  const cleanedForm = useMemo<RegistrationForm>(
+    () => ({
+      ...registrationForm,
+      title: registrationForm.title.trim() || 'Register for this event',
+      confirmationMessage: registrationForm.confirmationMessage.trim(),
+      questions: registrationForm.questions.map((question) => ({
+        ...question,
+        label: question.label.trim(),
+        options: isChoiceQuestion(question.type)
+          ? [...new Set(question.options.map((option) => option.trim()).filter(Boolean))]
+          : [],
+      })),
+    }),
+    [registrationForm],
+  );
+
+  const registrationFormIssue = useMemo(() => {
+    if (type !== 'event') return null;
+    if (cleanedForm.questions.length === 0) return 'Add at least one registration question.';
+    if (cleanedForm.questions.some((question) => !question.label))
+      return 'Give every registration question a label.';
+    if (!cleanedForm.questions.some((question) => question.type === 'email'))
+      return 'Add an email question so the team can reply.';
+    if (
+      cleanedForm.questions.some(
+        (question) => isChoiceQuestion(question.type) && question.options.length < 2,
+      )
+    )
+      return 'Every choice question needs at least two options.';
+    return null;
+  }, [type, cleanedForm]);
+
   function buildDraft(nextStatus: 'draft' | 'published'): PostDraft {
     const isEvent = type === 'event';
     return {
@@ -178,6 +243,7 @@ export default function PostEditor({
       registrationUrl: isEvent ? registrationUrl.trim() || null : null,
       registrationIntro: isEvent ? registrationIntro.trim() || null : null,
       registrationButtonLabel: isEvent ? registrationButtonLabel.trim() || null : null,
+      registrationForm: isEvent ? cleanedForm : null,
       status: nextStatus,
     };
   }
@@ -205,7 +271,8 @@ export default function PostEditor({
     !eventStartInvalid &&
     !eventEndInvalid &&
     !locationMissing &&
-    !categoryMissing;
+    !categoryMissing &&
+    registrationFormIssue === null;
 
   const slugTaken = BUILT_IN_SLUGS.has(`${section}/${slug.trim()}`);
 
@@ -442,6 +509,23 @@ export default function PostEditor({
                 className={inputClass}
               />
             </Field>
+
+            <div className="sm:col-span-2">
+              <RegistrationFormBuilder
+                value={registrationForm}
+                onChange={setRegistrationForm}
+                responseCount={responseCount}
+                disabled={saving}
+              />
+              {registrationFormIssue && (
+                <p
+                  role="alert"
+                  className="mt-2 font-[family-name:var(--font-body)] text-[0.8rem] font-medium text-red-600"
+                >
+                  {registrationFormIssue}
+                </p>
+              )}
+            </div>
           </div>
         )}
 
@@ -834,6 +918,7 @@ function toDraft(post: AdminPost | null, initialType: LivePostType = 'blog'): Po
       registrationUrl: null,
       registrationIntro: null,
       registrationButtonLabel: null,
+      registrationForm: null,
       status: 'draft',
     };
   }
@@ -856,6 +941,7 @@ function toDraft(post: AdminPost | null, initialType: LivePostType = 'blog'): Po
     registrationUrl: post.registration_url,
     registrationIntro: post.registration_intro,
     registrationButtonLabel: post.registration_button_label,
+    registrationForm: coerceRegistrationForm(post.registration_form),
     status: post.status,
   };
 }

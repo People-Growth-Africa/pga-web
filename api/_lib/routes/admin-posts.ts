@@ -129,6 +129,7 @@ function postColumnsFrom(data: {
   registrationUrl?: string | null;
   registrationIntro?: string | null;
   registrationButtonLabel?: string | null;
+  registrationForm?: unknown;
   status: 'draft' | 'published';
 }) {
   return {
@@ -149,6 +150,7 @@ function postColumnsFrom(data: {
     registrationUrl: data.registrationUrl ?? null,
     registrationIntro: data.registrationIntro ?? null,
     registrationButtonLabel: data.registrationButtonLabel ?? null,
+    registrationForm: data.registrationForm ?? null,
     status: data.status,
   };
 }
@@ -273,6 +275,7 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
     registrationUrl: existing.registration_url,
     registrationIntro: existing.registration_intro,
     registrationButtonLabel: existing.registration_button_label,
+    registrationForm: existing.registration_form,
     status,
   });
   if (!updated) throw new ApiError(500, 'not_saved', 'That change could not be saved. Try again.');

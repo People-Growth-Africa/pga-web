@@ -1,4 +1,5 @@
 import { authRequest, type ApiFailure, type ApiResult } from './authClient';
+import type { RegistrationAnswers } from './registrationForm';
 
 /**
  * The public lead forms: event registration, consultation booking and written
@@ -10,6 +11,13 @@ export type LeadAcknowledged = { ok: boolean };
 
 export type RegistrationInput = {
   eventSlug: string;
+  /** Answers keyed by the id of the question that asked them. */
+  answers: RegistrationAnswers;
+  /**
+   * The same answers in the fixed columns the lead table still keeps, derived
+   * for the list and the notification email. The server re-derives them from
+   * `answers`; sending them keeps an older server answerable during a deploy.
+   */
   name: string;
   email: string;
   phone: string;

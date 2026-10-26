@@ -6,6 +6,7 @@ import {
   type Category,
 } from '../data/posts';
 import { eventsList, type EventItem, type EventType } from '../data/events';
+import { coerceRegistrationForm } from './registrationForm';
 import { formatEventDate, formatTime, type FeedEntry } from './content';
 import { displayTime, formatEventDay, lagosDate, lagosTime, type LivePost } from './published';
 
@@ -333,6 +334,7 @@ export function eventFromLive(post: LivePost, today: string = todayInLagos()): E
     registrationUrl: post.registrationUrl,
     registrationIntro: post.registrationIntro,
     registrationButtonLabel: post.registrationButtonLabel,
+    registrationForm: coerceRegistrationForm(post.registrationForm),
     eventEndDate: endDate,
     startTime,
     imageUrl: post.coverImageThumbUrl ?? post.coverImageUrl,
@@ -358,6 +360,7 @@ export function mergeEvents(
     origin: 'site',
     detailHref: `/events/${event.slug}`,
     registrationUrl: null,
+    registrationForm: null,
     eventEndDate: null,
     startTime: null,
     imageUrl: null,

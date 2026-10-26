@@ -1,3 +1,5 @@
+import type { RegistrationForm } from '../lib/registrationForm';
+
 export type EventType = 'webinar' | 'mentorship' | 'workshop';
 
 export interface EventSpeaker {
@@ -23,6 +25,8 @@ export interface EventItem {
   /** Manager-written copy for the registration form, when one is set. */
   registrationIntro?: string | null;
   registrationButtonLabel?: string | null;
+  /** The form an event collects registrations with, when one has been saved. */
+  registrationForm?: RegistrationForm | null;
   detailedAgenda?: string[];
   learningOutcomes: string[];
   targetAudience: string;

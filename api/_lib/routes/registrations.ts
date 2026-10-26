@@ -1,16 +1,49 @@
 import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../http.js';
 import { parseInput, registrationSchema } from '../validation.js';
-import { insertRegistration, isPublishedEventSlug, isUniqueViolation } from '../db.js';
+import { findEventForRegistration, insertRegistration, isUniqueViolation } from '../db.js';
 import { sendRegistrationConfirmationEmail } from '../email.js';
 import { enforceRateLimit } from '../ratelimit.js';
+import {
+  DEFAULT_REGISTRATION_FORM,
+  answerText,
+  firstAnswerOfType,
+  formWindow,
+  parseRegistrationForm,
+  validateAnswers,
+  type RegistrationForm,
+} from '../registration-form.js';
 
 /**
  * POST /api/registrations - write-only for the public.
  *
- * A registration is stored once per event and address. The handler never
- * returns a row, a count or anything else about other registrants: the only
- * answer is whether this submission was accepted.
+ * The event, its published state and its form are read from the database, so
+ * the rules a submission is checked against are the ones the panel saved, not
+ * ones the browser described. Every answer is stored against the id of the
+ * question that asked it, with a copy of its label, so editing the form later
+ * cannot make an old response unreadable.
+ *
+ * The handler never returns a row, a count or anything else about other
+ * registrants: the only answer is whether this submission was accepted.
  */
+
+/** A cached page from before editable forms only knows the fixed fields. */
+function legacyAnswers(data: {
+  name?: string;
+  email?: string;
+  phone?: string;
+  organization?: string;
+  notes?: string;
+}): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries({
+      name: data.name ?? '',
+      email: data.email ?? '',
+      phone: data.phone ?? '',
+      organisation: data.organization ?? '',
+      notes: data.notes ?? '',
+    }).filter(([, value]) => value !== ''),
+  );
+}
 
 export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   const data = parseInput(registrationSchema, parseJsonBody(req));
@@ -30,15 +63,96 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     return;
   }
 
-  if (!(await isPublishedEventSlug(data.eventSlug))) {
+  const event = await findEventForRegistration(data.eventSlug);
+  if (!event || event.status !== 'published') {
     throw new ApiError(404, 'event_not_found', 'That event is not open for registration.');
+  }
+
+  const saved = parseRegistrationForm(event.registration_form);
+  const form: RegistrationForm = saved ?? DEFAULT_REGISTRATION_FORM;
+
+  const window = formWindow(form);
+  if (window === 'not_open') {
+    throw new ApiError(
+      409,
+      'registration_not_open',
+      form.opensAt
+        ? 'Registration for this event has not opened yet.'
+        : 'Registration for this event is not open yet.',
+    );
+  }
+  if (window === 'closed') {
+    throw new ApiError(409, 'registration_closed', 'Registration for this event has closed.');
+  }
+
+  // A form built in the panel expects its own questions. A page cached from
+  // before that form existed sends only the fixed fields, and accepting them
+  // would walk straight past questions the organiser made required - so it is
+  // asked to reload instead.
+  if (data.answers === undefined) {
+    if (saved) {
+      throw new ApiError(
+        409,
+        'form_changed',
+        'This event’s registration form has changed. Reload the page and try again.',
+      );
+    }
+  }
+
+  const validated = data.answers === undefined
+    ? validateAnswers(DEFAULT_REGISTRATION_FORM, legacyAnswers(data))
+    : validateAnswers(form, data.answers);
+
+  if (Object.keys(validated.errors).length > 0) {
+    throw new ApiError(
+      400,
+      'invalid_registration',
+      'Check the highlighted answers and try again.',
+      validated.errors,
+    );
+  }
+
+  const { answers, values } = validated;
+  // Lower-cased like every other address the site stores: the unique index is
+  // (event_slug, email), and "Ada@x.com" is the same person as "ada@x.com".
+  const email = (
+    answerText(values, ['email']) ??
+    firstAnswerOfType(answers, 'email') ??
+    data.email ??
+    ''
+  ).toLowerCase();
+  const name =
+    answerText(values, ['name', 'full_name', 'fullName']) ??
+    firstAnswerOfType(answers, 'short_text') ??
+    data.name ??
+    email.split('@')[0] ??
+    'Registrant';
+  const phone =
+    answerText(values, ['phone', 'phone_number', 'whatsapp']) ??
+    firstAnswerOfType(answers, 'phone') ??
+    data.phone ??
+    null;
+  const organization =
+    answerText(values, ['organisation', 'organization', 'company', 'employer']) ??
+    data.organization ??
+    null;
+  const notes =
+    answerText(values, ['notes', 'message', 'question']) ??
+    firstAnswerOfType(answers, 'paragraph') ??
+    data.notes ??
+    '';
+
+  if (!email) {
+    throw new ApiError(400, 'email_required', 'Enter an email address so we can confirm your place.', {
+      email: 'Enter your email address.',
+    });
   }
 
   // The confirmation email budget is per address, so one address cannot be used
   // to flood a third party's inbox through the public form.
   await enforceRateLimit({
     name: 'registration-email',
-    identifier: data.email,
+    identifier: email,
     limit: 3,
     windowSeconds: 3600,
   });
@@ -46,11 +160,12 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   try {
     const id = await insertRegistration({
       eventSlug: data.eventSlug,
-      name: data.name,
-      email: data.email,
-      phone: data.phone,
-      organization: data.organization?.trim() || null,
-      notes: data.notes,
+      name: name.slice(0, 100),
+      email,
+      phone: phone ? phone.slice(0, 20) : '',
+      organization: organization?.trim() || null,
+      notes: notes.slice(0, 1000),
+      answers,
     });
 
     if (!id) {
@@ -65,7 +180,7 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     // turn a saved place into an error. Nothing is logged but the fact that it
     // failed, because the message itself is personal data.
     try {
-      await sendRegistrationConfirmationEmail(data.email, data.name, data.eventSlug);
+      await sendRegistrationConfirmationEmail(email, name, data.eventSlug);
     } catch {
       console.error('[registrations] confirmation email failed');
     }

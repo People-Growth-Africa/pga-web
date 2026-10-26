@@ -16,6 +16,7 @@
     "migrate:content-manager": "node scripts/migrate-content-manager.mjs",
     "migrate:role-split": "node scripts/migrate-role-split.mjs",
     "migrate:event-pages": "node scripts/migrate-event-pages.mjs",
+    "migrate:event-forms": "node scripts/migrate-event-forms.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",
     "serve:api": "node scripts/api-server.mjs",
     "test:auth": "node scripts/test-auth.mjs",

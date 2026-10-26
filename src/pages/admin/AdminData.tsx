@@ -36,6 +36,7 @@ const COLUMNS: Record<DataType, { key: string; label: string }[]> = {
     { key: 'phone', label: 'Phone' },
     { key: 'organization', label: 'Organization' },
     { key: 'notes', label: 'Notes' },
+    { key: 'answers', label: 'Answers' },
     { key: 'event_slug', label: 'Event' },
     { key: 'created_at', label: 'Registered' },
   ],
@@ -353,6 +354,45 @@ export default function AdminData() {
                                 </>
                               ) : (
                                 '—'
+                              )}
+                            </td>
+                          );
+                        }
+                        if (column.key === 'answers') {
+                          const raw = (row as { answers?: unknown }).answers;
+                          const answers = Array.isArray(raw)
+                            ? (raw as {
+                                questionId: string;
+                                label: string;
+                                value: unknown;
+                                skipped?: boolean;
+                              }[])
+                            : [];
+                          return (
+                            <td key={column.key} className="max-w-[280px] px-4 py-4 align-top">
+                              {answers.length === 0 ? (
+                                <span className="text-charcoal/35">—</span>
+                              ) : (
+                                <dl className="space-y-1">
+                                  {answers.map((answer) => (
+                                    <div key={answer.questionId} className="text-[0.8rem] leading-snug">
+                                      <dt className="inline font-semibold text-charcoal/60">
+                                        {answer.label}:
+                                      </dt>{' '}
+                                      <dd className="inline whitespace-pre-wrap break-words text-charcoal/75">
+                                        {answer.skipped ? (
+                                          <span className="italic text-charcoal/40">
+                                            Not applicable
+                                          </span>
+                                        ) : Array.isArray(answer.value) ? (
+                                          answer.value.join(', ')
+                                        ) : (
+                                          String(answer.value ?? '')
+                                        )}
+                                      </dd>
+                                    </div>
+                                  ))}
+                                </dl>
                               )}
                             </td>
                           );

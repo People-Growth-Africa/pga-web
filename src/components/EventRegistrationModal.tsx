@@ -1,50 +1,210 @@
-import { useState, useEffect, useId } from 'react';
+import { useState, useEffect, useId, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { EventItem } from '../data/events';
 import { leadFailureMessage, submitRegistration } from '../lib/leadClient';
 import { useFormsAvailability } from '../hooks/useFormsAvailability';
 import FormsUnavailableNotice, { FormAvailabilityPending } from './FormsUnavailableNotice';
+import {
+  ANSWER_LIMITS,
+  coerceRegistrationForm,
+  defaultRegistrationForm,
+  formWindow,
+  validateAnswers,
+  visibleQuestionIds,
+  type RegistrationAnswers,
+  type RegistrationForm,
+  type RegistrationQuestion,
+} from '../lib/registrationForm';
 
-type RegistrationFields = {
-  name: string;
-  email: string;
-  phone: string;
-  organization: string;
-  notes: string;
-};
+const inputClass =
+  'w-full px-3.5 py-2.5 rounded-[10px] border border-charcoal/20 bg-cream/20 text-charcoal text-sm focus:outline-none focus:border-brand-green focus:bg-white transition-all';
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_PATTERN = /^\+?[0-9][0-9\s().-]{5,19}$/;
+/** `2026-11-02T09:00:00Z` -> `2 November 2026 at 10:00`, read in Lagos. */
+function describeInstant(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('en-GB', {
+    timeZone: 'Africa/Lagos',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
 
-/** The same limits the server enforces, checked here for a faster answer. */
-function validateRegistration(values: RegistrationFields): Record<string, string> {
-  const errors: Record<string, string> = {};
-  const name = values.name.trim();
-  const email = values.email.trim();
-  const phone = values.phone.trim();
-  const organization = values.organization.trim();
-  const notes = values.notes.trim();
+function text(value: string | string[] | undefined): string {
+  return typeof value === 'string' ? value : '';
+}
 
-  if (!name) errors.name = 'Enter your full name.';
-  else if (name.length > 100) errors.name = 'Name must be 100 characters or fewer.';
+/** The fixed columns the lead table keeps, derived from the answers. */
+function deriveContact(form: RegistrationForm, answers: RegistrationAnswers) {
+  const first = (types: RegistrationQuestion['type'][]): string => {
+    for (const question of form.questions) {
+      if (types.includes(question.type)) {
+        const value = text(answers[question.id]);
+        if (value) return value;
+      }
+    }
+    return '';
+  };
 
-  if (!email) errors.email = 'Enter your email address.';
-  else if (email.length > 254) errors.email = 'Email must be 254 characters or fewer.';
-  else if (!EMAIL_PATTERN.test(email))
-    errors.email = 'Enter an email address in the form name@example.com.';
+  const emailQuestion = form.questions.find((question) => question.type === 'email');
+  const nameQuestion = form.questions.find((question) => question.id === 'name');
+  const phoneQuestion = form.questions.find((question) => question.type === 'phone');
+  const notesQuestion = form.questions.find((question) => question.id === 'notes');
 
-  if (!phone) errors.phone = 'Enter your phone number.';
-  else if (phone.length > 20) errors.phone = 'Phone must be 20 characters or fewer.';
-  else if (!PHONE_PATTERN.test(phone))
-    errors.phone = 'Enter a phone number using digits, spaces, dashes or brackets.';
+  return {
+    name: text(answers[nameQuestion?.id ?? '']) || first(['short_text']) || text(answers[emailQuestion?.id ?? '']).split('@')[0] || '',
+    email: text(answers[emailQuestion?.id ?? '']) || first(['email']),
+    phone: text(answers[phoneQuestion?.id ?? '']),
+    organization: text(answers.organisation ?? answers.organization ?? '') || '',
+    notes: text(answers[notesQuestion?.id ?? '']) || first(['paragraph']),
+  };
+}
 
-  if (organization.length > 150)
-    errors.organization = 'Organisation must be 150 characters or fewer.';
+/** One question as the visitor sees it: the input that matches its type. */
+function AnswerField({
+  question,
+  formId,
+  value,
+  error,
+  onChange,
+}: {
+  question: RegistrationQuestion;
+  formId: string;
+  value: string | string[] | undefined;
+  error?: string;
+  onChange: (next: string | string[]) => void;
+}) {
+  const id = `${formId}-${question.id}`;
+  const errorId = `${id}-error`;
+  const describedBy = error ? errorId : undefined;
+  const shared = {
+    id,
+    'aria-invalid': Boolean(error),
+    'aria-describedby': describedBy,
+    className: inputClass,
+  };
+  const maxLength = ANSWER_LIMITS[question.type];
 
-  if (!notes) errors.notes = 'Tell us what you would like to get from this session.';
-  else if (notes.length > 1000) errors.notes = 'Notes must be 1000 characters or fewer.';
+  return (
+    <div>
+      <label htmlFor={id} className="block text-xs font-semibold text-charcoal/70 mb-1">
+        {question.label}
+        {question.required ? ' *' : ''}
+      </label>
 
-  return errors;
+      {question.type === 'paragraph' ? (
+        <textarea
+          {...shared}
+          rows={3}
+          maxLength={maxLength}
+          value={text(value)}
+          onChange={(event) => onChange(event.target.value)}
+          className={`${inputClass} resize-none`}
+        />
+      ) : question.type === 'dropdown' ? (
+        <select
+          {...shared}
+          value={text(value)}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          <option value="">Choose an option…</option>
+          {question.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      ) : question.type === 'choice' ? (
+        <div
+          id={id}
+          role="radiogroup"
+          aria-invalid={Boolean(error)}
+          aria-describedby={describedBy}
+          className="space-y-2 pt-1"
+        >
+          {question.options.map((option) => (
+            <label
+              key={option}
+              className="flex items-start gap-2.5 text-sm text-charcoal/80 cursor-pointer"
+            >
+              <input
+                type="radio"
+                name={id}
+                value={option}
+                checked={text(value) === option}
+                onChange={() => onChange(option)}
+                className="mt-0.5 h-4 w-4 accent-[#0B4B3C]"
+              />
+              {option}
+            </label>
+          ))}
+        </div>
+      ) : question.type === 'checkboxes' ? (
+        <div
+          id={id}
+          aria-invalid={Boolean(error)}
+          aria-describedby={describedBy}
+          className="space-y-2 pt-1"
+        >
+          {question.options.map((option) => {
+            const list = Array.isArray(value) ? value : [];
+            const checked = list.includes(option);
+            return (
+              <label
+                key={option}
+                className="flex items-start gap-2.5 text-sm text-charcoal/80 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  value={option}
+                  checked={checked}
+                  onChange={() =>
+                    onChange(checked ? list.filter((item) => item !== option) : [...list, option])
+                  }
+                  className="mt-0.5 h-4 w-4 accent-[#0B4B3C]"
+                />
+                {option}
+              </label>
+            );
+          })}
+        </div>
+      ) : (
+        <input
+          {...shared}
+          type={
+            question.type === 'email'
+              ? 'email'
+              : question.type === 'phone'
+                ? 'tel'
+                : question.type === 'number'
+                  ? 'number'
+                  : question.type === 'date'
+                    ? 'date'
+                    : 'text'
+          }
+          step={question.type === 'number' ? 'any' : undefined}
+          maxLength={question.type === 'date' ? undefined : maxLength}
+          autoComplete={
+            question.type === 'email' ? 'email' : question.type === 'phone' ? 'tel' : 'off'
+          }
+          required={question.required}
+          aria-required={question.required}
+          value={text(value)}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
+
+      {error && (
+        <p id={errorId} role="alert" className="mt-1 text-xs text-terracotta">
+          {error}
+        </p>
+      )}
+    </div>
+  );
 }
 
 interface EventRegistrationModalProps {
@@ -54,14 +214,8 @@ interface EventRegistrationModalProps {
 
 export default function EventRegistrationModal({ event, onClose }: EventRegistrationModalProps) {
   const formId = useId();
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    organization: '',
-    notes: '',
-    website: '',
-  });
+  const [answers, setAnswers] = useState<RegistrationAnswers>({});
+  const [website, setWebsite] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [error, setError] = useState('');
@@ -69,6 +223,34 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
   // Asked once on open, so the form is not put in front of someone only to
   // refuse their submission afterwards.
   const formsAvailability = useFormsAvailability();
+
+  /** The saved form, or the fixed questions the site has always asked. */
+  const form = useMemo<RegistrationForm>(
+    () => coerceRegistrationForm(event?.registrationForm) ?? defaultRegistrationForm(),
+    [event?.registrationForm],
+  );
+  const windowState = useMemo(() => formWindow(form), [form]);
+  // Which questions the conditions currently show. Recomputed on every answer
+  // so a change of mind shows and hides follow-up questions live.
+  const visible = useMemo(() => visibleQuestionIds(form, answers), [form, answers]);
+
+  useEffect(() => {
+    // A question hidden after being answered must not leak its stale value into
+    // the submission or the confirmation screen — the server would drop it
+    // anyway, and dropping it here keeps both sides saying the same thing.
+    setAnswers((current) => {
+      const kept = Object.entries(current).filter(([id]) => visible.has(id));
+      return kept.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(kept);
+    });
+    setFieldErrors((current) => {
+      const kept = Object.entries(current).filter(([id]) => visible.has(id));
+      return kept.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(kept);
+    });
+  }, [visible]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -78,6 +260,14 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  useEffect(() => {
+    // A different event means different questions and a fresh form.
+    setAnswers({});
+    setFieldErrors({});
+    setError('');
+    setIsConfirmed(false);
+  }, [event?.slug]);
+
   if (!event) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -85,8 +275,9 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
     if (isSubmitting) return;
 
     // Client side first, so a typo is answered without a round trip. The server
-    // checks the same rules again and is the source of truth.
-    const errors = validateRegistration(formData);
+    // checks the same rules against the form it stored and is the source of
+    // truth.
+    const errors = validateAnswers(form, answers);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setError('');
@@ -97,14 +288,16 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
     setError('');
     setIsSubmitting(true);
 
+    const contact = deriveContact(form, answers);
     const result = await submitRegistration({
       eventSlug: event.slug,
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone,
-      organization: formData.organization,
-      notes: formData.notes,
-      website: formData.website,
+      answers,
+      name: contact.name,
+      email: contact.email,
+      phone: contact.phone,
+      organization: contact.organization,
+      notes: contact.notes,
+      website,
     });
 
     setIsSubmitting(false);
@@ -145,6 +338,10 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
     link.click();
     document.body.removeChild(link);
   };
+
+  const emailAnswer =
+    form.questions.find((question) => question.type === 'email')?.id ?? '';
+  const nameAnswer = form.questions.find((question) => question.id === 'name')?.id ?? '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-charcoal/70 backdrop-blur-sm">
@@ -220,9 +417,18 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                 <h4 className="font-[family-name:var(--font-heading)] text-2xl font-semibold text-charcoal mb-2">
                   Registration received
                 </h4>
-                <p className="text-charcoal/70 text-sm leading-relaxed mb-6">
-                  Thank you, <strong>{formData.name}</strong>. Your place is saved and our team has your details. A confirmation email is on its way to <strong>{formData.email}</strong>, and we will send your joining link before the session.
-                </p>
+                {form.confirmationMessage ? (
+                  <p className="text-charcoal/70 text-sm leading-relaxed mb-6 whitespace-pre-line">
+                    {form.confirmationMessage}
+                  </p>
+                ) : (
+                  <p className="text-charcoal/70 text-sm leading-relaxed mb-6">
+                    Thank you, <strong>{text(answers[nameAnswer]) || 'friend'}</strong>. Your place
+                    is saved and our team has your details. A confirmation email is on its way to{' '}
+                    <strong>{text(answers[emailAnswer]) || 'your inbox'}</strong>, and we will send
+                    your joining link before the session.
+                  </p>
+                )}
 
                 <div className="bg-cream/70 rounded-[14px] p-5 text-left text-xs mb-6 space-y-2 border border-charcoal/10">
                   <div><strong>Event:</strong> {event.title}</div>
@@ -248,6 +454,33 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                   </button>
                 </div>
               </motion.div>
+            ) : windowState !== 'open' ? (
+              <motion.div
+                key="window"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="py-4 text-center"
+              >
+                <h4 className="font-[family-name:var(--font-heading)] text-xl font-semibold text-charcoal mb-2">
+                  {windowState === 'closed' ? 'Registration has closed' : 'Registration is not open yet'}
+                </h4>
+                <p className="text-charcoal/70 text-sm leading-relaxed mb-6">
+                  {windowState === 'closed'
+                    ? form.closesAt
+                      ? `This form closed on ${describeInstant(form.closesAt)}.`
+                      : 'This event is no longer accepting registrations.'
+                    : form.opensAt
+                      ? `This form opens on ${describeInstant(form.opensAt)}.`
+                      : 'This event is not accepting registrations yet.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-6 py-2.5 bg-cream text-charcoal text-xs font-semibold rounded-full hover:bg-charcoal/10 transition-all border border-charcoal/15"
+                >
+                  Close
+                </button>
+              </motion.div>
             ) : (
               <motion.form
                 key="form"
@@ -257,114 +490,31 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                 className="space-y-4"
                 noValidate
               >
-                <p className="text-xs md:text-sm text-charcoal/70 leading-relaxed mb-4">
-                  {event.registrationIntro?.trim() ||
-                    'Fill in the short form below to reserve your place and receive the agenda.'}
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor={`${formId}-name`} className="block text-xs font-semibold text-charcoal/70 mb-1">
-                      Full name *
-                    </label>
-                    <input
-                      id={`${formId}-name`}
-                      type="text"
-                      required
-                      maxLength={100}
-                      autoComplete="name"
-                      placeholder="e.g. Oluwaseun Davies"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      aria-invalid={Boolean(fieldErrors.name)}
-                      className="w-full px-3.5 py-2.5 rounded-[10px] border border-charcoal/20 bg-cream/20 text-charcoal text-sm focus:outline-none focus:border-brand-green focus:bg-white transition-all"
-                    />
-                    {fieldErrors.name && (
-                      <p role="alert" className="mt-1 text-xs text-terracotta">{fieldErrors.name}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor={`${formId}-email`} className="block text-xs font-semibold text-charcoal/70 mb-1">
-                      Email *
-                    </label>
-                    <input
-                      id={`${formId}-email`}
-                      type="email"
-                      required
-                      maxLength={254}
-                      autoComplete="email"
-                      placeholder="oluwaseun@company.com"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      aria-invalid={Boolean(fieldErrors.email)}
-                      className="w-full px-3.5 py-2.5 rounded-[10px] border border-charcoal/20 bg-cream/20 text-charcoal text-sm focus:outline-none focus:border-brand-green focus:bg-white transition-all"
-                    />
-                    {fieldErrors.email && (
-                      <p role="alert" className="mt-1 text-xs text-terracotta">{fieldErrors.email}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor={`${formId}-phone`} className="block text-xs font-semibold text-charcoal/70 mb-1">
-                      Phone / WhatsApp *
-                    </label>
-                    <input
-                      id={`${formId}-phone`}
-                      type="tel"
-                      required
-                      maxLength={20}
-                      autoComplete="tel"
-                      placeholder="+234 800 000 0000"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      aria-invalid={Boolean(fieldErrors.phone)}
-                      className="w-full px-3.5 py-2.5 rounded-[10px] border border-charcoal/20 bg-cream/20 text-charcoal text-sm focus:outline-none focus:border-brand-green focus:bg-white transition-all"
-                    />
-                    {fieldErrors.phone && (
-                      <p role="alert" className="mt-1 text-xs text-terracotta">{fieldErrors.phone}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor={`${formId}-org`} className="block text-xs font-semibold text-charcoal/70 mb-1">
-                      Organisation / company <span className="font-normal">(optional)</span>
-                    </label>
-                    <input
-                      id={`${formId}-org`}
-                      type="text"
-                      maxLength={150}
-                      autoComplete="organization"
-                      placeholder="e.g. Sterling Ventures"
-                      value={formData.organization}
-                      onChange={(e) => setFormData({ ...formData, organization: e.target.value })}
-                      aria-invalid={Boolean(fieldErrors.organization)}
-                      className="w-full px-3.5 py-2.5 rounded-[10px] border border-charcoal/20 bg-cream/20 text-charcoal text-sm focus:outline-none focus:border-brand-green focus:bg-white transition-all"
-                    />
-                    {fieldErrors.organization && (
-                      <p role="alert" className="mt-1 text-xs text-terracotta">{fieldErrors.organization}</p>
-                    )}
-                  </div>
+                <div className="mb-4">
+                  <p className="font-[family-name:var(--font-heading)] text-lg font-semibold text-charcoal">
+                    {form.title}
+                  </p>
+                  <p className="mt-1 text-xs md:text-sm text-charcoal/70 leading-relaxed">
+                    {event.registrationIntro?.trim() ||
+                      'Fill in the short form below to reserve your place and receive the agenda.'}
+                  </p>
                 </div>
 
-                <div>
-                  <label htmlFor={`${formId}-notes`} className="block text-xs font-semibold text-charcoal/70 mb-1">
-                    Notes *
-                  </label>
-                  <textarea
-                    id={`${formId}-notes`}
-                    rows={3}
-                    required
-                    maxLength={1000}
-                    placeholder="Tell us what you would like to get from the session..."
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    aria-invalid={Boolean(fieldErrors.notes)}
-                    className="w-full px-3.5 py-2.5 rounded-[10px] border border-charcoal/20 bg-cream/20 text-charcoal text-sm focus:outline-none focus:border-brand-green focus:bg-white transition-all resize-none"
-                  />
-                  {fieldErrors.notes && (
-                    <p role="alert" className="mt-1 text-xs text-terracotta">{fieldErrors.notes}</p>
-                  )}
+                <div className="space-y-4">
+                  {form.questions
+                    .filter((question) => visible.has(question.id))
+                    .map((question) => (
+                    <AnswerField
+                      key={question.id}
+                      question={question}
+                      formId={formId}
+                      value={answers[question.id]}
+                      error={fieldErrors[question.id]}
+                      onChange={(next) =>
+                        setAnswers((current) => ({ ...current, [question.id]: next }))
+                      }
+                    />
+                  ))}
                 </div>
 
                 {/* Honeypot: off screen and skipped by the keyboard. A real
@@ -378,8 +528,8 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                     type="text"
                     tabIndex={-1}
                     autoComplete="off"
-                    value={formData.website}
-                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
                   />
                 </div>
 

@@ -368,6 +368,24 @@ export async function insertEventRegistration(
   return row?.id ?? null;
 }
 
+/**
+ * The event a registration is for, read from the database rather than trusted
+ * from the request: its published state, title and the form that asked the
+ * questions all come from here. A draft event accepts no registrations.
+ */
+export async function findEventForRegistration(slug: string): Promise<{
+  slug: string;
+  title: string;
+  status: PostStatus;
+  registration_form: unknown | null;
+} | null> {
+  return queryOne(
+    `SELECT slug, title, status, registration_form
+       FROM posts WHERE slug = $1 AND type = 'event'`,
+    [slug],
+  );
+}
+
 export async function insertConsultationBooking(
   input: LeadContact & {
     teamSize: string | null;
@@ -581,6 +599,8 @@ export type PostRow = {
   registration_url: string | null;
   registration_intro: string | null;
   registration_button_label: string | null;
+  /** The event's editable registration form, or null for the built-in fields. */
+  registration_form: unknown | null;
   status: PostStatus;
   published_at: string | null;
   created_at: string;
@@ -594,7 +614,7 @@ const POST_COLUMNS = `p.id, p.type, p.slug, p.title, p.excerpt, p.body, p.catego
          ${isoTimestamp('p', 'event_start')} AS event_start,
          ${isoTimestamp('p', 'event_end')} AS event_end,
          p.location_text, p.is_online, p.registration_url,
-         p.registration_intro, p.registration_button_label, p.status,
+         p.registration_intro, p.registration_button_label, p.registration_form, p.status,
          ${isoTimestamp('p', 'published_at')} AS published_at,
          ${isoTimestamp('p', 'created_at')} AS created_at,
          ${isoTimestamp('p', 'updated_at')} AS updated_at,
@@ -761,6 +781,7 @@ export async function insertPost(input: {
   registrationUrl: string | null;
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
+  registrationForm: unknown | null;
   status: PostStatus;
   authorId: string;
 }): Promise<string | null> {
@@ -768,9 +789,11 @@ export async function insertPost(input: {
     `INSERT INTO posts
        (type, slug, title, excerpt, body, category_id, cover_image_url, cover_image_thumb_url,
         link_label, link_url, event_start, event_end, location_text, is_online, registration_url,
-        registration_intro, registration_button_label, status, published_at, author_id)
+        registration_intro, registration_button_label, registration_form, status, published_at,
+        author_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-             $16, $17, $18, CASE WHEN $18 = 'published' THEN now() ELSE NULL END, $19)
+             $16, $17, $18, $19::jsonb, $20,
+             CASE WHEN $20 = 'published' THEN now() ELSE NULL END, $21)
      RETURNING id`,
     [
       input.type,
@@ -790,6 +813,7 @@ export async function insertPost(input: {
       input.registrationUrl,
       input.registrationIntro,
       input.registrationButtonLabel,
+      input.registrationForm === null ? null : JSON.stringify(input.registrationForm),
       input.status,
       input.authorId,
     ],
@@ -821,6 +845,7 @@ export async function updatePost(input: {
   registrationUrl: string | null;
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
+  registrationForm: unknown | null;
   status: PostStatus;
 }): Promise<{ id: string } | null> {
   return queryOne<{ id: string }>(
@@ -842,9 +867,10 @@ export async function updatePost(input: {
             registration_url = $16,
             registration_intro = $17,
             registration_button_label = $18,
-            status = $19,
+            registration_form = $19::jsonb,
+            status = $20,
             published_at = CASE
-              WHEN $19 = 'published' THEN coalesce(published_at, now())
+              WHEN $20 = 'published' THEN coalesce(published_at, now())
               ELSE NULL END,
             updated_at = now()
       WHERE id = $1
@@ -868,6 +894,7 @@ export async function updatePost(input: {
       input.registrationUrl,
       input.registrationIntro,
       input.registrationButtonLabel,
+      input.registrationForm === null ? null : JSON.stringify(input.registrationForm),
       input.status,
     ],
   );
@@ -940,9 +967,13 @@ export type RegistrationRow = {
   email: string;
   phone: string;
   organization: string | null;
-  notes: string;
+  notes: string | null;
+  /** Answers to the event's form, each carrying the question it answered. */
+  answers: unknown | null;
   created_at: string;
 };
+
+
 
 export type RegistrationFilter = {
   eventSlug?: string;
@@ -958,12 +989,22 @@ export async function insertRegistration(input: {
   phone: string;
   organization: string | null;
   notes: string;
+  /** Every answer, with the question id and label it was given under. */
+  answers?: unknown;
 }): Promise<string | null> {
   const row = await queryOne<{ id: string }>(
-    `INSERT INTO registrations (event_slug, name, email, phone, organization, notes)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO registrations (event_slug, name, email, phone, organization, notes, answers)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
      RETURNING id`,
-    [input.eventSlug, input.name, input.email, input.phone, input.organization, input.notes],
+    [
+      input.eventSlug,
+      input.name,
+      input.email,
+      input.phone,
+      input.organization,
+      input.notes,
+      input.answers === undefined ? null : JSON.stringify(input.answers),
+    ],
   );
   return row?.id ?? null;
 }
@@ -996,7 +1037,7 @@ function registrationWhere(filter: RegistrationFilter): { where: string; params:
   return { where: where.length > 0 ? `WHERE ${where.join(' AND ')}` : '', params };
 }
 
-const REGISTRATION_COLUMNS = `id, event_slug, name, email, phone, organization, notes,
+const REGISTRATION_COLUMNS = `id, event_slug, name, email, phone, organization, notes, answers,
          ${isoTimestamp('registrations', 'created_at')} AS created_at`;
 
 export async function listRegistrations(
