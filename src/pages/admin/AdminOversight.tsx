@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
 import { onSessionEnded } from '../../lib/authClient';
+import { livePostPath } from '../../lib/published';
 import PostEditor from './PostEditor';
 import {
   createPost,
@@ -33,7 +34,7 @@ const smallDanger =
 type View = 'list' | 'create' | 'edit';
 
 /**
- * /admin/oversight — the administrator's content oversight screen.
+ * /admin/oversight - the administrator's content oversight screen.
  *
  * It deliberately uses its own page and the /api/admin/* oversight endpoints,
  * never the content manager's /content page or /api/content/* routes. The role
@@ -150,7 +151,7 @@ export default function AdminOversight() {
                   setCreateType('event');
                   setView('create');
                 }}
-                className="rounded-full border border-deep-green/25 px-5 py-2.5 text-sm font-semibold text-deep-green"
+                className={secondaryAction}
               >
                 New event
               </button>
@@ -161,7 +162,7 @@ export default function AdminOversight() {
                   setCreateType('blog');
                   setView('create');
                 }}
-                className="rounded-full bg-deep-green px-5 py-2.5 text-sm font-semibold text-white"
+                className={primaryAction}
               >
                 New post
               </button>
@@ -170,12 +171,18 @@ export default function AdminOversight() {
         }
       >
         {error && (
-          <p role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p
+            role="alert"
+            className="mb-5 rounded-[12px] border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta"
+          >
             {error}
           </p>
         )}
         {notice && (
-          <p role="status" className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <p
+            role="status"
+            className="mb-5 rounded-[12px] border border-brand-green/30 bg-mint/40 px-4 py-3 text-sm text-charcoal"
+          >
             {notice}
           </p>
         )}
@@ -199,69 +206,110 @@ export default function AdminOversight() {
             uploadCover={uploadCover}
           />
         ) : loading ? (
-          <p className="rounded-2xl border border-charcoal/10 bg-white p-10 text-center text-sm text-charcoal/50">
+          <p className="rounded-[16px] border border-charcoal/10 bg-white p-10 text-center text-sm text-charcoal/50">
             Loading content…
           </p>
         ) : posts.length === 0 ? (
-          <p className="rounded-2xl border border-charcoal/10 bg-white p-10 text-center text-sm text-charcoal/50">
+          <p className="rounded-[16px] border border-charcoal/10 bg-white p-10 text-center text-sm text-charcoal/50">
             No posts or events yet.
           </p>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-charcoal/10 bg-white">
-            <table className="w-full min-w-[760px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-charcoal/10 bg-[#FAF8F3] text-[0.68rem] uppercase tracking-[0.12em] text-charcoal/50">
-                  <th className="px-5 py-3.5 font-semibold">Title</th>
-                  <th className="px-5 py-3.5 font-semibold">Type</th>
-                  <th className="px-5 py-3.5 font-semibold">Status</th>
-                  <th className="px-5 py-3.5 text-right font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {posts.map((post) => (
-                  <tr key={post.id} className="border-b border-charcoal/[0.07] last:border-0">
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-charcoal">{post.title}</p>
-                      <p className="text-xs text-charcoal/45">/{post.type}/{post.slug}</p>
-                    </td>
-                    <td className="px-5 py-4 text-sm capitalize text-charcoal/70">{post.type}</td>
-                    <td className="px-5 py-4 text-sm">
-                      <span className={post.status === 'published' ? 'text-emerald-700' : 'text-charcoal/50'}>
-                        {post.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditing(post);
-                            setEditorError(null);
-                            setView('edit');
-                          }}
-                          className={smallOutline}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void toggle(post)}
-                          className={post.status === 'published' ? smallOutline : smallPrimary}
-                        >
-                          {post.status === 'published' ? 'Unpublish' : 'Publish'}
-                        </button>
-                        <button type="button" onClick={() => void remove(post)} className={smallDanger}>
-                          Delete
-                        </button>
+          <ul className="space-y-3.5">
+            {posts.map((post) => {
+              const published = post.status === 'published';
+              return (
+                <li
+                  key={post.id}
+                  className="rounded-[16px] border border-charcoal/10 bg-white px-5 py-5 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:px-6"
+                >
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex flex-wrap items-center gap-2.5">
+                        <PublishBadge published={published} />
+                        <TypeBadge type={post.type} />
+                        <span className="font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
+                          {published ? 'Live on the site' : 'Not published'}
+                        </span>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <h2 className="break-words font-[family-name:var(--font-heading)] text-[1.25rem] font-semibold leading-snug text-charcoal sm:text-[1.35rem]">
+                        {post.title}
+                      </h2>
+                      <p className="mt-1 break-all font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/45">
+                        /{post.type}/{post.slug}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(post);
+                          setEditorError(null);
+                          setView('edit');
+                        }}
+                        className={smallOutline}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void toggle(post)}
+                        className={published ? smallOutline : smallPrimary}
+                      >
+                        {published ? 'Unpublish' : 'Publish'}
+                      </button>
+                      <button type="button" onClick={() => void remove(post)} className={smallDanger}>
+                        Delete
+                      </button>
+                      {published && (
+                        <a
+                          href={livePostPath(post)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex min-h-[38px] items-center rounded-full px-3 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-deep-green underline decoration-brand-green/40 underline-offset-2 hover:bg-mint"
+                        >
+                          View
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </AdminShell>
     </>
   );
 }
+
+function PublishBadge({ published }: { published: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 font-[family-name:var(--font-body)] text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${
+        published ? 'bg-mint text-deep-green' : 'bg-[#EAE5DC] text-charcoal/55'
+      }`}
+    >
+      {published ? 'Published' : 'Draft'}
+    </span>
+  );
+}
+
+function TypeBadge({ type }: { type: string }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 font-[family-name:var(--font-body)] text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${
+        type === 'event' ? 'bg-[#F8E6D6] text-[#A3571F]' : 'bg-[#F3EBDD] text-[#8B6A40]'
+      }`}
+    >
+      {type}
+    </span>
+  );
+}
+
+/* The same rounded action blocks the Data page uses in its header. */
+const secondaryAction =
+  'inline-flex min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-charcoal/10 bg-white px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint';
+
+const primaryAction =
+  'inline-flex min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-deep-green px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta';

@@ -245,7 +245,7 @@ export default function AdminStaff() {
               <button
                 type="submit"
                 disabled={busy}
-                className="inline-flex min-h-[46px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-deep-green px-6 py-2.5 font-[family-name:var(--font-body)] text-[0.9rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta disabled:opacity-60"
+                className="inline-flex w-full min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-deep-green px-6 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta disabled:opacity-60 xl:w-auto"
               >
                 {busy ? 'Sending…' : 'Send invite'}
               </button>
@@ -266,7 +266,7 @@ export default function AdminStaff() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[780px] border-collapse text-left">
               <thead>
-                <tr className="border-b border-charcoal/10 bg-[#FAF8F3] text-[0.67rem] uppercase tracking-[0.12em] text-charcoal/50">
+                <tr className="border-b border-charcoal/10 bg-cream/60 text-[0.67rem] uppercase tracking-[0.12em] text-charcoal/50">
                   <th className="px-5 py-3.5 font-semibold">Name</th>
                   <th className="px-5 py-3.5 font-semibold">Email</th>
                   <th className="px-5 py-3.5 font-semibold">Role</th>
@@ -506,4 +506,4 @@ const labelClass =
   'flex flex-col gap-1.5 font-[family-name:var(--font-body)] text-[0.8rem] font-medium text-charcoal/70';
 
 const inputClass =
-  'min-h-[46px] w-full rounded-[10px] border border-charcoal/15 bg-white px-3.5 py-2.5 font-[family-name:var(--font-body)] text-[0.92rem] font-normal text-charcoal placeholder:text-charcoal/35 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20';
+  'min-h-[48px] w-full rounded-[10px] border border-charcoal/15 bg-white px-3.5 py-2.5 font-[family-name:var(--font-body)] text-[16px] font-normal text-charcoal placeholder:text-charcoal/35 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20 lg:min-h-[44px] lg:text-[0.9rem]';

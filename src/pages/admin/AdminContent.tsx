@@ -255,8 +255,8 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
             role={notice.kind === 'error' ? 'alert' : 'status'}
             className={`mb-6 flex items-start justify-between gap-4 rounded-2xl border px-4 py-3 font-[family-name:var(--font-body)] text-[0.9rem] ${
               notice.kind === 'error'
-                ? 'border-red-200 bg-red-50 text-red-700'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                ? 'border-terracotta/30 bg-terracotta/10 text-terracotta'
+                : 'border-brand-green/30 bg-mint/40 text-charcoal'
             }`}
           >
             <span>{notice.text}</span>
@@ -330,7 +330,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
                   <div
                     role="group"
                     aria-labelledby="admin-type-label"
-                    className="flex h-full min-h-[46px] rounded-xl bg-cream/80 p-1"
+                    className="flex h-full min-h-[48px] rounded-xl bg-cream/80 p-1"
                   >
                     {TYPE_OPTIONS.map((option) => {
                       const active = type === option.value;
@@ -358,7 +358,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
             {loadError ? (
               <div
                 role="alert"
-                className="rounded-[16px] border border-red-200 bg-white p-8 text-center font-[family-name:var(--font-body)] text-red-600"
+                className="rounded-[16px] border border-terracotta/30 bg-terracotta/10 p-8 text-center font-[family-name:var(--font-body)] text-terracotta"
               >
                 {loadError}
               </div>
@@ -566,13 +566,13 @@ function formatDate(iso: string): string {
 }
 
 const primaryButton =
-  'inline-flex min-h-[44px] cursor-pointer items-center justify-center rounded-full border border-deep-green bg-deep-green px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.85rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta';
+  'inline-flex min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-deep-green px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta lg:min-h-[44px] lg:text-[0.9rem]';
 
 const secondaryButton =
-  'inline-flex min-h-[44px] cursor-pointer items-center justify-center rounded-full border border-charcoal/15 bg-white px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.85rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint';
+  'inline-flex min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-charcoal/10 bg-white px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint lg:min-h-[44px] lg:text-[0.9rem]';
 
 const inputClass =
-  'w-full rounded-xl border border-charcoal/15 bg-white px-4 py-3 font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal placeholder:text-charcoal/35 transition-colors focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/25';
+  'min-h-[48px] w-full rounded-[10px] border border-charcoal/15 bg-white px-3.5 py-2.5 font-[family-name:var(--font-body)] text-[16px] text-charcoal placeholder:text-charcoal/35 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20 lg:min-h-[44px] lg:text-[0.9rem]';
 
 const smallOutline =
   'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-charcoal/15 bg-white px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint';
