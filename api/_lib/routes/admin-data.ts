@@ -87,8 +87,47 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
   if (parsed.type === 'registrations') {
     if (exporting) {
       const rows = await listRegistrationsForExport(filter);
+      // Because the table no longer shows the answers, every form question
+      // becomes its own column: the questions in first-appearance order, an
+      // empty cell when a row has no answer for it. csvRows still escapes and
+      // the audit above still records the export.
+      const seen = new Set<string>();
+      const questions: string[] = [];
+      for (const row of rows) {
+        if (!Array.isArray(row.answers)) continue;
+        for (const answer of row.answers as { label?: unknown }[]) {
+          const label = typeof answer.label === 'string' ? answer.label.trim() : '';
+          if (label && !seen.has(label)) {
+            seen.add(label);
+            questions.push(label);
+          }
+        }
+      }
+      const answerFor = (row: (typeof rows)[number], label: string): string => {
+        if (!Array.isArray(row.answers)) return '';
+        const found = (row.answers as { label?: unknown; value?: unknown; skipped?: boolean }[]).find(
+          (answer) => typeof answer.label === 'string' && answer.label.trim() === label,
+        );
+        if (!found || found.skipped) return '';
+        const value = found.value;
+        return Array.isArray(value)
+          ? value.filter((part) => typeof part === 'string' && part !== '').join(', ')
+          : typeof value === 'string'
+            ? value
+            : String(value ?? '');
+      };
       sendCsv(res, `registrations-${parsed.event ?? 'all-events'}-${todayIso()}.csv`, [
-        ['Event', 'Name', 'Email', 'Phone', 'Organization', 'Notes', 'Answers', 'Registered at'],
+        [
+          'Event',
+          'Name',
+          'Email',
+          'Phone',
+          'Organization',
+          'Notes',
+          'Answers',
+          ...questions,
+          'Registered at',
+        ],
         ...rows.map((row) => [
           row.event_slug,
           row.name,
@@ -97,6 +136,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
           row.organization,
           row.notes,
           formatAnswersForCsv(row.answers),
+          ...questions.map((label) => answerFor(row, label)),
           row.created_at,
         ]),
       ]);

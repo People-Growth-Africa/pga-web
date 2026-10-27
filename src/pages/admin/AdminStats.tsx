@@ -73,6 +73,22 @@ function changeLabel(value: number, basis = 'previous 7 days'): string {
   return `${value > 0 ? '+' : ''}${value}% vs ${basis}`;
 }
 
+const COUNTRY_STRING = `AD:Andorra;AE:United Arab Emirates;AF:Afghanistan;AG:Antigua and Barbuda;AI:Anguilla;AL:Albania;AM:Armenia;AO:Angola;AQ:Antarctica;AR:Argentina;AS:American Samoa;AT:Austria;AU:Australia;AW:Aruba;AX:Aland Islands;AZ:Azerbaijan;BA:Bosnia and Herzegovina;BB:Barbados;BD:Bangladesh;BE:Belgium;BF:Burkina Faso;BG:Bulgaria;BH:Bahrain;BI:Burundi;BJ:Benin;BL:Saint Barthelemy;BM:Bermuda;BN:Brunei;BO:Bolivia;BQ:Bonaire, Sint Eustatius and Saba;BR:Brazil;BS:Bahamas;BT:Bhutan;BV:Bouvet Island;BW:Botswana;BY:Belarus;BZ:Belize;CA:Canada;CC:Cocos Islands;CD:Democratic Republic of the Congo;CF:Central African Republic;CG:Republic of the Congo;CH:Switzerland;CI:Ivory Coast;CK:Cook Islands;CL:Chile;CM:Cameroon;CN:China;CO:Colombia;CR:Costa Rica;CU:Cuba;CV:Cabo Verde;CW:Curacao;CX:Christmas Island;CY:Cyprus;CZ:Czechia;DE:Germany;DJ:Djibouti;DK:Denmark;DM:Dominica;DO:Dominican Republic;DZ:Algeria;EC:Ecuador;EE:Estonia;EG:Egypt;EH:Western Sahara;ER:Eritrea;ES:Spain;ET:Ethiopia;FI:Finland;FJ:Fiji;FK:Falkland Islands;FM:Micronesia;FO:Faroe Islands;FR:France;GA:Gabon;GB:United Kingdom;GD:Grenada;GE:Georgia;GF:French Guiana;GG:Guernsey;GH:Ghana;GI:Gibraltar;GL:Greenland;GM:Gambia;GN:Guinea;GP:Guadeloupe;GQ:Equatorial Guinea;GR:Greece;GS:South Georgia and the South Sandwich Islands;GT:Guatemala;GU:Guam;GW:Guinea-Bissau;GY:Guyana;HK:Hong Kong;HM:Heard Island and McDonald Islands;HN:Honduras;HR:Croatia;HT:Haiti;HU:Hungary;ID:Indonesia;IE:Ireland;IL:Israel;IM:Isle of Man;IN:India;IO:British Indian Ocean Territory;IQ:Iraq;IR:Iran;IS:Iceland;IT:Italy;JE:Jersey;JM:Jamaica;JO:Jordan;JP:Japan;KE:Kenya;KG:Kyrgyzstan;KH:Cambodia;KI:Kiribati;KM:Comoros;KN:Saint Kitts and Nevis;KP:North Korea;KR:South Korea;KW:Kuwait;KY:Cayman Islands;KZ:Kazakhstan;LA:Laos;LB:Lebanon;LC:Saint Lucia;LI:Liechtenstein;LK:Sri Lanka;LR:Liberia;LS:Lesotho;LT:Lithuania;LU:Luxembourg;LV:Latvia;LY:Libya;MA:Morocco;MC:Monaco;MD:Moldova;ME:Montenegro;MF:Saint Martin (French part);MG:Madagascar;MH:Marshall Islands;MK:North Macedonia;ML:Mali;MM:Myanmar;MN:Mongolia;MO:Macao;MP:Northern Mariana Islands;MQ:Martinique;MR:Mauritania;MS:Montserrat;MT:Malta;MU:Mauritius;MV:Maldives;MW:Malawi;MX:Mexico;MY:Malaysia;MZ:Mozambique;NA:Namibia;NC:New Caledonia;NE:Niger;NF:Norfolk Island;NG:Nigeria;NI:Nicaragua;NL:Netherlands;NO:Norway;NP:Nepal;NR:Nauru;NU:Niue;NZ:New Zealand;OM:Oman;PA:Panama;PE:Peru;PF:French Polynesia;PG:Papua New Guinea;PH:Philippines;PK:Pakistan;PL:Poland;PM:Saint Pierre and Miquelon;PN:Pitcairn;PR:Puerto Rico;PS:Palestine;PT:Portugal;PW:Palau;PY:Paraguay;QA:Qatar;RE:Reunion;RO:Romania;RS:Serbia;RU:Russia;RW:Rwanda;SA:Saudi Arabia;SB:Solomon Islands;SC:Seychelles;SD:Sudan;SE:Sweden;SG:Singapore;SH:Saint Helena;SI:Slovenia;SJ:Svalbard and Jan Mayen;SK:Slovakia;SL:Sierra Leone;SM:San Marino;SN:Senegal;SO:Somalia;SR:Suriname;SS:South Sudan;ST:Sao Tome and Principe;SV:El Salvador;SX:Sint Maarten (Dutch part);SY:Syria;SZ:Eswatini;TC:Turks and Caicos Islands;TD:Chad;TF:French Southern Territories;TG:Togo;TH:Thailand;TJ:Tajikistan;TK:Tokelau;TL:Timor-Leste;TM:Turkmenistan;TN:Tunisia;TO:Tonga;TR:Turkey;TT:Trinidad and Tobago;TV:Tuvalu;TW:Taiwan;TZ:Tanzania;UA:Ukraine;UG:Uganda;UM:United States Minor Outlying Islands;US:United States;UY:Uruguay;UZ:Uzbekistan;VA:Vatican City;VC:Saint Vincent and the Grenadines;VE:Venezuela;VG:Virgin Islands (British);VI:Virgin Islands (U.S.);VN:Vietnam;VU:Vanuatu;WF:Wallis and Futuna;WS:Samoa;YE:Yemen;YT:Mayotte;ZA:South Africa;ZM:Zambia;ZW:Zimbabwe`;
+
+const COUNTRY_NAMES: Record<string, string> = Object.fromEntries(
+  COUNTRY_STRING.split(';').map((entry) => {
+    const [code, name] = entry.split(':');
+    return [code, name];
+  }),
+);
+
+/** Country names instead of codes; ZZ (and unknown codes) read as Unknown. */
+function countryName(code: string): string {
+  const upper = code.trim().toUpperCase();
+  if (!upper || upper === 'ZZ') return 'Unknown';
+  return COUNTRY_NAMES[upper] ?? upper;
+}
+
 function shortDay(day: string): string {
   const date = new Date(`${day}T00:00:00Z`);
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -94,8 +110,8 @@ function LineChart({
   const y = (value: number) => height - pad - (value / max) * (height - pad * 2);
 
   return (
-    <div className="w-full overflow-x-auto">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Activity per day" className="min-w-[560px]">
+    <div className="w-full">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={series[0]?.label ?? 'Activity per day'} className="w-full">
         {[0, 0.5, 1].map((fraction) => (
           <line
             key={fraction}
@@ -236,11 +252,11 @@ export default function AdminStats() {
             </p>
           ) : (
             <>
-              <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                {CATEGORY_META.map((meta) => {
+              <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+                {CATEGORY_META.map((meta, index) => {
                   const count = stats.counts[meta.key];
                   return (
-                    <div key={meta.key} className="rounded-2xl border border-charcoal/10 bg-white p-4">
+                    <div key={meta.key} className={`rounded-2xl border border-charcoal/10 bg-white p-4 ${index === CATEGORY_META.length - 1 ? 'col-span-2 lg:col-span-1' : ''}`}>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-wider text-charcoal/50">{meta.label}</p>
                       <p className="mt-2 font-[family-name:var(--font-heading)] text-3xl font-bold text-charcoal">{count.total}</p>
                       <p className="mt-1 text-xs text-charcoal/60">{count.last7} in the last 7 days</p>
@@ -255,20 +271,22 @@ export default function AdminStats() {
               <div className="mb-6 rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Activity per day</h2>
-                  <div className="flex flex-wrap gap-2">
-                    {CATEGORY_META.map((meta) => (
-                      <button
-                        key={meta.key}
-                        type="button"
-                        onClick={() => setVisible((current) => ({ ...current, [meta.key]: !current[meta.key] }))}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${
-                          visible[meta.key] ? 'border-charcoal/20 text-charcoal' : 'border-charcoal/10 text-charcoal/35'
-                        }`}
-                      >
-                        <span className="h-2 w-2 rounded-full" style={{ background: visible[meta.key] ? meta.color : '#D1CCC2' }} />
-                        {meta.label}
-                      </button>
-                    ))}
+                  <div className="w-full overflow-x-auto pb-1 lg:w-auto lg:overflow-visible">
+                    <div className="flex w-max gap-2">
+                      {CATEGORY_META.map((meta) => (
+                        <button
+                          key={meta.key}
+                          type="button"
+                          onClick={() => setVisible((current) => ({ ...current, [meta.key]: !current[meta.key] }))}
+                          className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${
+                            visible[meta.key] ? 'border-charcoal/20 text-charcoal' : 'border-charcoal/10 text-charcoal/35'
+                          }`}
+                        >
+                          <span className="h-2 w-2 rounded-full" style={{ background: visible[meta.key] ? meta.color : '#D1CCC2' }} />
+                          {meta.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 {labels.length === 0 ? (
@@ -347,7 +365,9 @@ export default function AdminStats() {
                       <ol className="mt-3 space-y-2">
                         {block.rows.map((row) => (
                           <li key={row.label} className="flex items-start justify-between gap-2 text-xs">
-                            <span className="truncate text-charcoal/75" title={row.label}>{row.label}</span>
+                            <span className="truncate text-charcoal/75" title={row.label}>
+                              {block.title === 'Top countries' ? countryName(row.label) : row.label}
+                            </span>
                             <span className="shrink-0 font-semibold text-charcoal">{row.views}</span>
                           </li>
                         ))}
