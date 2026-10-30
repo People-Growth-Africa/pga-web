@@ -313,14 +313,8 @@ export default function BlogPostPage() {
             </AnimateOnScroll>
           ) : null}
 
-          {/* The reader who has just finished the article is the one most likely
-              to want the next one. Same form and confirmation flow as /blog. */}
-          <AnimateOnScroll delay={0.12}>
-            <NewsletterSignup variant="article" />
-          </AnimateOnScroll>
-
           {/* Share */}
-          <AnimateOnScroll delay={0.15}>
+          <AnimateOnScroll delay={0.12}>
             <div className="mt-12 pt-8 border-t border-charcoal/8">
               <p className="font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal mb-4">Share this article</p>
               <div className="flex flex-wrap gap-3">
@@ -416,6 +410,12 @@ export default function BlogPostPage() {
                 </span>
               </div>
             </div>
+          </AnimateOnScroll>
+
+          {/* The reader who has just finished the article is the one most likely
+              to want the next one. Same form and confirmation flow as /blog. */}
+          <AnimateOnScroll delay={0.15}>
+            <NewsletterSignup variant="article" />
           </AnimateOnScroll>
 
           {/* Author Bio */}
