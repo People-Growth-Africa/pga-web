@@ -1,7 +1,12 @@
 import { useState } from 'react';
 
 import { slugify } from '../../lib/published';
-import { createCategory, deleteCategory, updateCategory, type AdminCategory } from './contentClient';
+import {
+  createCategory as createContentCategory,
+  deleteCategory as deleteContentCategory,
+  updateCategory as updateContentCategory,
+  type AdminCategory,
+} from './contentClient';
 
 /**
  * Manage categories: add, rename, delete.
@@ -19,17 +24,34 @@ import { createCategory, deleteCategory, updateCategory, type AdminCategory } fr
 
 type Mode = 'closed' | 'list' | 'add' | 'rename';
 
+/** The three writes, so each portal can name its own API prefix. */
+export type CategoryWriter = {
+  createCategory: typeof createContentCategory;
+  updateCategory: typeof updateContentCategory;
+  deleteCategory: typeof deleteContentCategory;
+};
+
+/** The content desk's own endpoints, used when no writer is passed. */
+const CONTENT_WRITER: CategoryWriter = {
+  createCategory: createContentCategory,
+  updateCategory: updateContentCategory,
+  deleteCategory: deleteContentCategory,
+};
+
 export default function CategoriesDialog({
   open,
   categories,
   onClose,
   onChanged,
+  client = CONTENT_WRITER,
 }: {
   open: boolean;
   categories: AdminCategory[];
   onClose: () => void;
   /** Called after a successful write so the parent refetches the list. */
   onChanged: () => void;
+  /** Which portal's endpoints the writes use. Defaults to the content desk. */
+  client?: CategoryWriter;
 }) {
   const [mode, setMode] = useState<Mode>('list');
   const [name, setName] = useState('');
@@ -88,8 +110,8 @@ export default function CategoriesDialog({
 
     const result =
       mode === 'rename' && editing
-        ? await updateCategory(editing.id, trimmedName, trimmedSlug)
-        : await createCategory(trimmedName, trimmedSlug);
+        ? await client.updateCategory(editing.id, trimmedName, trimmedSlug)
+        : await client.createCategory(trimmedName, trimmedSlug);
 
     setBusy(false);
 
@@ -113,7 +135,7 @@ export default function CategoriesDialog({
       return;
     }
 
-    const result = await deleteCategory(pendingDelete.id, hasPosts ? moveTo : undefined);
+    const result = await client.deleteCategory(pendingDelete.id, hasPosts ? moveTo : undefined);
     setBusy(false);
 
     if (result.ok) {

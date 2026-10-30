@@ -6,12 +6,16 @@ import AdminShell from '../../components/admin/AdminShell';
 import { onSessionEnded } from '../../lib/authClient';
 import { livePostPath } from '../../lib/published';
 import PostEditor from './PostEditor';
+import CategoriesDialog from './CategoriesDialog';
 import {
+  createCategory,
   createPost,
+  deleteCategory,
   deletePost,
   listContent,
   pingSession,
   setPostStatus,
+  updateCategory,
   updatePost,
   uploadCover,
   type AdminCategory,
@@ -50,6 +54,7 @@ export default function AdminOversight() {
   const [view, setView] = useState<View>('list');
   const [editing, setEditing] = useState<AdminPost | null>(null);
   const [createType, setCreateType] = useState<PostType>('blog');
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -146,6 +151,13 @@ export default function AdminOversight() {
             <>
               <button
                 type="button"
+                onClick={() => setCategoriesOpen(true)}
+                className={secondaryAction}
+              >
+                Categories
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setEditing(null);
                   setCreateType('event');
@@ -202,7 +214,12 @@ export default function AdminOversight() {
               setEditorError(null);
             }}
             onSubmit={(draft) => void save(draft)}
-            onAddCategory={async () => null}
+            onAddCategory={async () => {
+              // The dialog owns the form; the editor stays behind it and the
+              // refreshed list is ready when the reader closes it.
+              setCategoriesOpen(true);
+              return null;
+            }}
             uploadCover={uploadCover}
           />
         ) : loading ? (
@@ -279,6 +296,16 @@ export default function AdminOversight() {
           </ul>
         )}
       </AdminShell>
+
+      <CategoriesDialog
+        open={categoriesOpen}
+        categories={categories}
+        onClose={() => setCategoriesOpen(false)}
+        onChanged={() => {
+          void refresh();
+        }}
+        client={{ createCategory, updateCategory, deleteCategory }}
+      />
     </>
   );
 }
