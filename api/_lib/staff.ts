@@ -25,7 +25,8 @@ import {
  * row, so a removed, demoted or disabled account stops working immediately.
  *
  * Dashboard and data lists are open to every administrator-portal role; staff
- * account management is admin only.
+ * account management is admin only. A data administrator reaches the same
+ * door but only the read-only data allowlist below.
  */
 export async function requireStaff(
   req: VercelRequest,
@@ -76,12 +77,16 @@ export async function requireStaff(
   return session;
 }
 
-const ADMIN_DATA_ROLES = new Set(['admin', 'project_manager', 'hr_manager']);
+const ADMIN_DATA_ROLES = new Set(['admin', 'project_manager', 'hr_manager', 'data_admin']);
 
 /**
  * Personal-data and aggregate dashboard routes. This is an explicit allowlist,
  * not "every staff role": a future role is excluded until someone deliberately
  * adds it here. Content managers and legacy manager rows never pass.
+ *
+ * A data administrator is included: the dashboard, the registrations and lead
+ * lists and the account directory are exactly its remit. Publishing, email
+ * templates and staff management are not, and those guards stay narrower.
  */
 export async function requireAdminData(
   req: VercelRequest,

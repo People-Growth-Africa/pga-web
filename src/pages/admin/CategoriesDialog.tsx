@@ -205,13 +205,13 @@ export default function CategoriesDialog({
                   maxLength={120}
                   onChange={(event) => {
                     setSlugTouched(true);
-                    setSlug(slugify(event.target.value));
+                    setSlug(event.target.value);
                   }}
                   placeholder="opportunities"
                   className={inputClass}
                 />
                 <p className="mt-1.5 font-[family-name:var(--font-body)] text-[0.75rem] text-charcoal/45 break-all">
-                  /blog?category={slug || 'slug'}
+                  /blog?category={slugify(slug) || 'slug'}
                 </p>
               </div>
 

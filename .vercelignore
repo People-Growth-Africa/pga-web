@@ -1,0 +1,8 @@
+# Local environment handoff file contains values that belong only in Vercel.
+vercel-env-paste.txt
+
+# Brainstorming mockups, local screenshots, and snapshots are not site assets.
+.superpowers/
+screenshots/
+audit.json
+backups/

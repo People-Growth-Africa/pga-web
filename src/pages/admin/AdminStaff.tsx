@@ -9,14 +9,14 @@ import { authRequest, onSessionEnded, roleLabel, type Role } from '../../lib/aut
 /**
  * /admin/staff - the staff account list.
  *
- * Every administrator can read it; only the super administrator may invite,
- * disable or edit. The server decides that (`requireSuperAdmin`), and it says
- * so in the list response through `canManage`, so this page shows the same rule
- * rather than a second opinion: without the flag the form is not rendered and
- * the action column is left out, and a direct request would still be refused.
+ * Only the configured super administrator may load the staff list or manage
+ * accounts. The route guard and `requireSuperAdmin` API check both enforce that
+ * rule; staff data is never sent to other administrators.
  *
  * Content managers are created here too, but they receive a content-desk
  * invitation and a content cookie; they never see this page or the data lists.
+ * Data administrators are invited through the administrator door with a
+ * read-only remit: the dashboard and data screens, nothing else.
  */
 
 type Staff = {
@@ -29,10 +29,11 @@ type Staff = {
   created_at: string;
 };
 
-type StaffRole = 'admin' | 'project_manager' | 'hr_manager' | 'content_manager';
+type StaffRole = 'admin' | 'project_manager' | 'hr_manager' | 'content_manager' | 'data_admin';
 
 const ROLE_OPTIONS: { value: StaffRole; label: string }[] = [
   { value: 'content_manager', label: 'Content manager' },
+  { value: 'data_admin', label: 'Data administrator' },
   { value: 'project_manager', label: 'Project manager' },
   { value: 'hr_manager', label: 'HR manager' },
   { value: 'admin', label: 'Administrator' },
@@ -40,7 +41,6 @@ const ROLE_OPTIONS: { value: StaffRole; label: string }[] = [
 
 export default function AdminStaff() {
   const [staff, setStaff] = useState<Staff[]>([]);
-  const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export default function AdminStaff() {
   useEffect(() => onSessionEnded(() => endSession()), [endSession]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    const result = await authRequest<{ staff: Staff[]; canManage?: boolean }>(
+    const result = await authRequest<{ staff: Staff[] }>(
       '/api/admin/staff',
       { method: 'GET' },
     );
@@ -80,7 +80,6 @@ export default function AdminStaff() {
       return;
     }
     setStaff(result.data.staff);
-    setCanManage(result.data.canManage === true);
     setError(null);
     setLoading(false);
   }, []);
@@ -173,11 +172,7 @@ export default function AdminStaff() {
       <SEO title="Staff accounts | People Growth Africa" description="Manage staff accounts." />
       <AdminShell
         title="Staff accounts"
-        subtitle={
-          canManage
-            ? 'New accounts receive a set-password link that expires in 24 hours. Each account holds one role.'
-            : 'Who holds an account here. Only the super administrator can invite, disable or edit them.'
-        }
+        subtitle="New accounts receive a set-password link that expires in 24 hours. Each account holds one role."
       >
         {error && (
           <p
@@ -196,15 +191,14 @@ export default function AdminStaff() {
           </p>
         )}
 
-        {canManage ? (
-          <form
-            onSubmit={(event) => void create(event)}
-            className="rounded-[16px] border border-charcoal/10 bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:p-6"
-          >
-            <h2 className="mb-5 font-[family-name:var(--font-heading)] text-[1.45rem] font-semibold text-charcoal">
+        <form
+          onSubmit={(event) => void create(event)}
+          className="rounded-[16px] border border-charcoal/10 bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:p-6"
+        >
+          <h2 className="mb-5 font-[family-name:var(--font-heading)] text-[1.45rem] font-semibold text-charcoal">
               Add a staff member
-            </h2>
-            <div className="grid gap-4 xl:grid-cols-[1.2fr_1.35fr_0.9fr_auto] xl:items-end">
+          </h2>
+          <div className="grid gap-4 xl:grid-cols-[1.2fr_1.35fr_0.9fr_auto] xl:items-end">
               <label className={labelClass}>
                 Full name
                 <input
@@ -250,17 +244,10 @@ export default function AdminStaff() {
                 {busy ? 'Sending…' : 'Send invite'}
               </button>
             </div>
-            <p className="mt-3 font-[family-name:var(--font-body)] text-[0.82rem] text-charcoal/55">
+          <p className="mt-3 font-[family-name:var(--font-body)] text-[0.82rem] text-charcoal/55">
               Content managers can only create events, blog posts and announcements. They sign in on
-              their own page and never see this panel.
-            </p>
-          </form>
-        ) : (
-          <p className="mb-2 rounded-[12px] border border-charcoal/12 bg-white/70 px-4 py-3 font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal/70">
-            You can see who has an account, but only the super administrator can invite, disable or
-            edit one. Ask them if something here needs to change.
-          </p>
-        )}
+              their own page and never see this panel.          </p>
+        </form>
 
         <div className="mt-5 overflow-hidden rounded-[16px] border border-charcoal/10 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.035)]">
           <div className="overflow-x-auto">
@@ -271,14 +258,14 @@ export default function AdminStaff() {
                   <th className="px-5 py-3.5 font-semibold">Email</th>
                   <th className="px-5 py-3.5 font-semibold">Role</th>
                   <th className="px-5 py-3.5 font-semibold">Status</th>
-                  {canManage && <th className="px-5 py-3.5 text-right font-semibold">Action</th>}
+                  <th className="px-5 py-3.5 text-right font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={canManage ? 5 : 4}
+                      colSpan={5}
                       className="px-5 py-10 text-center text-sm text-charcoal/50"
                     >
                       Loading staff…
@@ -287,7 +274,7 @@ export default function AdminStaff() {
                 ) : staff.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={canManage ? 5 : 4}
+                      colSpan={5}
                       className="px-5 py-10 text-center text-sm text-charcoal/50"
                     >
                       No staff accounts yet.
@@ -309,8 +296,7 @@ export default function AdminStaff() {
                       <td className="px-5 py-4">
                         <StatusBadge account={account} />
                       </td>
-                      {canManage && (
-                        <td className="px-5 py-4 text-right">
+                      <td className="px-5 py-4 text-right">
                           <div className="flex flex-wrap items-center justify-end gap-2">
                             {account.role === 'manager' ? (
                               // The form offers the four real roles only; a
@@ -348,8 +334,7 @@ export default function AdminStaff() {
                               </button>
                             )}
                           </div>
-                        </td>
-                      )}
+                      </td>
                     </tr>
                   ))
                 )}
@@ -462,7 +447,9 @@ function RoleBadge({ role }: { role: Role }) {
   const tone =
     role === 'content_manager'
       ? 'bg-[#F8E7D7] text-[#A3571F]'
-      : role === 'project_manager'
+      : role === 'data_admin'
+        ? 'bg-[#E4F0F5] text-[#2F6377]'
+        : role === 'project_manager'
         ? 'bg-[#E9EEF6] text-[#46658E]'
         : role === 'hr_manager'
           ? 'bg-[#F1E9DC] text-[#8B6A40]'

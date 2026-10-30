@@ -57,6 +57,10 @@ export function isRestrictViolation(error: unknown): boolean {
  * `content_manager` is deliberately not an administrator. It has its own login,
  * cookie and API guard, and can only reach the content tools; data exports,
  * staff accounts and the dashboard stay behind the administrator portal.
+ *
+ * `data_admin` is an administrator-portal role with a read-only remit: the
+ * dashboard and the personal-data lists, including the account directory. It
+ * cannot publish content, edit email templates or manage staff accounts.
  */
 export type Role =
   | 'talent'
@@ -65,9 +69,15 @@ export type Role =
   | 'admin'
   | 'project_manager'
   | 'hr_manager'
-  | 'content_manager';
+  | 'content_manager'
+  | 'data_admin';
 
-export type StaffRole = 'admin' | 'project_manager' | 'hr_manager' | 'content_manager';
+export type StaffRole =
+  | 'admin'
+  | 'project_manager'
+  | 'hr_manager'
+  | 'content_manager'
+  | 'data_admin';
 
 export const MANAGER_ROLE: Role = 'manager';
 
@@ -77,7 +87,12 @@ export const MANAGER_ROLE: Role = 'manager';
  * but it no longer opens any admin endpoint or page.
  */
 export function isAdminPortalRole(role: Role): boolean {
-  return role === 'admin' || role === 'project_manager' || role === 'hr_manager';
+  return (
+    role === 'admin' ||
+    role === 'project_manager' ||
+    role === 'hr_manager' ||
+    role === 'data_admin'
+  );
 }
 
 /** The content desk is for content managers only. Administrators have their
@@ -1119,8 +1134,44 @@ export async function listStaffAccounts(): Promise<StaffAccountRow[]> {
     `SELECT id, name, email, role, disabled_at, must_change_password,
             ${isoTimestamp('users', 'created_at')} AS created_at
        FROM users
-      WHERE role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager')
+      WHERE role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager', 'data_admin')
       ORDER BY created_at ASC`,
+  );
+}
+
+export type EmailTemplateOverrideRow = {
+  template_id: string;
+  content: unknown;
+};
+
+export async function getEmailTemplateOverride(
+  templateId: string,
+): Promise<EmailTemplateOverrideRow | null> {
+  return queryOne<EmailTemplateOverrideRow>(
+    'SELECT template_id, content FROM email_template_overrides WHERE template_id = $1',
+    [templateId],
+  );
+}
+
+export async function listEmailTemplateOverrides(): Promise<EmailTemplateOverrideRow[]> {
+  return query<EmailTemplateOverrideRow>(
+    'SELECT template_id, content FROM email_template_overrides ORDER BY template_id',
+  );
+}
+
+export async function saveEmailTemplateOverride(input: {
+  templateId: string;
+  content: unknown;
+  updatedBy: string;
+}): Promise<void> {
+  await query(
+    `INSERT INTO email_template_overrides (template_id, content, updated_by, updated_at)
+     VALUES ($1, $2::jsonb, $3, now())
+     ON CONFLICT (template_id) DO UPDATE
+       SET content = EXCLUDED.content,
+           updated_by = EXCLUDED.updated_by,
+           updated_at = now()`,
+    [input.templateId, JSON.stringify(input.content), input.updatedBy],
   );
 }
 
@@ -1146,7 +1197,7 @@ export async function setStaffDisabled(id: string, disabled: boolean): Promise<b
         SET disabled_at = ${disabled ? 'now()' : 'NULL'},
             token_version = token_version + 1
       WHERE id = $1
-        AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager')
+        AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager', 'data_admin')
       RETURNING id`,
     [id],
   );
@@ -1170,7 +1221,7 @@ export async function findStaffAccount(id: string): Promise<StaffAccountRow | nu
             ${isoTimestamp('users', 'created_at')} AS created_at
        FROM users
       WHERE id = $1
-        AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager')`,
+        AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager', 'data_admin')`,
     [id],
   );
 }
@@ -1206,7 +1257,7 @@ export async function updateStaffAccount(input: {
                  WHEN ${input.resetPassword} THEN true
                  ELSE must_change_password END
          WHERE id = ${input.id}
-           AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager')
+           AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager', 'data_admin')
          RETURNING id`,
   ]);
   const rows = result[1] as { id: string }[] | undefined;
@@ -1418,6 +1469,119 @@ export async function listConsultationsForExport(
     `SELECT ${CONSULTATION_COLUMNS}
        FROM consultation_bookings ${where}
       ORDER BY created_at DESC LIMIT 10000`,
+    params,
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The account directory: talent and employer accounts, with the profile
+   fields that make a row useful without opening the database.
+
+   Staff rows are deliberately excluded in SQL: this list belongs to the data
+   administrator's read-only remit, and the staff list has its own super
+   administrator endpoint. The two profile tables are joined separately because
+   an account holds one or the other, never both.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export type UserAccountRow = {
+  id: string;
+  name: string | null;
+  email: string;
+  role: 'talent' | 'employer';
+  email_verified: boolean;
+  company: string | null;
+  field: string | null;
+  country: string | null;
+  availability: string | null;
+  needs: string[] | null;
+  created_at: string;
+};
+
+export type UserAccountFilter = {
+  search?: string;
+  role?: 'talent' | 'employer';
+  from?: string;
+  to?: string;
+};
+
+const USER_ACCOUNT_COLUMNS = `u.id,
+         coalesce(tp.name, ep.name) AS name,
+         u.email,
+         u.role,
+         u.email_verified,
+         ep.company,
+         tp.field,
+         tp.country,
+         tp.availability,
+         ep.needs,
+         ${isoTimestamp('u', 'created_at')} AS created_at`;
+
+const USER_ACCOUNT_FROM = `FROM users u
+       LEFT JOIN talent_profiles tp ON tp.user_id = u.id
+       LEFT JOIN employer_profiles ep ON ep.user_id = u.id`;
+
+/** Bind parameters only; the public account roles are fixed in this string. */
+function userAccountWhere(filter: UserAccountFilter): { where: string; params: unknown[] } {
+  const clauses: string[] = ["u.role IN ('talent', 'employer')"];
+  const params: unknown[] = [];
+
+  if (filter.role) {
+    params.push(filter.role);
+    clauses.push(`u.role = $${params.length}`);
+  }
+  if (filter.search) {
+    params.push(`%${filter.search}%`);
+    clauses.push(
+      `(coalesce(tp.name, ep.name) ILIKE $${params.length}
+        OR u.email ILIKE $${params.length}
+        OR ep.company ILIKE $${params.length})`,
+    );
+  }
+  if (filter.from) {
+    params.push(filter.from);
+    clauses.push(`u.created_at >= $${params.length}::date`);
+  }
+  if (filter.to) {
+    params.push(filter.to);
+    clauses.push(`u.created_at < ($${params.length}::date + interval '1 day')`);
+  }
+
+  return { where: `WHERE ${clauses.join(' AND ')}`, params };
+}
+
+export async function listUserAccounts(
+  filter: UserAccountFilter & { limit: number; offset: number },
+): Promise<UserAccountRow[]> {
+  const { where, params } = userAccountWhere(filter);
+  return query<UserAccountRow>(
+    `SELECT ${USER_ACCOUNT_COLUMNS}
+       ${USER_ACCOUNT_FROM}
+       ${where}
+      ORDER BY u.created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, filter.limit, filter.offset],
+  );
+}
+
+export async function countUserAccounts(filter: UserAccountFilter = {}): Promise<number> {
+  const { where, params } = userAccountWhere(filter);
+  const row = await queryOne<{ total: number }>(
+    `SELECT count(*)::int AS total ${USER_ACCOUNT_FROM} ${where}`,
+    params,
+  );
+  return row?.total ?? 0;
+}
+
+/** Everything matching the filters, newest first, for the CSV export. */
+export async function listUserAccountsForExport(
+  filter: UserAccountFilter = {},
+): Promise<UserAccountRow[]> {
+  const { where, params } = userAccountWhere(filter);
+  return query<UserAccountRow>(
+    `SELECT ${USER_ACCOUNT_COLUMNS}
+       ${USER_ACCOUNT_FROM}
+       ${where}
+      ORDER BY u.created_at DESC LIMIT 10000`,
     params,
   );
 }

@@ -90,6 +90,7 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/admin/data-export': gatedAuth(async () => (await import('./admin-data.js')).default),
   '/admin/traffic': gatedAuth(async () => (await import('./admin-traffic.js')).default),
   '/admin/staff': gatedAuth(async () => (await import('./admin-staff.js')).default),
+  '/admin/email-templates': gatedAuth(async () => (await import('./admin-email-templates.js')).default),
   //     Writing one account's name, email or role. Same module, its own path,
   //     so the disable action keeps its own payload shape. -----------------
   '/admin/staff-detail': gatedAuth(async () => (await import('./admin-staff.js')).default),

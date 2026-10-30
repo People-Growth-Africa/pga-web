@@ -105,7 +105,14 @@ export type SessionClaims = {
 };
 
 /** Every staff role gets the shorter two-limit session. */
-const STAFF_ROLES = new Set(['manager', 'admin', 'project_manager', 'hr_manager', 'content_manager']);
+const STAFF_ROLES = new Set([
+  'manager',
+  'admin',
+  'project_manager',
+  'hr_manager',
+  'content_manager',
+  'data_admin',
+]);
 
 export function isStaffSessionRole(role: Role): boolean {
   return STAFF_ROLES.has(role);
@@ -232,7 +239,8 @@ export async function readSession(
       role !== 'admin' &&
       role !== 'project_manager' &&
       role !== 'hr_manager' &&
-      role !== 'content_manager'
+      role !== 'content_manager' &&
+      role !== 'data_admin'
     ) {
       return null;
     }

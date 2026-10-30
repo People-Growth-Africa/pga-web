@@ -250,7 +250,7 @@ export default function PostEditor({
     const isEvent = type === 'event';
     return {
       type,
-      slug: slug.trim(),
+      slug: slugify(slug),
       title: title.trim(),
       excerpt: excerpt.trim(),
       body,
@@ -297,7 +297,7 @@ export default function PostEditor({
     !categoryMissing &&
     registrationFormIssue === null;
 
-  const slugTaken = BUILT_IN_SLUGS.has(`${section}/${slug.trim()}`);
+  const slugTaken = BUILT_IN_SLUGS.has(`${section}/${slugify(slug)}`);
 
   return (
     <div className="bg-white rounded-[20px] shadow-card p-6 sm:p-8">
@@ -360,7 +360,7 @@ export default function PostEditor({
         <Field
           label="Slug"
           htmlFor="post-slug"
-          hint={`peoplegrowthafrica.com/${section}/${slug || 'your-post'}`}
+          hint={`peoplegrowthafrica.com/${section}/${slugify(slug) || 'your-post'}`}
         >
           <input
             id="post-slug"
@@ -368,7 +368,7 @@ export default function PostEditor({
             value={slug}
             onChange={(event) => {
               setSlugTouched(true);
-              setSlug(slugify(event.target.value));
+              setSlug(event.target.value);
             }}
             maxLength={120}
             placeholder="your-post"
@@ -381,7 +381,7 @@ export default function PostEditor({
               role="alert"
               className="mt-2 font-[family-name:var(--font-body)] text-[0.82rem] text-amber-700"
             >
-              /{section}/{slug.trim()} is already a page built into the site, and that page keeps
+              /{section}/{slugify(slug)} is already a page built into the site, and that page keeps
               the URL. Choose a different slug or this post will not be reachable.
             </p>
           )}

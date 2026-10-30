@@ -109,19 +109,68 @@ function paragraph(text: string): string {
  * whole shape is clickable in every client, and the link is repeated as text
  * below it because a stripped button should not leave the reader stuck.
  */
-function button(action: { label: string; url: string }): string {
-  const url = escapeHtml(action.url);
+type ButtonStyle = 'solid-green' | 'solid-deep-green' | 'outline-green' | 'soft-mint';
+
+const BUTTON_STYLE: Record<ButtonStyle, { background: string; color: string; border: string }> = {
+  'solid-green': { background: GREEN, color: '#ffffff', border: GREEN },
+  'solid-deep-green': { background: GREEN_DEEP, color: '#ffffff', border: GREEN_DEEP },
+  'outline-green': { background: '#ffffff', color: GREEN_DEEP, border: GREEN_DEEP },
+  'soft-mint': { background: MINT, color: MINT_INK, border: MINT },
+};
+
+function safeHref(raw: string): string | null {
+  if (raw.includes('\\') || [...raw].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  })) return null;
+  if (raw.startsWith('/') && !raw.startsWith('//')) return escapeHtml(raw);
+  try {
+    const url = new URL(raw);
+    if (url.username || url.password) return null;
+    if (url.protocol === 'https:' || url.protocol === 'mailto:') return escapeHtml(raw);
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function button(action: { label: string; url: string; style?: ButtonStyle }): string {
+  const safeUrl = safeHref(action.url);
+  if (!safeUrl) return '';
+  const style = BUTTON_STYLE[action.style ?? 'solid-green'] ?? BUTTON_STYLE['solid-green'];
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 0;">
                 <tr>
-                  <td align="center" bgcolor="${GREEN}" style="border-radius:100px;">
-                    <a href="${url}" style="display:inline-block;padding:15px 34px;font-family:${BODY_FONT};font-size:15px;font-weight:600;line-height:1;color:#ffffff;text-decoration:none;border-radius:100px;">${escapeHtml(action.label)}</a>
+                  <td align="center" bgcolor="${style.background}" style="border:1px solid ${style.border};border-radius:100px;">
+                    <a href="${safeUrl}" style="display:inline-block;padding:15px 34px;font-family:${BODY_FONT};font-size:15px;font-weight:600;line-height:1;color:${style.color};text-decoration:none;border-radius:100px;">${escapeHtml(action.label)}</a>
                   </td>
                 </tr>
               </table>
               <p style="margin:18px 0 0;font-family:${BODY_FONT};font-size:12.5px;line-height:1.6;color:${MUTED};">
                 Button not working? Paste this into your browser:<br />
-                <a href="${url}" style="color:${GREEN_DEEP};text-decoration:none;word-break:break-all;">${url}</a>
+                <a href="${safeUrl}" style="color:${GREEN_DEEP};text-decoration:none;word-break:break-all;">${escapeHtml(action.url)}</a>
               </p>`;
+}
+
+function additionalLinks(links: { label: string; url: string }[]): string {
+  return links.map((link) => {
+    const url = safeHref(link.url);
+    if (!url) return '';
+    return `<p style="margin:12px 0 0;font-family:${BODY_FONT};font-size:14px;line-height:1.5;"><a href="${url}" style="color:${GREEN_DEEP};text-decoration:underline;">${escapeHtml(link.label)}</a></p>`;
+  }).join('');
+}
+
+export function renderEmailText(input: {
+  paragraphs: string[];
+  action?: { label: string; url: string };
+  links?: { label: string; url: string }[];
+  notes?: string[];
+}): string {
+  return [
+    ...input.paragraphs,
+    ...(input.action ? ['', `${input.action.label}:`, input.action.url] : []),
+    ...(input.links ?? []).flatMap((link) => ['', `${link.label}:`, link.url]),
+    ...(input.notes ?? []).flatMap((note) => ['', note]),
+  ].join('\n');
 }
 
 /** The "expires in an hour"/"you can ignore this" details, on a mint card. */
@@ -144,7 +193,8 @@ export function renderEmail(input: {
   preheader: string;
   heading: string;
   paragraphs: string[];
-  action?: { label: string; url: string };
+  action?: { label: string; url: string; style?: ButtonStyle };
+  links?: { label: string; url: string }[];
   notes?: string[];
   reason: string;
   site: string;
@@ -153,6 +203,7 @@ export function renderEmail(input: {
     heading(input.heading),
     ...input.paragraphs.map(paragraph),
     input.action ? button(input.action) : '',
+    additionalLinks(input.links ?? []),
     notes(input.notes ?? []),
   ]
     .filter(Boolean)
@@ -228,6 +279,16 @@ export function renderLeadEmail(input: {
   lines: string[];
   replyTo: string;
   site: string;
+  template?: {
+    preheader: string;
+    heading: string;
+    paragraphs: string[];
+    actionLabel: string;
+    actionUrl?: string;
+    links: { label: string; url: string }[];
+    buttonStyle: ButtonStyle;
+    notes: string[];
+  };
 }): string {
   const groups = splitGroups(input.lines).map((group) => {
     const rows: { label: string; value: string }[] = [];
@@ -242,20 +303,19 @@ export function renderLeadEmail(input: {
     return `${detailTable(rows)}${rest.length > 0 ? transcript(rest) : ''}`;
   });
 
+  const template = input.template;
+  const actionUrl = template?.actionUrl ?? `mailto:${input.replyTo}`;
+  const actionLabel = template?.actionLabel || `Reply to ${input.replyTo}`;
   const body = `<p style="margin:0 0 6px;font-family:${BODY_FONT};font-size:12px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${TERRACOTTA};">New lead</p>
-              ${heading(input.kind)}
+              ${heading(template?.heading ?? input.kind)}
+              ${template ? template.paragraphs.map(paragraph).join('') : ''}
               ${groups.join('\n              ')}
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 4px;">
-                <tr>
-                  <td align="center" bgcolor="${GREEN}" style="border-radius:100px;">
-                    <a href="mailto:${escapeHtml(input.replyTo)}" style="display:inline-block;padding:14px 30px;font-family:${BODY_FONT};font-size:15px;font-weight:600;line-height:1;color:#ffffff;text-decoration:none;border-radius:100px;">Reply to ${escapeHtml(input.replyTo)}</a>
-                  </td>
-                </tr>
-              </table>
-              <p style="margin:16px 0 0;font-family:${BODY_FONT};font-size:12.5px;line-height:1.6;color:${MUTED};">Sent automatically to the team inbox. Answering this message goes straight back to the person who filled in the form.</p>`;
+              ${button({ label: actionLabel, url: actionUrl, style: template?.buttonStyle })}
+              ${additionalLinks(template?.links ?? [])}
+              ${notes(template?.notes ?? [])}`;
 
   return shell({
-    preheader: `${input.kind} from ${input.replyTo}`,
+    preheader: template?.preheader ?? `${input.kind} from ${input.replyTo}`,
     body: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-bottom:26px;">${body}</td></tr></table>`,
     reason: 'This notification is only ever sent to the People Growth Africa team inbox.',
     site: input.site,

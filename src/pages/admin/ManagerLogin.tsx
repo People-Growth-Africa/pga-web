@@ -23,7 +23,7 @@ const PORTAL = {
     title: 'Admin sign in',
     kicker: 'Staff',
     description:
-      'For administrators, project managers and HR managers. Content managers sign in from their own page.',
+      'For administrators, project managers, HR managers and data administrators. Content managers sign in from their own page.',
     emailPlaceholder: 'name@peoplegrowthafrica.com',
   },
   content: {

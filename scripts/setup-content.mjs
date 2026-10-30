@@ -243,9 +243,9 @@ async function allowManagerRole(sql) {
 
   await sql.query(
     `ALTER TABLE users
-        ADD CONSTRAINT users_role_check CHECK (role IN ('talent', 'employer', 'manager', 'admin', 'project_manager', 'hr_manager', 'content_manager'))`,
+        ADD CONSTRAINT users_role_check CHECK (role IN ('talent', 'employer', 'manager', 'admin', 'project_manager', 'hr_manager', 'content_manager', 'data_admin'))`,
   );
-  console.log('  ok  users.role accepts manager, staff and content manager roles');
+  console.log('  ok  users.role accepts manager, staff, content manager and data administrator roles');
 }
 
 /**

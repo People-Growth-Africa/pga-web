@@ -11,8 +11,8 @@
  *   - a project or HR manager can read the dashboard and data lists but not edit
  *     content or manage staff;
  *   - an administrator can do both jobs, using the administrator cookie;
- *   - only the super administrator may invite, disable or edit staff accounts,
- *     even though every administrator can read the list;
+ *   - only the super administrator may read the staff list, invite, disable or
+ *     edit staff accounts;
  *   - one portal's token cannot be replayed at the other portal.
  *
  * Test accounts carry an obvious prefix and are removed at the end.
@@ -336,9 +336,9 @@ async function main() {
     });
     check(
       14,
-      'The super administrator is told it may manage staff accounts',
-      superAdminStaff.status === 200 && superAdminStaff.json?.canManage === true,
-      `${superAdminStaff.status}, canManage ${superAdminStaff.json?.canManage}`,
+      'The super administrator can read the staff list',
+      superAdminStaff.status === 200 && Array.isArray(superAdminStaff.json?.staff) && !('canManage' in (superAdminStaff.json ?? {})),
+      `${superAdminStaff.status}, staff ${Array.isArray(superAdminStaff.json?.staff) ? superAdminStaff.json.staff.length : 'missing'}`,
     );
 
     const otherAdminLogin = await call(baseUrl, '/api/admin/login', {
@@ -375,10 +375,11 @@ async function main() {
     });
     check(
       15,
-      'A second administrator can read the list but cannot invite, disable or edit',
+      'A second administrator receives no staff list and cannot invite, disable or edit',
       otherAdminLogin.status === 200 &&
-        otherAdminStaff.status === 200 &&
-        otherAdminStaff.json?.canManage === false &&
+        otherAdminStaff.status === 403 &&
+        otherAdminStaff.json?.code === 'super_admin_only' &&
+        !Object.prototype.hasOwnProperty.call(otherAdminStaff.json ?? {}, 'staff') &&
         otherAdminInvite.status === 403 &&
         otherAdminInvite.json?.code === 'super_admin_only' &&
         otherAdminDisable.status === 403 &&

@@ -7,6 +7,7 @@ import {
   countConsultations,
   countRegistrations,
   countSubscriptions,
+  countUserAccounts,
   listConsultations,
   listConsultationsForExport,
   listRegistrations,
@@ -14,7 +15,10 @@ import {
   listRegistrationEventCounts,
   listSubscriptions,
   listSubscriptionsForExport,
+  listUserAccounts,
+  listUserAccountsForExport,
   type DataFilter,
+  type UserAccountFilter,
 } from '../db.js';
 import { recordAudit } from '../audit.js';
 import { csvRows } from '../csv.js';
@@ -22,13 +26,13 @@ import { formatAnswersForCsv } from '../registration-form.js';
 import { todayIso } from '../dates.js';
 
 /**
- * GET /api/admin/data?type=registrations|subscriptions|consultations
+ * GET /api/admin/data?type=registrations|subscriptions|consultations|users
  * GET /api/admin/data-export  (the same filters, as CSV)
  *
- * Only admin, project manager and HR manager may read and export these lists.
- * The allowlist is explicit in `requireAdminData`, so content managers and any
- * future role are refused by default. Every response is no-store because the
- * rows carry names, emails and phone numbers.
+ * Only admin, project manager, HR manager and data administrator may read and
+ * export these lists. The allowlist is explicit in `requireAdminData`, so
+ * content managers and any future role are refused by default. Every response
+ * is no-store because the rows carry names, emails and phone numbers.
  */
 
 const PAGE_SIZE = 25;
@@ -56,6 +60,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     ...(str(query.from) ? { from: str(query.from) } : {}),
     ...(str(query.to) ? { to: str(query.to) } : {}),
     ...(str(query.event) ? { event: str(query.event) } : {}),
+    ...(str(query.role) ? { role: str(query.role) } : {}),
   });
 
   const filter: DataFilter = {
@@ -65,6 +70,12 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     // Only registrations have an event column; a stray event parameter on the
     // other tabs is ignored rather than sent to a table that lacks it.
     ...(parsed.type === 'registrations' && parsed.event ? { eventSlug: parsed.event } : {}),
+  };
+  const userFilter: UserAccountFilter = {
+    ...(parsed.search ? { search: parsed.search } : {}),
+    ...(parsed.from ? { from: parsed.from } : {}),
+    ...(parsed.to ? { to: parsed.to } : {}),
+    ...(parsed.role ? { role: parsed.role } : {}),
   };
   // The function can arrive with the endpoint in req.url or in the `path`
   // query produced by the /api rewrite; accept either.
@@ -80,6 +91,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
         `from=${parsed.from ?? 'any'}`,
         `to=${parsed.to ?? 'any'}`,
         `search=${parsed.search ? 'yes' : 'no'}`,
+        ...(parsed.type === 'users' ? [`role=${parsed.role ?? 'all'}`] : []),
       ].join(' '),
     });
   }
@@ -165,6 +177,46 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     const [rows, total] = await Promise.all([
       listSubscriptions({ ...filter, limit: PAGE_SIZE, offset: (parsed.page - 1) * PAGE_SIZE }),
       countSubscriptions(filter),
+    ]);
+    sendJson(res, 200, { type: parsed.type, rows, total, page: parsed.page, pageSize: PAGE_SIZE });
+    return;
+  }
+
+  if (parsed.type === 'users') {
+    if (exporting) {
+      const rows = await listUserAccountsForExport(userFilter);
+      sendCsv(res, `user-accounts-${todayIso()}.csv`, [
+        [
+          'Name',
+          'Email',
+          'Role',
+          'Company',
+          'Field',
+          'Country',
+          'Availability',
+          'Looking for',
+          'Email verified',
+          'Joined',
+        ],
+        ...rows.map((row) => [
+          row.name,
+          row.email,
+          row.role === 'talent' ? 'Talent' : 'Employer',
+          row.company,
+          row.field,
+          row.country,
+          row.availability,
+          Array.isArray(row.needs) ? row.needs.join('; ') : '',
+          row.email_verified ? 'Yes' : 'No',
+          row.created_at,
+        ]),
+      ]);
+      return;
+    }
+
+    const [rows, total] = await Promise.all([
+      listUserAccounts({ ...userFilter, limit: PAGE_SIZE, offset: (parsed.page - 1) * PAGE_SIZE }),
+      countUserAccounts(userFilter),
     ]);
     sendJson(res, 200, { type: parsed.type, rows, total, page: parsed.page, pageSize: PAGE_SIZE });
     return;

@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { ApiError } from './http.js';
 import { registrationFormSaveSchema } from './registration-form.js';
+import {
+  EMAIL_BUTTON_STYLES,
+  EMAIL_TEMPLATE_IDS,
+  SECURITY_TEMPLATE_IDS,
+  type EmailTemplateId,
+} from './email-template-content.js';
 
 /**
  * Server side validation is the real check. These schemas are strict, so a
@@ -560,7 +566,65 @@ export const STAFF_ROLE_VALUES = [
   'project_manager',
   'hr_manager',
   'content_manager',
+  'data_admin',
 ] as const;
+
+const safeEmailLinkUrl = z
+  .string()
+  .trim()
+  .max(500, 'Link URL must be 500 characters or fewer.')
+  .refine((value) => {
+    if (value.startsWith('/')) return !value.startsWith('//') && !/[\\\r\n]/.test(value);
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && !url.username && !url.password;
+    } catch {
+      return false;
+    }
+  }, 'Use a same-site path or a full https:// URL.');
+
+const safeEmailActionUrl = z
+  .string()
+  .trim()
+  .max(500, 'Button URL must be 500 characters or fewer.')
+  .refine((value) => {
+    if (value.startsWith('/')) return !value.startsWith('//') && !/[\\\r\n]/.test(value);
+    try {
+      const url = new URL(value.replace(/\{\{email\}\}/g, 'reader@example.com'));
+      if (url.username || url.password) return false;
+      return url.protocol === 'https:' ||
+        (url.protocol === 'mailto:' && url.pathname.includes('@') && !/[\\\r\n]/.test(value));
+    } catch {
+      return false;
+    }
+  }, 'Use a same-site path, https:// URL, or an email mailto: URL.');
+
+export const emailTemplateContentSchema = z.strictObject({
+  subject: requiredText(180, 'email subject'),
+  preheader: requiredText(180, 'preheader'),
+  heading: requiredText(180, 'heading'),
+  paragraphs: z.array(z.string().trim().min(1).max(1000)).max(8),
+  notes: z.array(z.string().trim().min(1).max(500)).max(8),
+  actionLabel: z.string().trim().max(80),
+  actionUrl: safeEmailActionUrl.optional(),
+  links: z.array(z.strictObject({
+    label: requiredText(80, 'link label'),
+    url: safeEmailLinkUrl,
+  })).max(5),
+  buttonStyle: z.enum(EMAIL_BUTTON_STYLES),
+});
+
+export const emailTemplateSaveSchema = z.strictObject({
+  id: z.enum(EMAIL_TEMPLATE_IDS),
+  content: emailTemplateContentSchema,
+}).superRefine((value, ctx) => {
+  if (SECURITY_TEMPLATE_IDS.has(value.id as EmailTemplateId) && value.content.actionUrl !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['content', 'actionUrl'], message: 'This button destination is system-controlled.' });
+  }
+  if (value.id === 'lead_notification' && value.content.actionUrl && !value.content.actionUrl.toLowerCase().startsWith('mailto:')) {
+    ctx.addIssue({ code: 'custom', path: ['content', 'actionUrl'], message: 'Lead notifications may only link to an email address.' });
+  }
+});
 
 export const staffCreateSchema = z.strictObject({
   name: requiredText(NAME_MAX, 'full name'),
@@ -613,12 +677,14 @@ export const statsQuerySchema = z.strictObject({
 });
 
 export const dataQuerySchema = z.strictObject({
-  type: z.enum(['registrations', 'subscriptions', 'consultations']),
+  type: z.enum(['registrations', 'subscriptions', 'consultations', 'users']),
   page: z.coerce.number().int().min(1).max(100000).default(1),
   search: z.string().trim().max(120).optional(),
   from: DATE_VALUE.optional(),
   to: DATE_VALUE.optional(),
   event: eventSlug.optional(),
+  // Only the account directory has a role column to filter on.
+  role: z.enum(['talent', 'employer']).optional(),
 });
 
 export const trackSchema = z.strictObject({

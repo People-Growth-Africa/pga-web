@@ -19,11 +19,14 @@ export type Role =
   | 'admin'
   | 'project_manager'
   | 'hr_manager'
-  | 'content_manager';
+  | 'content_manager'
+  | 'data_admin';
 
 /** Staff who use the administrator portal. Content managers and legacy
- * 'manager' rows are excluded; the migration maps those rows to real roles. */
-export const ADMIN_PORTAL_ROLES: Role[] = ['admin', 'project_manager', 'hr_manager'];
+ * 'manager' rows are excluded; the migration maps those rows to real roles.
+ * A data administrator is included: the dashboard and data screens are its
+ * remit, while publishing and staff management stay admin-only. */
+export const ADMIN_PORTAL_ROLES: Role[] = ['admin', 'project_manager', 'hr_manager', 'data_admin'];
 
 /** The content desk is exclusively for content managers. Administrators have
  * their own oversight route under /admin. */
@@ -62,6 +65,7 @@ export function roleLabel(role: Role | undefined): string {
   if (role === 'project_manager') return 'Project manager';
   if (role === 'hr_manager') return 'HR manager';
   if (role === 'content_manager') return 'Content manager';
+  if (role === 'data_admin') return 'Data administrator';
   if (role === 'talent') return 'Talent';
   if (role === 'employer') return 'Employer';
   return 'Staff';

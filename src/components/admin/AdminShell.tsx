@@ -4,11 +4,17 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import {
   ADMIN_PORTAL_ROLES,
-  isAdminRole,
+  isAdminPortalRole,
   isContentManagerRole,
   roleLabel,
   type Role,
 } from '../../lib/authClient';
+
+const DEFAULT_SUPER_ADMIN_EMAIL = 'admin@peoplegrowthafrica.com';
+const configuredSuperAdminEmail = (import.meta.env.VITE_SUPER_ADMIN_EMAIL ?? DEFAULT_SUPER_ADMIN_EMAIL).trim().toLowerCase();
+function isSuperAdmin(email: string | undefined): boolean {
+  return Boolean(email && email.trim().toLowerCase() === configuredSuperAdminEmail);
+}
 
 type Portal = 'admin' | 'content';
 
@@ -51,6 +57,12 @@ function navItems(portal: Portal): NavItem[] {
       match: (pathname) => pathname.startsWith('/admin/oversight') || pathname.startsWith('/admin/content'),
     },
     {
+      label: 'Email templates',
+      to: '/admin/email-templates',
+      roles: ['admin'],
+      match: (pathname) => pathname.startsWith('/admin/email-templates'),
+    },
+    {
       label: 'Staff accounts',
       to: '/admin/staff',
       roles: ['admin'],
@@ -79,7 +91,8 @@ export default function AdminShell({
   const [signingOut, setSigningOut] = useState(false);
 
   const items = navItems(portal).filter(
-    (item) => user?.role !== undefined && item.roles.includes(user.role),
+    (item) => user?.role !== undefined && item.roles.includes(user.role) &&
+      (item.to !== '/admin/staff' || isSuperAdmin(user.email)),
   );
   const section = portal === 'content' ? 'Content desk' : 'Staff';
   // Only the accounts that carry a name are greeted by it: a seeded or legacy
@@ -229,6 +242,6 @@ export default function AdminShell({
 
 export function portalHome(role: Role | undefined): string {
   if (isContentManagerRole(role)) return '/content';
-  if (isAdminRole(role)) return '/admin/stats';
+  if (isAdminPortalRole(role)) return '/admin/stats';
   return '/';
 }

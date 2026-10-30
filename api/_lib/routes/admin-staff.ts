@@ -1,5 +1,5 @@
 import { ApiError, endpoint, parseJsonBody, sendJson } from '../http.js';
-import { isSuperAdminEmail, requireStaff, requireSuperAdmin } from '../staff.js';
+import { requireSuperAdmin } from '../staff.js';
 import {
   parseInput,
   staffCreateSchema,
@@ -9,7 +9,6 @@ import {
 import {
   createStaffAccount,
   createStaffInvite,
-  findSessionUserById,
   findStaffAccount,
   findUserByEmail,
   isUniqueViolation,
@@ -29,12 +28,10 @@ import { recordAudit } from '../audit.js';
  * PATCH /api/admin/staff         - disable or re-enable one
  * PATCH /api/admin/staff-detail  - rewrite one's name, email or role
  *
- * Reading the list is open to every administrator; the three writes are not.
- * Only the super administrator - the single address in `SUPER_ADMIN_EMAIL`,
- * defaulting to the seeded `admin@peoplegrowthafrica.com` - may invite,
- * disable or edit. That is checked here on the server for each request, so
- * another administrator calling the endpoint directly changes nothing even
- * though the panel hides the buttons.
+ * Only the configured super administrator - `SUPER_ADMIN_EMAIL`, defaulting
+ * to the seeded `admin@peoplegrowthafrica.com` - may read the list or write
+ * staff changes. Authorization runs before the list query, so no other admin
+ * receives account data from this endpoint.
  */
 
 export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async (req, res) => {
@@ -42,12 +39,8 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
   const editingDetails = path.endsWith('/staff-detail');
 
   if (req.method === 'GET') {
-    const session = await requireStaff(req, res, { adminOnly: true });
-    const viewer = await findSessionUserById(session.userId);
-    sendJson(res, 200, {
-      staff: await listStaffAccounts(),
-      canManage: isSuperAdminEmail(viewer?.email),
-    });
+    await requireSuperAdmin(req, res);
+    sendJson(res, 200, { staff: await listStaffAccounts() });
     return;
   }
 
@@ -189,7 +182,7 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
 async function invite(
   email: string,
   name: string,
-  role: 'admin' | 'project_manager' | 'hr_manager' | 'content_manager',
+  role: 'admin' | 'project_manager' | 'hr_manager' | 'content_manager' | 'data_admin',
   createdBy: string,
 ): Promise<boolean> {
   const token = newToken();
@@ -200,5 +193,7 @@ async function invite(
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     createdBy,
   });
+  // Data administrators sign in at the administrator portal, so their invite
+  // carries the same door and cookie as the rest of that panel.
   return sendStaffInviteEmail(email, name, token, role === 'content_manager' ? 'content' : 'admin');
 }

@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 
-import { renderEmail, renderLeadEmail } from './email-template.js';
+import { renderEmail, renderEmailText, renderLeadEmail } from './email-template.js';
+import { resolveEmailTemplate } from './email-templates.js';
 import { counterKey } from './security.js';
 
 /**
@@ -89,29 +90,14 @@ async function sendEmail(message: {
 
 export async function sendVerificationEmail(to: string, token: string): Promise<boolean> {
   const link = `${appUrl()}/auth/verify?token=${encodeURIComponent(token)}`;
+  const template = await resolveEmailTemplate('verification', {}, link);
   return sendEmail({
     to,
-    subject: 'Confirm your People Growth Africa email address',
-    text: [
-      'Welcome to People Growth Africa.',
-      '',
-      'Confirm your email address to finish setting up your account:',
-      link,
-      '',
-      'This link works once and expires in 24 hours.',
-      'If you did not create an account, you can ignore this message.',
-    ].join('\n'),
+    subject: template.subject,
+    text: renderEmailText({ ...template, action: { label: template.actionLabel, url: link } }),
     html: renderEmail({
-      preheader: 'One tap confirms this address and your account is ready.',
-      heading: 'Confirm your email address',
-      paragraphs: [
-        'Welcome to People Growth Africa. Confirm this address to finish setting up your account.',
-      ],
-      action: { label: 'Confirm email address', url: link },
-      notes: [
-        'This link works once and expires in 24 hours.',
-        'If you did not create an account, you can ignore this message.',
-      ],
+      ...template,
+      action: { label: template.actionLabel, url: link, style: template.buttonStyle },
       reason: 'You are getting this because this address was used to create a People Growth Africa account.',
       site: appUrl(),
     }),
@@ -120,29 +106,14 @@ export async function sendVerificationEmail(to: string, token: string): Promise<
 
 export async function sendPasswordResetEmail(to: string, token: string): Promise<boolean> {
   const link = `${appUrl()}/forgot-password?token=${encodeURIComponent(token)}`;
+  const template = await resolveEmailTemplate('password_reset', {}, link);
   return sendEmail({
     to,
-    subject: 'Reset your People Growth Africa password',
-    text: [
-      'Someone asked to reset the password for this email address.',
-      '',
-      'Choose a new password here:',
-      link,
-      '',
-      'This link works once and expires in 1 hour.',
-      'If this was not you, you can ignore this message. Your password is unchanged.',
-    ].join('\n'),
+    subject: template.subject,
+    text: renderEmailText({ ...template, action: { label: template.actionLabel, url: link } }),
     html: renderEmail({
-      preheader: 'The link works once and expires in an hour.',
-      heading: 'Reset your password',
-      paragraphs: [
-        'Someone asked to reset the password for this email address. Choose a new one to get back in.',
-      ],
-      action: { label: 'Choose a new password', url: link },
-      notes: [
-        'This link works once and expires in 1 hour.',
-        'If this was not you, you can ignore this message. Your password is unchanged.',
-      ],
+      ...template,
+      action: { label: template.actionLabel, url: link, style: template.buttonStyle },
       reason: 'You are getting this because a password reset was requested for this address.',
       site: appUrl(),
     }),
@@ -157,32 +128,15 @@ export async function sendStaffInviteEmail(
 ): Promise<boolean> {
   const content = portal === 'content';
   const link = `${appUrl()}/${content ? 'content' : 'admin'}/set-password?token=${encodeURIComponent(token)}`;
+  const template = await resolveEmailTemplate(content ? 'staff_invite_content' : 'staff_invite_admin', { name }, link);
   return sendEmail({
     to,
     tag: 'staff',
-    subject: content
-      ? 'You have been invited to the People Growth Africa content desk'
-      : 'You have been invited to the People Growth Africa admin',
-    text: [
-      `Hi ${name},`,
-      '',
-      'A staff account has been created for you. Choose a password here:',
-      link,
-      '',
-      'This link works once and expires in 24 hours.',
-      'If you were not expecting this, you can ignore this message.',
-    ].join('\n'),
+    subject: template.subject,
+    text: renderEmailText({ ...template, action: { label: template.actionLabel, url: link } }),
     html: renderEmail({
-      preheader: 'Choose a password for your staff account.',
-      heading: content ? 'Your content desk account is ready' : 'Your staff account is ready',
-      paragraphs: [
-        `Hi ${name}, a ${content ? 'content manager' : 'staff'} account has been created for you. Choose a password to activate it.`,
-      ],
-      action: { label: 'Choose a password', url: link },
-      notes: [
-        'This link works once and expires in 24 hours.',
-        'If you were not expecting this, you can ignore this message.',
-      ],
+      ...template,
+      action: { label: template.actionLabel, url: link, style: template.buttonStyle },
       reason: `You are getting this because an administrator invited this address to the ${content ? 'content desk' : 'admin'}.`,
       site: appUrl(),
     }),
@@ -208,17 +162,19 @@ export async function sendLeadNotification(input: {
   replyTo: string;
   lines: string[];
 }): Promise<void> {
+  const template = await resolveEmailTemplate('lead_notification', { kind: input.kind, email: input.replyTo });
   await sendEmail({
     to: LEAD_INBOX,
     tag: 'leads',
     replyTo: input.replyTo,
-    subject: `${input.kind}: ${input.replyTo}`,
-    text: [...input.lines, '', `Reply to this email to answer ${input.replyTo}.`].join('\n'),
+    subject: template.subject,
+    text: [...input.lines, '', ...template.paragraphs, '', `${template.actionLabel}:`, template.actionUrl ?? `mailto:${input.replyTo}`, ...template.links.flatMap((link) => ['', `${link.label}:`, link.url]), ...template.notes.flatMap((note) => ['', note])].join('\n'),
     html: renderLeadEmail({
       kind: input.kind,
       lines: input.lines,
       replyTo: input.replyTo,
       site: appUrl(),
+      template,
     }),
   });
 }
@@ -229,30 +185,15 @@ export async function sendLeadNotification(input: {
  */
 export async function sendNewsletterConfirmationEmail(to: string, token: string): Promise<boolean> {
   const link = `${appUrl()}/newsletter/confirm?token=${encodeURIComponent(token)}`;
+  const template = await resolveEmailTemplate('newsletter_confirmation', {}, link);
   return sendEmail({
     to,
     tag: 'newsletter',
-    subject: 'Confirm your subscription to People Growth Africa insights',
-    text: [
-      'Thanks for asking for People Growth Africa insights.',
-      '',
-      'Confirm your subscription here:',
-      link,
-      '',
-      'This link works once and expires in 48 hours.',
-      'If you did not ask for this, ignore this message and nothing more will be sent.',
-    ].join('\n'),
+    subject: template.subject,
+    text: renderEmailText({ ...template, action: { label: template.actionLabel, url: link } }),
     html: renderEmail({
-      preheader: 'One tap and our insights will start arriving.',
-      heading: 'Confirm your subscription',
-      paragraphs: [
-        'Thanks for asking for People Growth Africa insights. One tap below and you are on the list.',
-      ],
-      action: { label: 'Confirm subscription', url: link },
-      notes: [
-        'This link works once and expires in 48 hours.',
-        'If you did not ask for this, ignore this message and nothing more will be sent.',
-      ],
+      ...template,
+      action: { label: template.actionLabel, url: link, style: template.buttonStyle },
       reason: 'You are getting this because this address asked to subscribe to People Growth Africa insights.',
       site: appUrl(),
     }),
@@ -264,25 +205,13 @@ export async function sendNewsletterConfirmationEmail(to: string, token: string)
  * their password. It deliberately carries no link.
  */
 export async function sendPasswordChangedEmail(to: string): Promise<boolean> {
+  const template = await resolveEmailTemplate('password_changed');
   return sendEmail({
     to,
-    subject: 'Your People Growth Africa password was changed',
-    text: [
-      'The password for this account was just changed, and every signed in device has been logged out.',
-      '',
-      'If this was you, nothing further is needed.',
-      'If it was not you, reset the password again immediately and reply to this message so we can help.',
-    ].join('\n'),
+    subject: template.subject,
+    text: renderEmailText(template),
     html: renderEmail({
-      preheader: 'Every signed in device has been logged out.',
-      heading: 'Your password was changed',
-      paragraphs: [
-        'The password on this account has just been changed, and every signed in device has been logged out.',
-        'If this was you, nothing further is needed.',
-      ],
-      notes: [
-        'If it was not you, reset the password again immediately and reply to this message so we can help.',
-      ],
+      ...template,
       reason: 'You are getting this because the password on this account was just changed.',
       site: appUrl(),
     }),
@@ -309,31 +238,20 @@ export async function sendRegistrationConfirmationEmail(
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
   const eventsLink = `${appUrl()}/events`;
+  const template = await resolveEmailTemplate('event_registration', { name, eventName });
+  const action = template.actionUrl
+    ? { label: template.actionLabel, url: template.actionUrl, style: template.buttonStyle }
+    : undefined;
 
   return sendEmail({
     to,
     tag: 'registrations',
-    subject: `Registration confirmed: ${eventName}`,
-    text: [
-      `Hi ${name},`,
-      '',
-      `Your place is saved for ${eventName}.`,
-      '',
-      'Our team will email your joining link before the session. If you have a question in the meantime, reply to this message.',
-      '',
-      `See all events: ${eventsLink}`,
-      '',
-      'If you did not register, you can ignore this message.',
-    ].join('\n'),
+    subject: template.subject,
+    text: renderEmailText({ ...template, action: action ? { label: action.label, url: action.url } : undefined }),
     html: renderEmail({
-      preheader: `Your place is saved for ${eventName}.`,
-      heading: 'Your place is saved',
-      paragraphs: [
-        `Hi ${name}, your registration for ${eventName} is confirmed.`,
-        'Our team will email your joining link before the session. If you have a question in the meantime, reply to this message.',
-      ],
-      action: { label: 'See all events', url: eventsLink },
-      notes: ['If you did not register for this event, you can ignore this message.'],
+      ...template,
+      action,
+      links: [...template.links, ...(action ? [] : [{ label: template.actionLabel, url: eventsLink }])],
       reason: 'You are getting this because this address registered for a People Growth Africa event.',
       site: appUrl(),
     }),
@@ -347,28 +265,17 @@ export async function sendRegistrationConfirmationEmail(
  * caller an account-existence oracle.
  */
 export async function sendExistingAccountEmail(to: string): Promise<boolean> {
-  const loginLink = `${appUrl()}/auth#login`;
+  const template = await resolveEmailTemplate('existing_account');
   return sendEmail({
     to,
     tag: 'signup-existing',
-    subject: 'Someone tried to create a People Growth Africa account',
-    text: [
-      'Someone used this email address to try to create a People Growth Africa account.',
-      '',
-      'An account already exists for this address, so nothing changed. If it was you, log in or reset your password:',
-      loginLink,
-      '',
-      'If it was not you, you can ignore this message.',
-    ].join('\n'),
+    subject: template.subject,
+    text: renderEmailText(template),
     html: renderEmail({
-      preheader: 'No account was created; this address already has one.',
-      heading: 'This address already has an account',
-      paragraphs: [
-        'Someone used this email address to try to create a People Growth Africa account. Nothing changed.',
-        'If it was you, log in or reset your password below.',
-      ],
-      action: { label: 'Go to sign in', url: loginLink },
-      notes: ['If it was not you, you can ignore this message.'],
+      ...template,
+      action: template.actionUrl
+        ? { label: template.actionLabel, url: template.actionUrl, style: template.buttonStyle }
+        : undefined,
       reason: 'You are getting this because a signup was attempted for this address.',
       site: appUrl(),
     }),

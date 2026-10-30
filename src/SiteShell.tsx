@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
 import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './hooks/useAuth';
 import RequireAuth from './components/RequireAuth';
 import { AUTH_ENABLED } from './config/signup-links';
 import Signup from './pages/Signup';
@@ -25,9 +26,10 @@ import AdminOversight from './pages/admin/AdminOversight';
 import AdminSetPassword from './pages/admin/AdminSetPassword';
 import AdminStaff from './pages/admin/AdminStaff';
 import AdminStats from './pages/admin/AdminStats';
+import AdminEmailTemplates from './pages/admin/AdminEmailTemplates';
 import ManagerLogin from './pages/admin/ManagerLogin';
 import TrafficTracker from './components/TrafficTracker';
-import { ADMIN_PORTAL_ROLES } from './lib/authClient';
+import { ADMIN_PORTAL_ROLES, type AuthUser } from './lib/authClient';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import NotFound from './pages/NotFound';
@@ -49,6 +51,18 @@ import NotFound from './pages/NotFound';
  * and React elements carry their props from the moment they were created. Pass
  * the new location in and the outgoing page would redraw as the incoming one.
  */
+const DEFAULT_SUPER_ADMIN_EMAIL = 'admin@peoplegrowthafrica.com';
+const configuredSuperAdminEmail = (import.meta.env.VITE_SUPER_ADMIN_EMAIL ?? DEFAULT_SUPER_ADMIN_EMAIL).trim().toLowerCase();
+function isSuperAdminUser(user: AuthUser | null): boolean {
+  return Boolean(user?.email && user.email.trim().toLowerCase() === configuredSuperAdminEmail);
+}
+
+function SuperAdminRoute({ children }: { children: import('react').ReactNode }) {
+  const { status, user } = useAuth();
+  if (status === 'loading') return null;
+  return isSuperAdminUser(user) ? <>{children}</> : <Navigate to="/admin/stats" replace />;
+}
+
 function AnimatedRoutes() {
   const location = useLocation();
 
@@ -143,7 +157,19 @@ function AnimatedRoutes() {
             element={
               AUTH_ENABLED ? (
                 <RequireAuth roles={['admin']} signInPath="/admin/login">
-                  <AdminStaff />
+                  <SuperAdminRoute><AdminStaff /></SuperAdminRoute>
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/email-templates"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={['admin']} signInPath="/admin/login">
+                  <AdminEmailTemplates />
                 </RequireAuth>
               ) : (
                 <Navigate to="/" replace />

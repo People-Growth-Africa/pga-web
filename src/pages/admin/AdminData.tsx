@@ -6,17 +6,20 @@ import AdminShell from '../../components/admin/AdminShell';
 import { authRequest, NETWORK_FAILURE, onSessionEnded } from '../../lib/authClient';
 
 /**
- * /admin/data - all three personal-data lists in one screen.
+ * /admin/data - all four personal-data lists in one screen.
  *
  * Registrations render as a compact list: desktop rows open a detail panel
  * docked beside the list, phone taps open the same detail full screen. The
  * selected row stays in the `id` query parameter so a refresh restores it.
- * The other two tabs keep the wide table. Search, filters, export and the CSV
- * all use the same server-side filters; the browser never receives more than
- * one page except when it asks for the CSV.
+ * The other tabs keep the wide table. Search, filters, export and the CSV all
+ * use the same server-side filters; the browser never receives more than one
+ * page except when it asks for the CSV.
+ *
+ * User accounts are read-only here: no role, password or disable control is
+ * offered, because those stay with the super administrator's staff screen.
  */
 
-type DataType = 'registrations' | 'subscriptions' | 'consultations';
+type DataType = 'registrations' | 'subscriptions' | 'consultations' | 'users';
 type Answer = { questionId: string; label: string; value: unknown; skipped?: boolean };
 type Row = Record<string, string | null> & { answers?: Answer[]; event_slug?: string | null };
 type DataResponse = {
@@ -31,6 +34,7 @@ const TABS: { value: DataType; label: string; search: string }[] = [
   { value: 'registrations', label: 'Event registrations', search: 'Name or email' },
   { value: 'subscriptions', label: 'Email subscriptions', search: 'Email' },
   { value: 'consultations', label: 'Consultation bookings', search: 'Name or email' },
+  { value: 'users', label: 'User accounts', search: 'Name, email or company' },
 ];
 
 const TABLE_COLUMNS: Record<Exclude<DataType, 'registrations'>, { key: string; label: string }[]> = {
@@ -52,6 +56,15 @@ const TABLE_COLUMNS: Record<Exclude<DataType, 'registrations'>, { key: string; l
     { key: 'notes', label: 'Notes' },
     { key: 'status', label: 'Status' },
     { key: 'created_at', label: 'Booked' },
+  ],
+  users: [
+    { key: 'name', label: 'Name' },
+    { key: 'email', label: 'Email' },
+    { key: 'role', label: 'Account' },
+    { key: 'company', label: 'Company' },
+    { key: 'field', label: 'Field' },
+    { key: 'country', label: 'Country' },
+    { key: 'created_at', label: 'Joined' },
   ],
 };
 
@@ -217,6 +230,7 @@ export default function AdminData() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [eventSlug, setEventSlug] = useState('');
+  const [accountRole, setAccountRole] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [loading, setLoading] = useState(true);
@@ -261,8 +275,9 @@ export default function AdminData() {
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     if (type === 'registrations' && eventSlug) params.set('event', eventSlug);
+    if (type === 'users' && accountRole) params.set('role', accountRole);
     return params;
-  }, [type, page, search, from, to, eventSlug]);
+  }, [type, page, search, from, to, eventSlug, accountRole]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -417,6 +432,7 @@ export default function AdminData() {
                     setType(tab.value);
                     setPage(1);
                     setEventSlug('');
+                    setAccountRole('');
                     setSearchParams((current) => {
                       const next = new URLSearchParams(current);
                       next.delete('id');
@@ -437,7 +453,7 @@ export default function AdminData() {
         </div>
 
         {/* 48px tall, 16px text on phone so iOS does not zoom; stacked there. */}
-        <div className={`mb-5 grid gap-3 ${type === 'registrations' ? 'lg:grid-cols-[1.4fr_0.8fr_0.8fr_1.1fr]' : 'lg:grid-cols-[1.5fr_0.8fr_0.8fr]'}`}>
+        <div className={`mb-5 grid gap-3 ${type === 'registrations' || type === 'users' ? 'lg:grid-cols-[1.4fr_0.8fr_0.8fr_1.1fr]' : 'lg:grid-cols-[1.5fr_0.8fr_0.8fr]'}`}>
           <label className="mb-2 font-[family-name:var(--font-body)] text-[0.78rem] font-medium text-charcoal/60">
             <span className="mb-1.5 block">Search</span>
             <input
@@ -473,6 +489,23 @@ export default function AdminData() {
               className={inputClass}
             />
           </label>
+          {type === 'users' && (
+            <label className="mb-2 font-[family-name:var(--font-body)] text-[0.78rem] font-medium text-charcoal/60">
+              <span className="mb-1.5 block">Account</span>
+              <select
+                value={accountRole}
+                onChange={(event) => {
+                  setAccountRole(event.target.value);
+                  setPage(1);
+                }}
+                className={inputClass}
+              >
+                <option value="">All accounts</option>
+                <option value="talent">Talent</option>
+                <option value="employer">Employer</option>
+              </select>
+            </label>
+          )}
           {type === 'registrations' && (
             <label className="mb-2 font-[family-name:var(--font-body)] text-[0.78rem] font-medium text-charcoal/60">
               <span className="mb-1.5 block">Event</span>
@@ -507,7 +540,9 @@ export default function AdminData() {
         <p className="mb-3 font-[family-name:var(--font-body)] text-[0.85rem] text-charcoal/55">
           {type === 'registrations'
             ? `${total} ${total === 1 ? 'registration' : 'registrations'}.`
-            : `${total} ${total === 1 ? 'row' : 'rows'} match the current filters.`}
+            : type === 'users'
+              ? `${total} ${total === 1 ? 'account' : 'accounts'} match the current filters.`
+              : `${total} ${total === 1 ? 'row' : 'rows'} match the current filters.`}
         </p>
 
         {type === 'registrations' ? (
@@ -978,6 +1013,22 @@ function WideTable({
                   className="border-b border-charcoal/[0.07] align-top text-[0.88rem] text-charcoal last:border-0"
                 >
                   {columns.map((column) => {
+                    if (column.key === 'role') {
+                      const accountRole = row.role;
+                      return (
+                        <td key={column.key} className="whitespace-nowrap px-4 py-4">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-[0.75rem] font-medium ${
+                              accountRole === 'talent'
+                                ? 'bg-mint text-deep-green'
+                                : 'bg-[#F1E9DC] text-[#8B6A40]'
+                            }`}
+                          >
+                            {accountRole === 'talent' ? 'Talent' : 'Employer'}
+                          </span>
+                        </td>
+                      );
+                    }
                     if (column.key === 'created_at') {
                       const parts = formatDateParts(row[column.key]);
                       return (

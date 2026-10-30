@@ -294,7 +294,7 @@ export default function RegistrationFormBuilder({
                     value={optionsText}
                     onChange={(event) =>
                       updateQuestion(index, {
-                        options: event.target.value.split('\n').map((line) => line.trim()),
+                        options: event.target.value.split('\n'),
                       })
                     }
                     rows={Math.min(6, Math.max(2, question.options.length + 1))}
