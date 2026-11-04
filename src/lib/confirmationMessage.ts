@@ -2,7 +2,7 @@ export type ConfirmationMessagePart =
   | { type: 'text'; value: string }
   | { type: 'link'; value: string; href: string };
 
-const LINK_TOKEN = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/gi;
+const LINK_TOKEN = /\[([^\]\n]+)\]\s*\((https?:\/\/[^\s)]+)\)/gi;
 
 function isSafeLink(href: string): boolean {
   try {

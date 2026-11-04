@@ -23,6 +23,16 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
+  parseConfirmationMessage(
+    'Click here [Join Our WhatsApp Community]\n(https://chat.whatsapp.com/example)',
+  ),
+  [
+    { type: 'text', value: 'Click here ' },
+    { type: 'link', value: 'Join Our WhatsApp Community', href: 'https://chat.whatsapp.com/example' },
+  ],
+);
+
+assert.deepEqual(
   parseConfirmationMessage('First line\n[Join](https://example.com)\nLast line'),
   [
     { type: 'text', value: 'First line\n' },
