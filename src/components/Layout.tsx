@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Footer from './Footer';
 import ConsultationModal from './ConsultationModal';
+import MonthGreetingPopover from './MonthGreetingPopover';
 import WhatsAppConcierge from './WhatsAppConcierge';
 import { ConsultationProvider } from '../context/ConsultationContext';
 import { finishFirstPaint } from '../lib/firstPaint';
@@ -64,6 +65,9 @@ export default function Layout({ children }: LayoutProps) {
         <main className="flex-1">{children}</main>
         <Footer />
         <ConsultationModal />
+        {/* A dated greeting, not part of the site: it decides for itself whether
+            its window is open, and never meets anyone in a staff workspace. */}
+        {!isStaffPath && <MonthGreetingPopover />}
         {/* The floating concierge is an offer to talk about the website, not
             part of a staff workspace; it stays off every /admin and /content
             page, sign-in screens included. */}

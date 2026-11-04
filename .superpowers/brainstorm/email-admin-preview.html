@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin panel mockup · People Growth Africa</title>
+  <style>
+    :root { font-family: "DM Sans", Arial, sans-serif; color: #1a1e1b; background: #f5f0e7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .shell { min-height: 100vh; display: grid; grid-template-columns: 245px 1fr; }
+    aside { background: #0b4b3c; color: white; padding: 34px 24px; display: flex; flex-direction: column; }
+    .brand { font: 600 27px/1.02 Georgia, serif; }
+    .section-label { margin: 52px 0 12px; color: #ffffff72; font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+    nav { display: grid; gap: 4px; }
+    nav a { color: #ffffffbd; text-decoration: none; padding: 12px 14px; border-radius: 9px; font-size: 14px; }
+    nav a.active { color: #fff; background: #ffffff20; }
+    .account { margin-top: auto; padding-top: 18px; border-top: 1px solid #ffffff2c; color: #ffffffcf; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+    main { padding: 46px clamp(22px, 4vw, 64px); max-width: 1400px; width: 100%; }
+    .eyebrow { color: #7d857e; font-size: 10px; letter-spacing: .15em; font-weight: 700; }
+    h1,h2 { font-family: Georgia, serif; }
+    h1 { margin: 10px 0 8px; font-size: clamp(32px, 4vw, 46px); letter-spacing: -.03em; }
+    .intro { color: #68716c; margin: 0; font-size: 14px; line-height: 1.6; }
+    .editor { display: grid; grid-template-columns: minmax(205px, .68fr) minmax(360px, 1.52fr) minmax(250px, .85fr); gap: 18px; margin-top: 30px; align-items: start; }
+    .card { background: white; border: 1px solid #e7e3da; border-radius: 15px; box-shadow: 0 2px 8px #00000008; }
+    .list { padding: 16px 12px; }
+    .list-title { padding: 4px 9px 13px; color: #80877f; font-size: 10px; font-weight: 700; letter-spacing: .13em; }
+    .template { display: block; padding: 10px 11px; border-radius: 9px; color: #454d47; text-decoration: none; font-size: 13px; }
+    .template.selected { background: #e1f5ee; color: #0f6e56; font-weight: 700; }
+    .form { padding: 22px; }
+    .form-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 19px; }
+    h2 { font-size: 22px; margin: 0; }
+    .badge { padding: 6px 9px; border-radius: 99px; background: #e1f5ee; color: #0f6e56; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    label { display: block; margin: 14px 0 6px; color: #626b64; font-size: 10px; letter-spacing: .1em; font-weight: 700; }
+    input, textarea { width: 100%; border: 1px solid #dcded8; border-radius: 8px; padding: 11px 12px; color: #303832; font: 13px/1.5 Arial, sans-serif; background: white; }
+    textarea { min-height: 78px; resize: vertical; }
+    .protected { margin-top: 7px; color: #7b827c; font-size: 11px; line-height: 1.5; }
+    .links { margin-top: 17px; padding-top: 16px; border-top: 1px solid #ece9e2; }
+    .links-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .links-head strong { font-size: 13px; }
+    .link-row { display: grid; grid-template-columns: 1fr 1.25fr auto; gap: 8px; margin-top: 10px; }
+    .link-row input { min-width: 0; font-size: 12px; }
+    .remove { border: 0; background: transparent; color: #9b5c47; font-size: 12px; }
+    .button-fields { display: grid; grid-template-columns: 1fr 1.25fr; gap: 10px; margin-top: 15px; padding: 13px; border-radius: 10px; background: #f8f6f1; }
+    .button-fields label { margin-top: 0; }
+    .button-fields input { font-size: 12px; }
+    .add-link { border: 1px solid #0f6e56; color: #0f6e56; background: white; border-radius: 8px; padding: 8px 11px; font-weight: 700; font-size: 11px; }
+    .actions { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-top: 19px; }
+    .help { font-size: 10px; color: #737b74; }
+    .save { border: 0; border-radius: 9px; padding: 11px 16px; background: #0f6e56; color: white; font-size: 12px; font-weight: 700; }
+    .preview { overflow: hidden; }
+    .preview-title { padding: 15px 17px; border-bottom: 1px solid #ece9e2; font-size: 12px; font-weight: 700; }
+    .email { margin: 16px; border: 1px solid #ece9e2; border-radius: 12px; overflow: hidden; background: #f2ede4; }
+    .email-brand { padding: 17px 12px; text-align: center; background: #0f6e56; color: white; font: 15px Georgia, serif; letter-spacing: .08em; }
+    .email-body { margin: 0; padding: 22px 17px 18px; background: white; }
+    .email-body h3 { margin: 0 0 12px; font: 600 20px/1.25 Georgia, serif; }
+    .email-body p { color: #4a524d; font-size: 12px; line-height: 1.65; }
+    .email-cta { display: inline-block; padding: 11px 18px; border-radius: 99px; background: #1d9e75; color: white; font-size: 11px; font-weight: 700; text-decoration: none; }
+    .extra-link { display: block; margin-top: 11px; color: #0f6e56; font-size: 11px; }
+    .email-reason { margin-top: 17px; border-top: 1px solid #e7e3da; padding-top: 11px; color: #838b85; font-size: 9px; line-height: 1.5; }
+    .staff-note { margin-top: 28px; padding: 16px 19px; border: 1px solid #d8e8df; border-radius: 12px; background: #eaf5ef; color: #325c4d; font-size: 12px; line-height: 1.6; }
+    .staff-note strong { display: block; margin-bottom: 3px; color: #0f6e56; }
+    @media (max-width: 1060px) { .editor { grid-template-columns: minmax(190px, .65fr) minmax(350px, 1.4fr); } .preview { grid-column: 2; } }
+    @media (max-width: 720px) { .shell { grid-template-columns: 1fr; } aside { padding: 19px 20px; } .brand br { display: none; } .section-label, .account { display: none; } nav { display: flex; overflow-x: auto; margin-top: 17px; } nav a { white-space: nowrap; } main { padding: 27px 16px; } .editor { grid-template-columns: 1fr; } .preview { grid-column: auto; } .list { display: flex; flex-wrap: wrap; gap: 3px; } .list-title { width: 100%; } .link-row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="brand">People Growth<br>Africa</div>
+      <div class="section-label">Administration</div>
+      <nav aria-label="Admin navigation">
+        <a href="#">Dashboard</a><a href="#">Data</a><a href="#">Content oversight</a><a class="active" href="#">Email templates</a><a href="#">Staff accounts</a>
+      </nav>
+      <div class="account">admin@peoplegrowthafrica.com<br />Administrator · Super admin</div>
+    </aside>
+    <main>
+      <div class="eyebrow">ADMINISTRATION / EMAIL TEMPLATES</div>
+      <h1>Email templates</h1>
+      <p class="intro">Manage the wording and links in automated emails. Security-sensitive links stay system-controlled.</p>
+      <div class="editor">
+        <section class="card list" aria-label="Template selection">
+          <div class="list-title">TRANSACTIONAL EMAILS</div>
+          <a class="template selected" href="#">Confirm your email</a>
+          <a class="template" href="#">Reset password</a>
+          <a class="template" href="#">Staff invitation</a>
+          <a class="template" href="#">Newsletter confirmation</a>
+          <a class="template" href="#">Event registration</a>
+          <a class="template" href="#">Lead notifications</a>
+        </section>
+        <section class="card form">
+          <div class="form-head"><h2>Confirm your email</h2><span class="badge">System link protected</span></div>
+          <label for="subject">EMAIL SUBJECT</label><input id="subject" value="Confirm your People Growth Africa email address" />
+          <label for="preheader">PREHEADER</label><input id="preheader" value="One tap confirms this address and your account is ready." />
+          <label for="heading">HEADING</label><input id="heading" value="Confirm your email address" />
+          <label for="message">MESSAGE</label><textarea id="message">Welcome to People Growth Africa. Confirm this address to finish setting up your account.</textarea>
+          <div class="protected">Personalized fields like the recipient name and secure confirmation link are inserted automatically.</div>
+          <div class="links">
+            <div class="links-head"><strong>Additional links</strong><button class="add-link" type="button">+ Add link</button></div>
+            <div class="link-row"><input aria-label="Link label" value="Visit our website" /><input aria-label="Link destination" value="https://www.peoplegrowthafrica.com" /><button class="remove" type="button">Remove</button></div>
+          <div class="button-fields"><div><label for="button-label">BUTTON LABEL</label><input id="button-label" value="Confirm email address" /></div><div><label for="button-url">BUTTON DESTINATION</label><input id="button-url" value="System-generated secure link" disabled /></div><div><label for="button-style">BUTTON STYLE</label><input id="button-style" value="Solid · Brand green" /></div><div><label for="button-colour">BUTTON COLOUR</label><input id="button-colour" value="Brand palette presets" /></div></div>
+          <div class="protected">For security emails, the destination is locked to the one-time link. Label and brand-safe style are editable. Other email buttons may use a validated custom destination.</div>
+          </div>
+          <div class="actions"><span class="help">Branded layout and button style remain consistent.</span><button class="save" type="button">Save template</button></div>
+        </section>
+        <section class="card preview">
+          <div class="preview-title">Live preview</div>
+          <div class="email"><div class="email-brand">PEOPLE GROWTH AFRICA</div><div class="email-body"><h3>Confirm your email address</h3><p>Welcome to People Growth Africa. Confirm this address to finish setting up your account.</p><a class="email-cta" href="#">Confirm email address</a><a class="extra-link" href="#">Visit our website ↗</a><div class="email-reason">You are getting this because this address was used to create a People Growth Africa account.<br />peoplegrowthafrica.com</div></div></div>
+        </section>
+      </div>
+      <div class="staff-note"><strong>Staff accounts · Super admin only</strong>Only the configured super admin can open the staff list. Other administrator-role accounts are denied by the API and never receive staff account data.</div>
+    </main>
+  </div>
+</body>
+</html>
