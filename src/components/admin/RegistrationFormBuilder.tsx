@@ -187,6 +187,9 @@ export default function RegistrationFormBuilder({
             placeholder="Thank you. Your place is saved and a joining link is on its way."
             className={inputClass}
           />
+          <span className="mt-1 block font-[family-name:var(--font-body)] text-[0.75rem] text-charcoal/45">
+            Use [link text](https://example.com) to add a clickable link.
+          </span>
         </label>
       </div>
 

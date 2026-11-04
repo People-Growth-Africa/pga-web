@@ -12,6 +12,8 @@ registerHooks({
 const { EMAIL_TEMPLATE_IDS, DEFAULT_EMAIL_TEMPLATES } = await import('../api/_lib/email-template-content.ts');
 const { renderEmail, renderEmailText } = await import('../api/_lib/email-template.ts');
 const { emailTemplateSaveSchema } = await import('../api/_lib/validation.ts');
+const { buildRegistrationEmailVariables } = await import('../api/_lib/registration-email.ts');
+const { interpolateTemplate } = await import('../api/_lib/email-templates.ts');
 
 const valid = {
   id: 'event_registration',
@@ -55,6 +57,67 @@ assert.equal(
   emailTemplateSaveSchema.safeParse({ id: 'lead_notification', content: { ...DEFAULT_EMAIL_TEMPLATES.lead_notification, actionUrl: 'https://example.com' } }).success,
   false,
 );
+
+const registrationVariables = buildRegistrationEmailVariables(
+  {
+    slug: 'career-advancement',
+    title: 'Career Advancement',
+    event_start: '2026-11-15T19:00:00.000Z',
+    event_end: '2026-11-15T21:00:00.000Z',
+    location_text: 'Accra Centre',
+    is_online: false,
+  },
+  [
+    { questionId: 'name', label: 'Full name', type: 'short_text', value: 'Ada Okafor' },
+    { questionId: 'interests', label: 'Areas of interest', type: 'checkboxes', value: ['Mentorship', 'Hiring'] },
+    { questionId: 'notes', label: 'Additional notes', type: 'paragraph', value: '', skipped: true },
+  ],
+  'https://www.peoplegrowthafrica.com',
+);
+assert.deepEqual(registrationVariables, {
+  eventName: 'Career Advancement',
+  eventDate: '15 November 2026',
+  eventTime: '8:00 PM–10:00 PM WAT',
+  eventLocation: 'Accra Centre',
+  eventFormat: 'In person',
+  eventUrl: 'https://www.peoplegrowthafrica.com/events/career-advancement',
+  registrationAnswers: 'Full name: Ada Okafor; Areas of interest: Mentorship, Hiring',
+});
+
+const onlineWithoutDetails = buildRegistrationEmailVariables(
+  {
+    slug: 'online-event',
+    title: 'Online Event',
+    event_start: null,
+    event_end: null,
+    location_text: null,
+    is_online: true,
+  },
+  [],
+  'https://www.peoplegrowthafrica.com',
+);
+assert.equal(onlineWithoutDetails.eventDate, 'Not specified');
+assert.equal(onlineWithoutDetails.eventTime, 'Not specified');
+assert.equal(onlineWithoutDetails.eventLocation, 'Online');
+assert.equal(onlineWithoutDetails.registrationAnswers, '');
+
+assert.equal(
+  interpolateTemplate('{{eventName}} on {{eventDate}}: {{registrationAnswers}}', registrationVariables),
+  'Career Advancement on 15 November 2026: Full name: Ada Okafor; Areas of interest: Mentorship, Hiring',
+);
+const unsafeVariables = {
+  ...registrationVariables,
+  registrationAnswers: '<script>alert(1)</script>',
+};
+const answerHtml = renderEmail({
+  preheader: 'Registration details',
+  heading: 'Your registration',
+  paragraphs: [`Answers: ${interpolateTemplate('{{registrationAnswers}}', unsafeVariables)}`],
+  reason: 'Reason',
+  site: 'https://www.peoplegrowthafrica.com',
+});
+assert.match(answerHtml, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+assert.doesNotMatch(answerHtml, /<script>/);
 
 const rendered = renderEmail({
   preheader: 'Preview',

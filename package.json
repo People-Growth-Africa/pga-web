@@ -27,6 +27,7 @@
     "test:auth:ui": "node scripts/test-auth-ui.mjs",
     "test:roles": "node scripts/test-staff-roles.mjs",
     "test:email-templates": "node scripts/test-email-templates.mjs --unit-only",
+    "test:registration-confirmation": "node scripts/test-registration-confirmation.mjs",
     "test:newsletter": "node scripts/test-newsletter.mjs",
     "test:leads": "node scripts/test-leads.mjs",
     "test:content": "node scripts/test-content.mjs",

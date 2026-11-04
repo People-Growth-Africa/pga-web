@@ -1,7 +1,8 @@
 import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../http.js';
 import { parseInput, registrationSchema } from '../validation.js';
 import { findEventForRegistration, insertRegistration, isUniqueViolation } from '../db.js';
-import { sendRegistrationConfirmationEmail } from '../email.js';
+import { appUrl, sendRegistrationConfirmationEmail } from '../email.js';
+import { buildRegistrationEmailVariables } from '../registration-email.js';
 import { enforceRateLimit } from '../ratelimit.js';
 import {
   DEFAULT_REGISTRATION_FORM,
@@ -180,7 +181,11 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     // turn a saved place into an error. Nothing is logged but the fact that it
     // failed, because the message itself is personal data.
     try {
-      await sendRegistrationConfirmationEmail(email, name, data.eventSlug);
+      const emailVariables = {
+        ...buildRegistrationEmailVariables(event, answers, appUrl()),
+        name,
+      };
+      await sendRegistrationConfirmationEmail(email, emailVariables);
     } catch {
       console.error('[registrations] confirmation email failed');
     }

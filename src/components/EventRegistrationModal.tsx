@@ -1,7 +1,8 @@
-import { useState, useEffect, useId, useMemo } from 'react';
+import { Fragment, useState, useEffect, useId, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { EventItem } from '../data/events';
 import { leadFailureMessage, submitRegistration } from '../lib/leadClient';
+import { parseConfirmationMessage } from '../lib/confirmationMessage';
 import { useFormsAvailability } from '../hooks/useFormsAvailability';
 import FormsUnavailableNotice, { FormAvailabilityPending } from './FormsUnavailableNotice';
 import {
@@ -419,7 +420,22 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                 </h4>
                 {form.confirmationMessage ? (
                   <p className="text-charcoal/70 text-sm leading-relaxed mb-6 whitespace-pre-line">
-                    {form.confirmationMessage}
+                    {parseConfirmationMessage(form.confirmationMessage).map((part, index) => (
+                      <Fragment key={index}>
+                        {part.type === 'link' ? (
+                          <a
+                            href={part.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-deep-green underline decoration-brand-green/50 underline-offset-2 transition-colors hover:text-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
+                          >
+                            {part.value}
+                          </a>
+                        ) : (
+                          part.value
+                        )}
+                      </Fragment>
+                    ))}
                   </p>
                 ) : (
                   <p className="text-charcoal/70 text-sm leading-relaxed mb-6">

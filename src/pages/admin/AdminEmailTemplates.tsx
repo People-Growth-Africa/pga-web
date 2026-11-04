@@ -33,6 +33,26 @@ const BUTTON_STYLES: { value: ButtonStyle; label: string }[] = [
 const inputClass = 'min-h-[44px] w-full rounded-[10px] border border-charcoal/15 bg-white px-3.5 py-2.5 text-[0.9rem] text-charcoal focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20';
 const labelClass = 'flex flex-col gap-1.5 text-[0.8rem] font-medium text-charcoal/70';
 
+const PREVIEW_VARIABLES: Record<string, string> = {
+  name: 'Ada Okafor',
+  email: 'ada@example.com',
+  kind: 'New enquiry',
+  eventName: 'Career Advancement in Agriculture',
+  eventDate: '15 November 2026',
+  eventTime: '8:00 PM–10:00 PM WAT',
+  eventLocation: 'Accra Centre',
+  eventFormat: 'In person',
+  eventUrl: 'https://www.peoplegrowthafrica.com/events/career-advancement',
+  registrationAnswers: 'Full name: Ada Okafor; Areas of interest: Mentorship, Hiring',
+};
+
+function previewText(value: string): string {
+  return value.replace(
+    /\{\{([a-zA-Z][a-zA-Z0-9]*)\}\}/g,
+    (match, key: string) => PREVIEW_VARIABLES[key] ?? match,
+  );
+}
+
 export default function AdminEmailTemplates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedId, setSelectedId] = useState<EmailTemplateId | ''>('');
@@ -120,6 +140,17 @@ export default function AdminEmailTemplates() {
               <label className={labelClass}>Inbox preview text<input className={inputClass} value={draft.preheader} maxLength={180} onChange={(event) => update('preheader', event.target.value)} /></label>
               <label className={labelClass}>Heading<input className={inputClass} value={draft.heading} maxLength={180} onChange={(event) => update('heading', event.target.value)} /></label>
               <label className={labelClass}>Message paragraphs<textarea className={`${inputClass} min-h-36`} value={paragraphsText} onChange={(event) => { const text = event.target.value; setParagraphsText(text); update('paragraphs', text ? text.split(/\n{2,}/) : []); }} /><span className="text-[0.72rem] text-charcoal/45">Separate paragraphs with a blank line. Available placeholders are preserved, such as {'{{name}}'} and {'{{eventName}}'}.</span></label>
+              {selected.id === 'event_registration' && (
+                <div className="rounded-xl border border-brand-green/20 bg-mint/40 p-4 text-[0.75rem] leading-relaxed text-charcoal/70">
+                  <p className="font-semibold text-deep-green">Available event placeholders</p>
+                  <p className="mt-1">
+                    {'{{eventName}}'}, {'{{eventDate}}'}, {'{{eventTime}}'}, {'{{eventLocation}}'}, {'{{eventFormat}}'}, {'{{eventUrl}}'}, {'{{registrationAnswers}}'}
+                  </p>
+                  <p className="mt-1">
+                    Registration answers includes only this recipient&apos;s non-empty answers. You can use these placeholders in the subject, preview text, heading, message, notes, button, and extra links.
+                  </p>
+                </div>
+              )}
               <label className={labelClass}>Notes<textarea className={`${inputClass} min-h-24`} value={notesText} onChange={(event) => { const text = event.target.value; setNotesText(text); update('notes', text ? text.split('\n') : []); }} /></label>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className={labelClass}>Button label<input className={inputClass} value={draft.actionLabel} maxLength={80} onChange={(event) => update('actionLabel', event.target.value)} /></label>
@@ -137,8 +168,8 @@ export default function AdminEmailTemplates() {
             </>}
           </section>
           <aside className="self-start overflow-hidden rounded-[16px] border border-charcoal/10 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.035)]">
-            <div className="bg-[#0B4B3C] px-6 py-5 text-white"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/60">Preview</p><p className="mt-1 text-sm font-medium">{draft?.subject || 'Email subject'}</p></div>
-            <div className="border-b-4 border-terracotta px-6 py-8"><h2 className="font-[family-name:var(--font-heading)] text-2xl font-semibold text-charcoal">{draft?.heading}</h2><div className="mt-4 space-y-3 text-sm leading-relaxed text-charcoal/75">{draft?.paragraphs.map((paragraph, index) => <p key={index}>{paragraph.replace(/\{\{name\}\}/g, 'Ada Okafor').replace(/\{\{eventName\}\}/g, 'People & Culture Masterclass').replace(/\{\{kind\}\}/g, 'New enquiry').replace(/\{\{email\}\}/g, 'hello@example.com')}</p>)}</div>{draft?.actionLabel && <div className={`mt-6 inline-flex min-h-11 items-center rounded-full px-5 text-sm font-semibold ${draft.buttonStyle === 'soft-mint' ? 'bg-mint text-deep-green' : draft.buttonStyle === 'outline-green' ? 'border border-deep-green bg-white text-deep-green' : draft.buttonStyle === 'solid-deep-green' ? 'bg-[#0F6E56] text-white' : 'bg-brand-green text-white'}`}>{draft.actionLabel}</div>}{draft?.links.map((link, index) => <p key={index} className="mt-3 text-sm text-deep-green underline">{link.label || 'Link label'} · {link.url || 'Link URL'}</p>)}{draft?.notes.length ? <div className="mt-6 rounded-xl bg-mint p-4 text-xs leading-relaxed text-deep-green">{draft.notes.join(' · ')}</div> : null}</div>
+            <div className="bg-[#0B4B3C] px-6 py-5 text-white"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/60">Preview</p><p className="mt-1 text-sm font-medium">{previewText(draft?.subject || 'Email subject')}</p><p className="mt-1 text-xs text-white/65">{previewText(draft?.preheader ?? '')}</p></div>
+            <div className="border-b-4 border-terracotta px-6 py-8"><h2 className="font-[family-name:var(--font-heading)] text-2xl font-semibold text-charcoal">{previewText(draft?.heading ?? '')}</h2><div className="mt-4 space-y-3 text-sm leading-relaxed text-charcoal/75">{draft?.paragraphs.map((paragraph, index) => <p key={index}>{previewText(paragraph)}</p>)}</div>{draft?.actionLabel && <><div className={`mt-6 inline-flex min-h-11 items-center rounded-full px-5 text-sm font-semibold ${draft.buttonStyle === 'soft-mint' ? 'bg-mint text-deep-green' : draft.buttonStyle === 'outline-green' ? 'border border-deep-green bg-white text-deep-green' : draft.buttonStyle === 'solid-deep-green' ? 'bg-[#0F6E56] text-white' : 'bg-brand-green text-white'}`}>{previewText(draft.actionLabel)}</div>{draft.actionUrl && <p className="mt-2 break-all text-xs text-charcoal/45">{previewText(draft.actionUrl)}</p>}</>}{draft?.links.map((link, index) => <p key={index} className="mt-3 break-all text-sm text-deep-green underline">{previewText(link.label || 'Link label')} · {previewText(link.url || 'Link URL')}</p>)}{draft?.notes.length ? <div className="mt-6 rounded-xl bg-mint p-4 text-xs leading-relaxed text-deep-green">{draft.notes.map(previewText).join(' · ')}</div> : null}</div>
           </aside>
         </div>
       </AdminShell>

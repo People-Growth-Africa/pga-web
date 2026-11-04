@@ -221,24 +221,15 @@ export async function sendPasswordChangedEmail(to: string): Promise<boolean> {
 /**
  * A short receipt for an event place. Sent after the registration row is
  * committed, so the caller treats a failure here as nothing more than a missing
- * courtesy email: the place stays saved.
- *
- * The event is described from its slug because that is all the registration
- * carries; the manager sends the agenda and joining link separately, so this
- * message promises no date or link it cannot know.
+ * courtesy email: the place stays saved. All placeholder variables were
+ * resolved from the published event and this visitor's validated answers.
  */
 export async function sendRegistrationConfirmationEmail(
   to: string,
-  name: string,
-  eventSlug: string,
+  variables: Record<string, string>,
 ): Promise<boolean> {
-  const eventName = eventSlug
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
   const eventsLink = `${appUrl()}/events`;
-  const template = await resolveEmailTemplate('event_registration', { name, eventName });
+  const template = await resolveEmailTemplate('event_registration', variables);
   const action = template.actionUrl
     ? { label: template.actionLabel, url: template.actionUrl, style: template.buttonStyle }
     : undefined;
