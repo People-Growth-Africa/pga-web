@@ -687,6 +687,16 @@ export const dataQuerySchema = z.strictObject({
   role: z.enum(['talent', 'employer']).optional(),
 });
 
+export const auditLogQuerySchema = z.strictObject({
+  from: DATE_VALUE.optional(),
+  to: DATE_VALUE.optional(),
+  actor: z.string().trim().max(254).optional(),
+  role: z.enum(STAFF_ROLE_VALUES).optional(),
+  action: z.string().trim().regex(/^[a-z][a-z0-9_.]{0,79}$/).optional(),
+  entityType: z.string().trim().regex(/^[a-z][a-z0-9_]{0,39}$/).optional(),
+  page: z.coerce.number().int().min(1).max(100000).default(1),
+});
+
 export const trackSchema = z.strictObject({
   path: z.string().trim().min(1).max(300),
   referrer: z.string().trim().max(300).optional(),

@@ -20,7 +20,7 @@ import {
   type DataFilter,
   type UserAccountFilter,
 } from '../db.js';
-import { recordAudit } from '../audit.js';
+import { auditActorForUser, logAudit } from '../audit.js';
 import { csvRows } from '../csv.js';
 import { formatAnswersForCsv } from '../registration-form.js';
 import { todayIso } from '../dates.js';
@@ -82,23 +82,30 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
   const requested = `${req.url ?? ''} ${typeof query.path === 'string' ? query.path : ''}`;
   const exporting = requested.includes('data-export');
 
-  if (exporting) {
-    await recordAudit('csv_export', {
-      userId: session.userId,
-      detail: [
-        `type=${parsed.type}`,
-        `event=${parsed.event ?? 'all'}`,
-        `from=${parsed.from ?? 'any'}`,
-        `to=${parsed.to ?? 'any'}`,
-        `search=${parsed.search ? 'yes' : 'no'}`,
-        ...(parsed.type === 'users' ? [`role=${parsed.role ?? 'all'}`] : []),
-      ].join(' '),
+  const auditExport = async (rowCount: number) => {
+    await logAudit({
+      req,
+      actor: await auditActorForUser(session.userId),
+      action: 'data.export',
+      entity: { type: parsed.type, label: `${parsed.type} export` },
+      after: {
+        dataset: parsed.type,
+        filters: {
+          event: parsed.event ?? null,
+          from: parsed.from ?? null,
+          to: parsed.to ?? null,
+          search: parsed.search ? 'provided' : null,
+          role: parsed.type === 'users' ? parsed.role ?? null : null,
+        },
+        rowCount,
+      },
     });
-  }
+  };
 
   if (parsed.type === 'registrations') {
     if (exporting) {
       const rows = await listRegistrationsForExport(filter);
+      await auditExport(rows.length);
       // Because the table no longer shows the answers, every form question
       // becomes its own column: the questions in first-appearance order, an
       // empty cell when a row has no answer for it. csvRows still escapes and
@@ -167,6 +174,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
   if (parsed.type === 'subscriptions') {
     if (exporting) {
       const rows = await listSubscriptionsForExport(filter);
+      await auditExport(rows.length);
       sendCsv(res, `subscriptions-${todayIso()}.csv`, [
         ['Email', 'Status', 'Source', 'Subscribed at'],
         ...rows.map((row) => [row.email, row.status, row.source, row.created_at]),
@@ -185,6 +193,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
   if (parsed.type === 'users') {
     if (exporting) {
       const rows = await listUserAccountsForExport(userFilter);
+      await auditExport(rows.length);
       sendCsv(res, `user-accounts-${todayIso()}.csv`, [
         [
           'Name',
@@ -224,6 +233,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
 
   if (exporting) {
     const rows = await listConsultationsForExport(filter);
+    await auditExport(rows.length);
     sendCsv(res, `consultations-${todayIso()}.csv`, [
       [
         'Name',

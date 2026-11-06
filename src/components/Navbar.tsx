@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m as motion, AnimatePresence } from 'framer-motion';
 import { useConsultation } from '../hooks/useConsultation';
 import { useAuth } from '../hooks/useAuth';
 import { dashboardPath } from '../lib/authClient';

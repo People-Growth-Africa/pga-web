@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { m as motion, useReducedMotion } from 'framer-motion';
 import { isFirstPaint } from '../lib/firstPaint';
 
 /**

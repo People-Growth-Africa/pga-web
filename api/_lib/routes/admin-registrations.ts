@@ -2,7 +2,7 @@ import type { VercelResponse } from '@vercel/node';
 
 import { endpoint, sendJson } from '../http.js';
 import { requireAdminData } from '../staff.js';
-import { recordAudit } from '../audit.js';
+import { auditActorForUser, logAudit } from '../audit.js';
 import { csvRows } from '../csv.js';
 import { formatAnswersForCsv } from '../registration-form.js';
 import { parseInput, registrationListQuerySchema } from '../validation.js';
@@ -85,11 +85,21 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
   const requested = `${req.url ?? ''} ${typeof query.path === 'string' ? query.path : ''}`;
 
   if (requested.includes('registrations-export')) {
-    await recordAudit('csv_export', {
-      userId: session.userId,
-      detail: `type=registrations event=${filter.eventSlug ?? 'all'} search=${filter.search ? 'yes' : 'no'}`,
-    });
     const rows = await listRegistrationsForExport(filter);
+    await logAudit({
+      req,
+      actor: await auditActorForUser(session.userId),
+      action: 'data.export',
+      entity: { type: 'registrations', label: 'registrations export' },
+      after: {
+        dataset: 'registrations',
+        filters: {
+          event: filter.eventSlug ?? null,
+          search: filter.search ? 'provided' : null,
+        },
+        rowCount: rows.length,
+      },
+    });
     sendCsv(res, rows, filter.eventSlug);
     return;
   }

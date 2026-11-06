@@ -1,5 +1,5 @@
 import { endpoint, sendJson } from '../http.js';
-import { requireAdminData } from '../staff.js';
+import { requireAdminDashboard } from '../staff.js';
 import { parseInput, statsQuerySchema } from '../validation.js';
 import {
   dailyCounts,
@@ -28,7 +28,7 @@ function withChange(stats: CategoryStats): CategoryStats & { change: number } {
 }
 
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
-  await requireAdminData(req, res);
+  await requireAdminDashboard(req, res);
 
   // Only the range is read: the rewrite that reaches this function also puts
   // `path` in the query string, and a strict schema would reject it.

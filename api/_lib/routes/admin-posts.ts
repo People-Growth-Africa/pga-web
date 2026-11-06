@@ -9,7 +9,7 @@ import {
   sendJson,
 } from '../http.js';
 import { requireAdmin } from '../staff.js';
-import { recordAudit, recordAuthEvent } from '../audit.js';
+import { auditActorForUser, prepareAuditWrite, recordAuthEvent } from '../audit.js';
 import {
   parseInput,
   postByIdSchema,
@@ -162,9 +162,17 @@ async function createHandler(req: VercelRequest, res: VercelResponse, userId: st
   await assertCategoryExists(data.categoryId ?? null);
 
   try {
+    const audit = prepareAuditWrite({
+      req,
+      actor: await auditActorForUser(userId),
+      action: 'content.create',
+      entity: { type: data.type === 'event' ? 'event' : 'post', label: data.title },
+      after: { type: data.type, slug: data.slug, title: data.title, status: data.status },
+    });
     const id = await insertPost({
       ...postColumnsFrom(data),
       authorId: userId,
+      audit,
     });
     if (!id) throw new ApiError(500, 'not_saved', 'The post could not be saved. Try again.');
 
@@ -175,10 +183,6 @@ async function createHandler(req: VercelRequest, res: VercelResponse, userId: st
     // draft changes nothing public and sends nothing.
     if (post) {
       announcePostChange({ type: post.type, slug: post.slug, status: post.status, previous: null });
-      await recordAudit('post_created', {
-        userId,
-        detail: `${post.type}/${post.slug} (${post.status})`,
-      });
     }
     sendJson(res, 201, { post });
   } catch (error) {
@@ -199,9 +203,34 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
   await assertCategoryExists(data.categoryId ?? null);
 
   try {
+    const next = {
+      type: data.type,
+      slug: data.slug,
+      title: data.title,
+      status: data.status,
+    };
+    const previous = {
+      type: existing.type,
+      slug: existing.slug,
+      title: existing.title,
+      status: existing.status,
+    };
+    const audit = prepareAuditWrite({
+      req,
+      actor: await auditActorForUser(userId),
+      action: 'content.edit',
+      entity: {
+        type: existing.type === 'event' ? 'event' : 'post',
+        id: existing.id,
+        label: data.title,
+      },
+      before: previous,
+      after: next,
+    });
     const updated = await updatePost({
       id: data.id,
       ...postColumnsFrom(data),
+      audit,
     });
     if (!updated) throw new ApiError(500, 'not_saved', 'The post could not be saved. Try again.');
 
@@ -228,10 +257,6 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
         status: post.status,
         previous: existing.status,
       });
-      await recordAudit('post_updated', {
-        userId,
-        detail: `${post.type}/${post.slug} (${post.status})`,
-      });
     }
     sendJson(res, 200, { post });
   } catch (error) {
@@ -252,10 +277,21 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
   // The status schema rather than a `.pick` of the update one: that schema is
   // now a refinement plus a transform, which has nothing left to pick from.
   const { id, status } = parseInput(postStatusSchema, parseJsonBody(req));
-
   const existing = await findPostById(id);
   if (!existing) throw new ApiError(404, 'not_found', 'That post could not be found.');
 
+  const audit = prepareAuditWrite({
+    req,
+    actor: await auditActorForUser(userId),
+    action: status === 'published' ? 'content.publish' : 'content.unpublish',
+    entity: {
+      type: existing.type === 'event' ? 'event' : 'post',
+      id: existing.id,
+      label: existing.title,
+    },
+    before: { type: existing.type, slug: existing.slug, title: existing.title, status: existing.status },
+    after: { type: existing.type, slug: existing.slug, title: existing.title, status },
+  });
   const updated = await updatePost({
     id,
     slug: existing.slug,
@@ -277,6 +313,7 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
     registrationButtonLabel: existing.registration_button_label,
     registrationForm: existing.registration_form,
     status,
+    audit,
   });
   if (!updated) throw new ApiError(500, 'not_saved', 'That change could not be saved. Try again.');
 
@@ -294,10 +331,6 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
     userId,
     ip: clientIp(req),
   });
-  await recordAudit(status === 'published' ? 'post_published' : 'post_unpublished', {
-    userId,
-    detail: `${existing.type}/${existing.slug}`,
-  });
   sendJson(res, 200, { post });
 }
 
@@ -308,17 +341,19 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, userId: st
   const existing = await findPostById(id);
   if (!existing) throw new ApiError(404, 'not_found', 'That post could not be found.');
 
-  const deleted = await deletePost(id);
+  const audit = prepareAuditWrite({
+    req,
+    actor: await auditActorForUser(userId),
+    action: 'content.delete',
+    entity: { type: existing.type === 'event' ? 'event' : 'post', id: existing.id, label: existing.title },
+    before: { type: existing.type, slug: existing.slug, title: existing.title, status: existing.status },
+  });
+  const deleted = await deletePost(id, audit);
   if (!deleted) throw new ApiError(404, 'not_found', 'That post could not be found.');
 
   // Deleting the row is the point; the cover files go with it.
   await deleteCoverBlobs([existing.cover_image_url, existing.cover_image_thumb_url]);
   await recordAuthEvent('admin_post_delete', { userId, ip: clientIp(req) });
-  await recordAudit('post_deleted', {
-    userId,
-    detail: `${existing.type}/${existing.slug}`,
-  });
-
   // A published URL is about to 404. IndexNow has no delete verb: submitting the
   // URL is how an engine is told to recrawl and drop it. A draft never had a
   // public URL, so this announces nothing for it.

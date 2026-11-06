@@ -10,8 +10,9 @@ hydrates that markup instead of painting it from an empty shell.
 | Piece | What it does |
 | --- | --- |
 | [`src/lib/pageMeta.ts`](../src/lib/pageMeta.ts) | One source of truth for a page's title, description, canonical, share tags and JSON-LD. Also lists the pages to prerender and the private client-only routes. |
-| [`src/SiteShell.tsx`](../src/SiteShell.tsx) | The routes, providers and layout, with no router of its own. The browser mounts it inside `BrowserRouter`; the build mounts it inside `StaticRouter`. |
-| [`src/entry-server.tsx`](../src/entry-server.tsx) | That tree at a URL, as a component for the build to render. Never shipped. |
+| [`src/SiteShell.tsx`](../src/SiteShell.tsx) | The routes, providers and layout, with no router of its own. It receives route components from each entry point and is mounted inside `BrowserRouter` in the browser or `StaticRouter` in the build. |
+| [`src/entry-server.tsx`](../src/entry-server.tsx) | Supplies eager route components to that tree at a URL, as a component for the build to render. Never shipped. |
+| [`src/App.tsx`](../src/App.tsx) | Supplies lazy browser route components (Home stays eager); a shared Suspense boundary keeps the prerendered route markup available while client chunks load. |
 | [`vite.ssr.config.ts`](../vite.ssr.config.ts) | Builds `dist-ssr/server.js` and `dist-ssr/meta.js`. |
 | [`scripts/prerender.mjs`](../scripts/prerender.mjs) | Renders each page into `dist`, writes the private shells and `spa-fallback.html`, and writes `dist/sitemap.xml`. |
 | [`scripts/generate-static-files.mjs`](../scripts/generate-static-files.mjs) | Writes `robots.txt`, `llms.txt` and `llms-full.txt` before the build. |
@@ -47,7 +48,7 @@ paint: the content is already visible and must not be faded in from `opacity: 0`
 
 ```bash
 npm run build
-npm run test:seo   # 988 checks over dist: head tags, JSON-LD, sitemap, shells, vercel.json
+npm run test:seo   # 146 checks over dist: head tags, JSON-LD, sitemap, shells, vercel.json
 ```
 
 `test:seo` reads the built files, not the source, so a page that stops being

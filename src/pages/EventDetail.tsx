@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import EventCard from '../components/EventCard';
-import EventRegistrationModal from '../components/EventRegistrationModal';
 import EventShareButton from '../components/EventShareButton';
 import SafeContent from '../components/SafeContent';
 import PostBody from '../components/PostBody';
@@ -15,6 +14,8 @@ import { findEvent, mergeEvents, splitEvents } from '../lib/contentMerge';
 import { useContent } from '../hooks/useContent';
 import { useLivePosts } from '../hooks/useLivePosts';
 import { eventMeta } from '../lib/pageMeta';
+
+const EventRegistrationModal = lazy(() => import('../components/EventRegistrationModal'));
 
 /**
  * /events/:slug - one event, built-in or from the sheet.
@@ -334,7 +335,11 @@ export default function EventDetail() {
         </section>
       )}
 
-      <EventRegistrationModal event={registering} onClose={() => setRegistering(null)} />
+      {registering && (
+        <Suspense fallback={null}>
+          <EventRegistrationModal event={registering} onClose={() => setRegistering(null)} />
+        </Suspense>
+      )}
     </>
   );
 }

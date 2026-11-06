@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import gsap from 'gsap';
 import precomputedData from '../data/precomputedLogoParts.json';
 
 export interface LogoPart {
@@ -256,6 +255,7 @@ export function LogoIntroAnimation({
    */
   const [shouldAnimate, setShouldAnimate] = useState(false);
   const [isNarrow, setIsNarrow] = useState(false);
+  const [gsap, setGsap] = useState<typeof import('gsap').default | null>(null);
 
   useEffect(() => {
     // Armed on the next task so the prerendered static lockup gets the first
@@ -270,6 +270,23 @@ export function LogoIntroAnimation({
   }, [forceRun]);
 
   const mobileReveal = shouldAnimate && isNarrow;
+
+  useEffect(() => {
+    if (!shouldAnimate || mobileReveal) return;
+
+    let cancelled = false;
+    import('gsap')
+      .then(({ default: gsapModule }) => {
+        if (!cancelled) setGsap(() => gsapModule);
+      })
+      .catch((error: unknown) => {
+        console.error('Unable to load the desktop logo animation.', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldAnimate, mobileReveal]);
 
   const [parts, setParts] = useState<LogoPart[]>(() => {
     if (precomputedParts && precomputedParts.length > 0) return precomputedParts;
@@ -309,7 +326,7 @@ export function LogoIntroAnimation({
   }, [mobileReveal, onComplete]);
 
   useEffect(() => {
-    if (!shouldAnimate || mobileReveal || parts.length === 0) return;
+    if (!shouldAnimate || mobileReveal || parts.length === 0 || !gsap) return;
 
     const totalDuration = 2.6;
     let cancelled = false;
@@ -550,12 +567,12 @@ export function LogoIntroAnimation({
       if (watchdogId !== null) clearTimeout(watchdogId);
       timeline.kill();
     };
-  }, [shouldAnimate, mobileReveal, parts, onComplete]);
+  }, [shouldAnimate, mobileReveal, parts, onComplete, gsap]);
 
   // Static lockup: used when the visitor has already seen the intro, prefers
   // reduced motion, or the logo parts could not be sampled. Without the last
   // case the header would render nothing at all.
-  if (!shouldAnimate || parts.length === 0) {
+  if (!shouldAnimate || parts.length === 0 || (!mobileReveal && !gsap)) {
     return (
       <div className={`inline-flex items-center gap-1.5 md:gap-2 ${className}`}>
         {/* Was: <img src={logoSrc} className="h-8 md:h-10 w-auto object-contain shrink-0" /> */}

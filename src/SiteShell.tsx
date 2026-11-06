@@ -1,38 +1,15 @@
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, domAnimation, LazyMotion } from 'framer-motion';
 import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import RequireAuth from './components/RequireAuth';
 import { AUTH_ENABLED } from './config/signup-links';
-import Signup from './pages/Signup';
-import Home from './pages/Home';
-import Events from './pages/Events';
-import BlogList from './pages/BlogList';
-import BlogPost from './pages/BlogPost';
-import EventDetail from './pages/EventDetail';
-import BookConsultation from './pages/BookConsultation';
-import Auth from './pages/Auth';
-import ForgotPassword from './pages/ForgotPassword';
-import VerifyEmail from './pages/VerifyEmail';
-import NewsletterConfirm from './pages/NewsletterConfirm';
-import TalentDashboard from './pages/TalentDashboard';
-import EmployerDashboard from './pages/EmployerDashboard';
-import AdminContent from './pages/admin/AdminContent';
-import AdminData from './pages/admin/AdminData';
-import AdminOversight from './pages/admin/AdminOversight';
-import AdminSetPassword from './pages/admin/AdminSetPassword';
-import AdminStaff from './pages/admin/AdminStaff';
-import AdminStats from './pages/admin/AdminStats';
-import AdminEmailTemplates from './pages/admin/AdminEmailTemplates';
-import ManagerLogin from './pages/admin/ManagerLogin';
 import TrafficTracker from './components/TrafficTracker';
 import { ADMIN_PORTAL_ROLES, type AuthUser } from './lib/authClient';
-import Terms from './pages/Terms';
-import Privacy from './pages/Privacy';
-import NotFound from './pages/NotFound';
+import type { RouteComponents } from './routeComponents';
 
 /**
  * Everything below the router.
@@ -63,8 +40,35 @@ function SuperAdminRoute({ children }: { children: import('react').ReactNode }) 
   return isSuperAdminUser(user) ? <>{children}</> : <Navigate to="/admin/stats" replace />;
 }
 
-function AnimatedRoutes() {
+function AnimatedRoutes({ components }: { components: RouteComponents }) {
   const location = useLocation();
+  const {
+    Signup,
+    Home,
+    Events,
+    BlogList,
+    BlogPost,
+    EventDetail,
+    BookConsultation,
+    Auth,
+    ForgotPassword,
+    VerifyEmail,
+    NewsletterConfirm,
+    TalentDashboard,
+    EmployerDashboard,
+    AdminContent,
+    AdminData,
+    AdminAuditLog,
+    AdminOversight,
+    AdminSetPassword,
+    AdminStaff,
+    AdminStats,
+    AdminEmailTemplates,
+    ManagerLogin,
+    Terms,
+    Privacy,
+    NotFound,
+  } = components;
 
   // The browser's own back/forward scroll restoration would land the outgoing
   // page somewhere else while it fades. This app scrolls itself, in the new
@@ -78,7 +82,8 @@ function AnimatedRoutes() {
   return (
     <AnimatePresence mode="wait">
       <PageTransition key={location.pathname}>
-        <Routes location={location}>
+        <Suspense fallback={<div className="min-h-[60vh]" aria-busy="true" />}>
+          <Routes location={location}>
           <Route path="/" element={<Home />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/:slug" element={<EventDetail />} />
@@ -153,6 +158,18 @@ function AnimatedRoutes() {
             }
           />
           <Route
+            path="/admin/audit-log"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={['admin']} signInPath="/admin/login">
+                  <AdminAuditLog />
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
             path="/admin/staff"
             element={
               AUTH_ENABLED ? (
@@ -207,19 +224,22 @@ function AnimatedRoutes() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="*" element={<NotFound />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </PageTransition>
     </AnimatePresence>
   );
 }
 
-export default function SiteShell() {
+export default function SiteShell({ routeComponents }: { routeComponents: RouteComponents }) {
   return (
-    <AuthProvider>
-      <Layout>
-        <TrafficTracker />
-        <AnimatedRoutes />
-      </Layout>
-    </AuthProvider>
+    <LazyMotion features={domAnimation}>
+      <AuthProvider>
+        <Layout>
+          <TrafficTracker />
+          <AnimatedRoutes components={routeComponents} />
+        </Layout>
+      </AuthProvider>
+    </LazyMotion>
   );
 }

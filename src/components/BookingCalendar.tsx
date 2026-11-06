@@ -1,5 +1,5 @@
 import { useEffect, useState, useId } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m as motion, AnimatePresence } from 'framer-motion';
 import Select from './Select';
 import { useFormsAvailability } from '../hooks/useFormsAvailability';
 import FormsUnavailableNotice, { FormAvailabilityPending } from './FormsUnavailableNotice';

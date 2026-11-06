@@ -220,15 +220,20 @@ export async function setPassword(
   id: string,
   passwordHash: string,
   options: { clearMustChange?: boolean } = {},
+  audit?: AuditWrite,
 ): Promise<void> {
-  await query(
-    `UPDATE users
+  const mutationSql = `UPDATE users
         SET password_hash = $2,
             must_change_password = CASE WHEN $3::boolean THEN false ELSE must_change_password END,
             token_version = token_version + 1
-      WHERE id = $1`,
-    [id, passwordHash, options.clearMustChange ?? false],
-  );
+      WHERE id = $1
+      RETURNING id`;
+  const mutationParams = [id, passwordHash, options.clearMustChange ?? false];
+  if (audit) {
+    await auditedMutation<{ id: string }>({ mutationSql, mutationParams, audit });
+    return;
+  }
+  await query(mutationSql, mutationParams);
 }
 
 export type TalentProfile = {
@@ -808,9 +813,9 @@ export async function insertPost(input: {
   registrationForm: unknown | null;
   status: PostStatus;
   authorId: string;
+  audit?: AuditWrite;
 }): Promise<string | null> {
-  const row = await queryOne<{ id: string }>(
-    `INSERT INTO posts
+  const mutationSql = `INSERT INTO posts
        (type, slug, title, excerpt, body, category_id, cover_image_url, cover_image_thumb_url,
         link_label, link_url, event_start, event_end, location_text, is_online, registration_url,
         registration_intro, registration_button_label, registration_form, status, published_at,
@@ -818,8 +823,8 @@ export async function insertPost(input: {
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
              $16, $17, $18::jsonb, $19,
              CASE WHEN $19 = 'published' THEN now() ELSE NULL END, $20)
-     RETURNING id`,
-    [
+     RETURNING id, type, slug, title, status`;
+  const params = [
       input.type,
       input.slug,
       input.title,
@@ -840,8 +845,16 @@ export async function insertPost(input: {
       input.registrationForm === null ? null : JSON.stringify(input.registrationForm),
       input.status,
       input.authorId,
-    ],
-  );
+  ];
+  if (input.audit) {
+    const [row] = await auditedMutation<{ id: string }>({
+      mutationSql,
+      mutationParams: params,
+      audit: input.audit,
+    });
+    return row?.id ?? null;
+  }
+  const row = await queryOne<{ id: string }>(mutationSql, params);
   return row?.id ?? null;
 }
 
@@ -871,9 +884,9 @@ export async function updatePost(input: {
   registrationButtonLabel: string | null;
   registrationForm: unknown | null;
   status: PostStatus;
+  audit?: AuditWrite;
 }): Promise<{ id: string } | null> {
-  return queryOne<{ id: string }>(
-    `UPDATE posts
+  const mutationSql = `UPDATE posts
         SET type = $2,
             slug = $3,
             title = $4,
@@ -898,8 +911,8 @@ export async function updatePost(input: {
               ELSE NULL END,
             updated_at = now()
       WHERE id = $1
-      RETURNING id`,
-    [
+      RETURNING id, type, slug, title, status`;
+  const params = [
       input.id,
       input.type,
       input.slug,
@@ -920,12 +933,27 @@ export async function updatePost(input: {
       input.registrationButtonLabel,
       input.registrationForm === null ? null : JSON.stringify(input.registrationForm),
       input.status,
-    ],
-  );
+  ];
+  if (input.audit) {
+    const [row] = await auditedMutation<{ id: string }>({
+      mutationSql,
+      mutationParams: params,
+      audit: input.audit,
+    });
+    return row ? { id: row.id } : null;
+  }
+  return queryOne<{ id: string }>(mutationSql, params);
 }
 
-export async function deletePost(id: string): Promise<boolean> {
-  const rows = await query<{ id: string }>('DELETE FROM posts WHERE id = $1 RETURNING id', [id]);
+export async function deletePost(id: string, audit?: AuditWrite): Promise<boolean> {
+  const mutationSql = 'DELETE FROM posts WHERE id = $1 RETURNING id, type, slug, title, status';
+  const rows = audit
+    ? await auditedMutation<{ id: string }>({
+      mutationSql,
+      mutationParams: [id],
+      audit,
+    })
+    : await query<{ id: string }>(mutationSql, [id]);
   return rows.length > 0;
 }
 
@@ -1170,16 +1198,24 @@ export async function saveEmailTemplateOverride(input: {
   templateId: string;
   content: unknown;
   updatedBy: string;
+  audit?: AuditWrite;
 }): Promise<void> {
-  await query(
-    `INSERT INTO email_template_overrides (template_id, content, updated_by, updated_at)
+  const mutationSql = `INSERT INTO email_template_overrides (template_id, content, updated_by, updated_at)
      VALUES ($1, $2::jsonb, $3, now())
      ON CONFLICT (template_id) DO UPDATE
        SET content = EXCLUDED.content,
            updated_by = EXCLUDED.updated_by,
-           updated_at = now()`,
-    [input.templateId, JSON.stringify(input.content), input.updatedBy],
-  );
+           updated_at = now()`;
+  const params = [input.templateId, JSON.stringify(input.content), input.updatedBy];
+  if (input.audit) {
+    await auditedMutation<{ template_id: string }>({
+      mutationSql: `${mutationSql} RETURNING template_id`,
+      mutationParams: params,
+      audit: input.audit,
+    });
+    return;
+  }
+  await query(mutationSql, params);
 }
 
 export async function createStaffAccount(input: {
@@ -1187,7 +1223,21 @@ export async function createStaffAccount(input: {
   email: string;
   passwordHash: string;
   role: StaffRole;
+  audit?: AuditWrite;
 }): Promise<string | null> {
+  if (input.audit) {
+    const [row] = await auditedMutation<{ id: string }>({
+      mutationSql: `WITH staff_write AS (
+                      SELECT set_config('pga.staff_write', 'on', true)
+                    )
+                    INSERT INTO users (name, email, password_hash, role, email_verified, must_change_password)
+                    SELECT $1, $2, $3, $4, true, true FROM staff_write
+                    RETURNING id, role`,
+      mutationParams: [input.name, input.email, input.passwordHash, input.role],
+      audit: input.audit,
+    });
+    return row?.id ?? null;
+  }
   const result = await sql.transaction([
     sql`SELECT set_config('pga.staff_write', 'on', true)`,
     sql`INSERT INTO users (name, email, password_hash, role, email_verified, must_change_password)
@@ -1198,16 +1248,17 @@ export async function createStaffAccount(input: {
   return rows?.[0]?.id ?? null;
 }
 
-export async function setStaffDisabled(id: string, disabled: boolean): Promise<boolean> {
-  const row = await queryOne<{ id: string }>(
-    `UPDATE users
+export async function setStaffDisabled(id: string, disabled: boolean, audit?: AuditWrite): Promise<boolean> {
+  const mutationSql = `UPDATE users
         SET disabled_at = ${disabled ? 'now()' : 'NULL'},
             token_version = token_version + 1
       WHERE id = $1
         AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager', 'data_admin')
-      RETURNING id`,
-    [id],
-  );
+      RETURNING id, role, (disabled_at IS NOT NULL) AS disabled`;
+  const rows = audit
+    ? await auditedMutation<{ id: string }>({ mutationSql, mutationParams: [id], audit })
+    : await query<{ id: string }>(mutationSql, [id]);
+  const row = rows[0] ?? null;
   return Boolean(row);
 }
 
@@ -1252,7 +1303,28 @@ export async function updateStaffAccount(input: {
   email: string;
   role: StaffRole;
   resetPassword: boolean;
+  audit?: AuditWrite;
 }): Promise<boolean> {
+  if (input.audit) {
+    const rows = await auditedMutation<{ id: string }>({
+      mutationSql: `WITH staff_write AS (
+                      SELECT set_config('pga.staff_write', 'on', true)
+                    )
+                    UPDATE users
+                       SET name = $1,
+                           email = $2,
+                           role = $3,
+                           token_version = token_version + 1,
+                           must_change_password = CASE WHEN $4 THEN true ELSE must_change_password END
+                     WHERE id = $5
+                       AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager', 'data_admin')
+                       AND EXISTS (SELECT 1 FROM staff_write)
+                    RETURNING id, role`,
+      mutationParams: [input.name, input.email, input.role, input.resetPassword, input.id],
+      audit: input.audit,
+    });
+    return rows.length > 0;
+  }
   const result = await sql.transaction([
     sql`SELECT set_config('pga.staff_write', 'on', true)`,
     sql`UPDATE users
@@ -1306,44 +1378,206 @@ export async function useStaffInvite(id: string): Promise<void> {
 export async function finishStaffPasswordSetup(
   email: string,
   passwordHash: string,
+  audit?: AuditWrite,
 ): Promise<string | null> {
-  const row = await queryOne<{ id: string }>(
-    `UPDATE users
+  const mutationSql = `UPDATE users
         SET password_hash = $2,
             must_change_password = false,
             email_verified = true,
             token_version = token_version + 1
       WHERE email = $1 AND disabled_at IS NULL
-      RETURNING id`,
-    [email, passwordHash],
-  );
+      RETURNING id, role`;
+  if (audit) {
+    const [row] = await auditedMutation<{ id: string }>({
+      mutationSql,
+      mutationParams: [email, passwordHash],
+      audit,
+    });
+    return row?.id ?? null;
+  }
+  const row = await queryOne<{ id: string }>(mutationSql, [email, passwordHash]);
   return row?.id ?? null;
 }
 
 export async function setOwnPassword(
   id: string,
   passwordHash: string,
+  audit?: AuditWrite,
 ): Promise<void> {
-  await query(
-    `UPDATE users
+  const mutationSql = `UPDATE users
         SET password_hash = $2,
             must_change_password = false,
             token_version = token_version + 1
-      WHERE id = $1`,
-    [id, passwordHash],
+      WHERE id = $1
+      RETURNING id`;
+  if (audit) {
+    await auditedMutation<{ id: string }>({
+      mutationSql,
+      mutationParams: [id, passwordHash],
+      audit,
+    });
+    return;
+  }
+  await query(mutationSql, [id, passwordHash]);
+}
+
+export type AuditActor = {
+  id: string | null;
+  email: string | null;
+  role: Role | null;
+};
+
+export type AuditWrite = {
+  actor: AuditActor;
+  action: string;
+  entity: { type: string; id?: string | null; label?: string | null };
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  ip?: string | null;
+  userAgent?: string | null;
+  requestId?: string | null;
+};
+
+export async function insertAuditLogRow(input: AuditWrite): Promise<void> {
+  await query(
+    `INSERT INTO audit_logs (
+       actor_id, actor_email, actor_role, action, entity_type, entity_id,
+       entity_label, "before", "after", ip, user_agent, request_id
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12)`,
+    [
+      input.actor.id,
+      input.actor.email,
+      input.actor.role,
+      input.action,
+      input.entity.type,
+      input.entity.id ?? null,
+      input.entity.label ?? null,
+      input.before ? JSON.stringify(input.before) : null,
+      input.after ? JSON.stringify(input.after) : null,
+      input.ip ?? null,
+      input.userAgent ?? null,
+      input.requestId ?? null,
+    ],
   );
 }
 
-export async function insertAuditLog(input: {
-  userId?: string | null;
-  action: string;
-  detail?: string | null;
-}): Promise<void> {
-  await query('INSERT INTO audit_log (user_id, action, detail) VALUES ($1, $2, $3)', [
-    input.userId ?? null,
-    input.action,
-    input.detail ?? null,
+/**
+ * Runs a single-row INSERT/UPDATE/DELETE CTE and writes its audit row from the
+ * returned mutation row in the same SQL statement. A no-op mutation produces
+ * no audit row and no successful result.
+ */
+export async function auditedMutation<T>(input: {
+  mutationSql: string;
+  mutationParams: unknown[];
+  audit: AuditWrite;
+}): Promise<T[]> {
+  const offset = input.mutationParams.length;
+  const p = (index: number) => `$${offset + index}`;
+  const audit = input.audit;
+  const text = `WITH changed AS (${input.mutationSql}),
+    logged AS (
+      INSERT INTO audit_logs (
+        actor_id, actor_email, actor_role, action, entity_type, entity_id,
+        entity_label, "before", "after", ip, user_agent, request_id
+      )
+      SELECT ${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)},
+             COALESCE(${p(6)}, to_jsonb(changed)->>'id'),
+             ${p(7)}, ${p(8)}::jsonb, ${p(9)}::jsonb, ${p(10)}, ${p(11)}, ${p(12)}
+        FROM changed
+      RETURNING id
+    )
+    SELECT changed.* FROM changed CROSS JOIN logged`;
+  return query<T>(text, [
+    ...input.mutationParams,
+    audit.actor.id,
+    audit.actor.email,
+    audit.actor.role,
+    audit.action,
+    audit.entity.type,
+    audit.entity.id ?? null,
+    audit.entity.label ?? null,
+    audit.before ? JSON.stringify(audit.before) : null,
+    audit.after ? JSON.stringify(audit.after) : null,
+    audit.ip ?? null,
+    audit.userAgent ?? null,
+    audit.requestId ?? null,
   ]);
+}
+
+export type AuditLogFilter = {
+  from?: string;
+  to?: string;
+  actor?: string;
+  role?: string;
+  action?: string;
+  entityType?: string;
+  page: number;
+  pageSize: number;
+};
+
+export type AuditLogRow = {
+  id: string;
+  created_at: string;
+  actor_id: string | null;
+  actor_email: string | null;
+  actor_role: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  entity_label: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  ip: string | null;
+  user_agent: string | null;
+  request_id: string | null;
+};
+
+function auditFilterSql(filter: AuditLogFilter): { where: string; params: unknown[] } {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  const add = (clause: (placeholder: string) => string, value: unknown) => {
+    params.push(value);
+    clauses.push(clause(`$${params.length}`));
+  };
+  if (filter.from) add((p) => `created_at >= ${p}::date`, filter.from);
+  if (filter.to) add((p) => `created_at < (${p}::date + interval '1 day')`, filter.to);
+  if (filter.actor) add((p) => `actor_email ILIKE ${p}`, `%${filter.actor}%`);
+  if (filter.role) add((p) => `actor_role = ${p}`, filter.role);
+  if (filter.action) add((p) => `action = ${p}`, filter.action);
+  if (filter.entityType) add((p) => `entity_type = ${p}`, filter.entityType);
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
+}
+
+export async function listAuditLogs(
+  filter: AuditLogFilter,
+): Promise<{ rows: AuditLogRow[]; total: number }> {
+  const { where, params } = auditFilterSql(filter);
+  const offset = (filter.page - 1) * filter.pageSize;
+  const [rows, count] = await Promise.all([
+    query<AuditLogRow>(auditLogSelect(where, `LIMIT $${params.length + 1} OFFSET $${params.length + 2}`), [
+      ...params,
+      filter.pageSize,
+      offset,
+    ]),
+    queryOne<{ total: string }>(
+      `SELECT count(*)::text AS total FROM audit_logs ${where}`,
+      params,
+    ),
+  ]);
+  return { rows, total: Number(count?.total ?? 0) };
+}
+
+export async function listAuditLogsForExport(filter: AuditLogFilter): Promise<AuditLogRow[]> {
+  const { where, params } = auditFilterSql(filter);
+  return query<AuditLogRow>(auditLogSelect(where, ''), params);
+}
+
+function auditLogSelect(where: string, paging: string): string {
+  return `SELECT id, created_at::text AS created_at, actor_id, actor_email, actor_role,
+                 action, entity_type, entity_id, entity_label, "before" AS before, "after" AS after,
+                 ip, user_agent, request_id
+            FROM audit_logs ${where}
+           ORDER BY created_at DESC, id DESC ${paging}`;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

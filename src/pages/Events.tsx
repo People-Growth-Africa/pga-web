@@ -1,14 +1,15 @@
-import { useState, useMemo } from 'react';
+import { lazy, Suspense, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import SEO from '../components/SEO';
 import { staticPageMeta } from '../lib/pageMeta';
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import EventCard from '../components/EventCard';
-import EventRegistrationModal from '../components/EventRegistrationModal';
 import { eventCategories, type EventItem } from '../data/events';
 import { useContent } from '../hooks/useContent';
 import { useLivePosts } from '../hooks/useLivePosts';
 import { mergeEvents, splitEvents, type EventView } from '../lib/contentMerge';
+
+const EventRegistrationModal = lazy(() => import('../components/EventRegistrationModal'));
 
 /**
  * /events - the built-in programme catalogue, with events from the sheet added.
@@ -248,10 +249,14 @@ export default function Events() {
       </section>
 
       {/* Registration Modal */}
-      <EventRegistrationModal
-        event={selectedEvent}
-        onClose={() => setSelectedEvent(null)}
-      />
+      {selectedEvent && (
+        <Suspense fallback={null}>
+          <EventRegistrationModal
+            event={selectedEvent}
+            onClose={() => setSelectedEvent(null)}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

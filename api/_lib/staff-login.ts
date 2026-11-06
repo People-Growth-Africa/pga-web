@@ -5,10 +5,9 @@ import { loginSchema, parseInput } from './validation.js';
 import {
   findSessionUserById,
   findUserByEmail,
-  isAdminPortalRole,
-  isContentManagerRole,
   setPassword,
 } from './db.js';
+import { hasPermission, type Permission } from './permissions.js';
 import { hashPassword, passwordNeedsUpgrade, spendPasswordTime, verifyPassword } from './security.js';
 import {
   assertSessionConfigured,
@@ -17,26 +16,26 @@ import {
   setOnlySessionCookie,
 } from './session.js';
 import { enforceRateLimit } from './ratelimit.js';
-import { recordAudit, recordAuthEvent } from './audit.js';
+import { logAudit, recordAuthEvent } from './audit.js';
 
 export type StaffPortal = 'admin' | 'content';
 
 type PortalConfig = {
   home: string;
   passwordScreen: string;
-  allows: (role: Parameters<typeof isAdminPortalRole>[0]) => boolean;
+  permission: Permission;
 };
 
 const PORTALS: Record<StaffPortal, PortalConfig> = {
   admin: {
     home: '/admin/stats',
     passwordScreen: '/admin/set-password',
-    allows: isAdminPortalRole,
+    permission: 'admin.dashboard.read',
   },
   content: {
     home: '/content',
     passwordScreen: '/content/set-password',
-    allows: isContentManagerRole,
+    permission: 'content.write',
   },
 };
 
@@ -74,21 +73,45 @@ export async function handleStaffLogin(
   if (!user) {
     await spendPasswordTime(data.password);
     await recordAuthEvent(`${portal}_login_failed_unknown_email`, { ip });
+    await logAudit({
+      req,
+      actor: { id: null, email: null, role: null },
+      action: 'auth.login_failed',
+      entity: { type: 'staff_account', label: data.email },
+    });
     throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
   }
 
   if (!(await verifyPassword(data.password, user.password_hash))) {
     await recordAuthEvent(`${portal}_login_failed_bad_password`, { userId: user.id, ip });
+    await logAudit({
+      req,
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: 'auth.login_failed',
+      entity: { type: 'staff_account', id: user.id, label: user.email },
+    });
     throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
   }
 
   if (user.disabled_at !== null) {
     await recordAuthEvent(`${portal}_login_failed_disabled`, { userId: user.id, ip });
+    await logAudit({
+      req,
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: 'auth.login_failed',
+      entity: { type: 'staff_account', id: user.id, label: user.email },
+    });
     throw new ApiError(403, 'account_disabled', 'This account has been disabled. Contact an administrator.');
   }
 
-  if (!config.allows(user.role)) {
+  if (!hasPermission(user.role, config.permission)) {
     await recordAuthEvent(`${portal}_login_failed_wrong_portal`, { userId: user.id, ip });
+    await logAudit({
+      req,
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: 'auth.login_failed',
+      entity: { type: 'staff_account', id: user.id, label: user.email },
+    });
     // Same message as a wrong password: the door must not tell an attacker that
     // the address is real but belongs to the other portal.
     throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
@@ -106,11 +129,14 @@ export async function handleStaffLogin(
     tokenVersion,
     portal,
   });
+  await logAudit({
+    req,
+    actor: { id: user.id, email: user.email, role: user.role },
+    action: 'auth.login',
+    entity: { type: 'staff_account', id: user.id, label: user.email },
+  });
   setOnlySessionCookie(req, res, sessionToken, sessionTtlSeconds(user.role), portal);
   await recordAuthEvent(`${portal}_login`, { userId: user.id, ip });
-  await recordAudit(portal === 'admin' ? 'staff_login' : 'content_manager_login', {
-    userId: user.id,
-  });
 
   sendJson(res, 200, {
     user: {
