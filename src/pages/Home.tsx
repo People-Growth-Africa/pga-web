@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import SEO from '../components/SEO';
 import { staticPageMeta } from '../lib/pageMeta';
 import EventsCarousel from '../components/EventsCarousel';
-import EventRegistrationModal from '../components/EventRegistrationModal';
-import ServiceDetailModal from '../components/ServiceDetailModal';
 import { eventsList, type EventItem } from '../data/events';
 import { servicesData, type ServiceDetail } from '../data/services';
 import { useConsultation } from '../hooks/useConsultation';
+
+const EventRegistrationModal = lazy(() => import('../components/EventRegistrationModal'));
+const ServiceDetailModal = lazy(() => import('../components/ServiceDetailModal'));
 
 /* ── Data ────────────────────────────────────────────────────────── */
 
@@ -590,17 +591,25 @@ export default function Home() {
       </section>
 
       {/* Service Detail Modal (Item 3) */}
-      <ServiceDetailModal
-        service={selectedServiceDetail}
-        onClose={() => setSelectedServiceDetail(null)}
-        onBookConsultation={(serviceName) => openConsultation(serviceName)}
-      />
+      {selectedServiceDetail && (
+        <Suspense fallback={null}>
+          <ServiceDetailModal
+            service={selectedServiceDetail}
+            onClose={() => setSelectedServiceDetail(null)}
+            onBookConsultation={(serviceName) => openConsultation(serviceName)}
+          />
+        </Suspense>
+      )}
 
       {/* Registration Modal for Featured Events */}
-      <EventRegistrationModal
-        event={selectedEvent}
-        onClose={() => setSelectedEvent(null)}
-      />
+      {selectedEvent && (
+        <Suspense fallback={null}>
+          <EventRegistrationModal
+            event={selectedEvent}
+            onClose={() => setSelectedEvent(null)}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

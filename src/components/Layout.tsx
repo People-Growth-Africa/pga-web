@@ -1,12 +1,25 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Footer from './Footer';
-import ConsultationModal from './ConsultationModal';
 import MonthGreetingPopover from './MonthGreetingPopover';
 import WhatsAppConcierge from './WhatsAppConcierge';
 import { ConsultationProvider } from '../context/ConsultationContext';
 import { finishFirstPaint } from '../lib/firstPaint';
+import { useConsultation } from '../hooks/useConsultation';
+
+const ConsultationModal = lazy(() => import('./ConsultationModal'));
+
+function DeferredConsultationModal() {
+  const { isOpen } = useConsultation();
+  if (!isOpen) return null;
+
+  return (
+    <Suspense fallback={null}>
+      <ConsultationModal />
+    </Suspense>
+  );
+}
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -64,7 +77,7 @@ export default function Layout({ children }: LayoutProps) {
         <Navbar />
         <main className="flex-1">{children}</main>
         <Footer />
-        <ConsultationModal />
+        <DeferredConsultationModal />
         {/* A dated greeting, not part of the site: it decides for itself whether
             its window is open, and never meets anyone in a staff workspace. */}
         {!isStaffPath && <MonthGreetingPopover />}

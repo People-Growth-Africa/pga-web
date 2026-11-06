@@ -3,11 +3,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ApiError } from './http.js';
 import {
   findSessionUserById,
-  isAdminPortalRole,
-  isAdminRole,
   type Role,
   type SessionUserRow,
 } from './db.js';
+import { hasPermission, type Permission } from './permissions.js';
 import {
   clearSessionCookie,
   hasSessionCookie,
@@ -24,14 +23,12 @@ import {
  * does not authenticate this portal. The role is then re-read from the account
  * row, so a removed, demoted or disabled account stops working immediately.
  *
- * Dashboard and data lists are open to every administrator-portal role; staff
- * account management is admin only. A data administrator reaches the same
- * door but only the read-only data allowlist below.
+ * Administrator API access is granted by centralized permissions after the
+ * portal cookie, current account and role have been verified.
  */
 export async function requireStaff(
   req: VercelRequest,
   res: VercelResponse,
-  options: { adminOnly?: boolean } = {},
 ): Promise<SessionClaims> {
   const session = await readSession(req, 'admin');
 
@@ -46,19 +43,15 @@ export async function requireStaff(
     throw new ApiError(401, 'sign_in_required', 'Sign in with a staff account to continue.');
   }
 
-  if (!isAdminPortalRole(session.role)) {
+  if (!hasPermission(session.role, 'admin.dashboard.read')) {
     throw new ApiError(403, 'staff_only', 'This area is for administrator-portal accounts.');
   }
-  if (options.adminOnly && !isAdminRole(session.role)) {
-    throw new ApiError(403, 'admin_only', 'Only an administrator can do that.');
-  }
-
   const user = await findSessionUserById(session.userId);
   if (
     !user ||
     user.disabled_at !== null ||
     user.role !== session.role ||
-    !isAdminPortalRole(user.role) ||
+    !hasPermission(user.role, 'admin.dashboard.read') ||
     user.token_version !== session.tokenVersion
   ) {
     clearSessionCookie(req, res, 'admin');
@@ -77,24 +70,37 @@ export async function requireStaff(
   return session;
 }
 
-const ADMIN_DATA_ROLES = new Set(['admin', 'project_manager', 'hr_manager', 'data_admin']);
-
 /**
- * Personal-data and aggregate dashboard routes. This is an explicit allowlist,
- * not "every staff role": a future role is excluded until someone deliberately
- * adds it here. Content managers and legacy manager rows never pass.
- *
- * A data administrator is included: the dashboard, the registrations and lead
- * lists and the account directory are exactly its remit. Publishing, email
- * templates and staff management are not, and those guards stay narrower.
+ * Dashboard and data access are assigned centrally. Data administrators have
+ * read-only permissions; content and staff management use separate guards.
  */
 export async function requireAdminData(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<SessionClaims> {
+  return requirePermission(req, res, 'admin.data.read');
+}
+
+export async function requireAdminDashboard(
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<SessionClaims> {
+  return requirePermission(req, res, 'admin.dashboard.read');
+}
+
+export async function requirePermission(
+  req: VercelRequest,
+  res: VercelResponse,
+  permission: Permission,
+): Promise<SessionClaims> {
   const session = await requireStaff(req, res);
-  if (!ADMIN_DATA_ROLES.has(session.role)) {
-    throw new ApiError(403, 'admin_data_only', 'This data is for administrator-portal accounts.');
+  if (!hasPermission(session.role, permission)) {
+    const adminOnly = permission === 'admin.content.write' || permission === 'admin.staff.manage';
+    throw new ApiError(
+      403,
+      adminOnly ? 'admin_only' : 'permission_denied',
+      adminOnly ? 'Only an administrator can do that.' : 'You do not have permission to access this area.',
+    );
   }
   return session;
 }
@@ -105,7 +111,7 @@ export async function requireAdmin(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<SessionClaims> {
-  return requireStaff(req, res, { adminOnly: true });
+  return requirePermission(req, res, 'admin.content.write');
 }
 
 /**
@@ -140,7 +146,7 @@ export async function requireSuperAdmin(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<{ session: SessionClaims; user: SessionUserRow }> {
-  const session = await requireStaff(req, res, { adminOnly: true });
+  const session = await requirePermission(req, res, 'admin.staff.manage');
   const user = await findSessionUserById(session.userId);
   if (!user || !isSuperAdminEmail(user.email)) {
     throw new ApiError(

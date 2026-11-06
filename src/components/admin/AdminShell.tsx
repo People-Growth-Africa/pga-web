@@ -51,6 +51,12 @@ function navItems(portal: Portal): NavItem[] {
       match: (pathname) => pathname.startsWith('/admin/data') || pathname.startsWith('/admin/registrations'),
     },
     {
+      label: 'Audit Log',
+      to: '/admin/audit-log',
+      roles: ['admin'],
+      match: (pathname) => pathname.startsWith('/admin/audit-log'),
+    },
+    {
       label: 'Content oversight',
       to: '/admin/oversight',
       roles: ['admin'],

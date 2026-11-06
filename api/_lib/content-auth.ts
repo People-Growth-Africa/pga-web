@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { ApiError } from './http.js';
-import { findSessionUserById, isContentManagerRole } from './db.js';
+import { findSessionUserById } from './db.js';
+import { hasPermission } from './permissions.js';
 import {
   clearSessionCookie,
   hasSessionCookie,
@@ -39,7 +40,7 @@ export async function requireContentManager(
     );
   }
 
-  if (!isContentManagerRole(session.role)) {
+  if (!hasPermission(session.role, 'content.write')) {
     throw new ApiError(403, 'content_only', 'This area is for content managers. Nothing was changed.');
   }
 
@@ -48,7 +49,7 @@ export async function requireContentManager(
     !user ||
     user.disabled_at !== null ||
     user.role !== session.role ||
-    !isContentManagerRole(user.role) ||
+    !hasPermission(user.role, 'content.write') ||
     user.must_change_password ||
     user.token_version !== session.tokenVersion
   ) {

@@ -18,7 +18,7 @@ import {
 } from '../db.js';
 import { hashPassword, hashToken, newToken } from '../security.js';
 import { sendStaffInviteEmail } from '../email.js';
-import { recordAudit } from '../audit.js';
+import { auditActorForUser, prepareAuditWrite } from '../audit.js';
 
 /**
  * GET   /api/admin/staff         - staff accounts, and whether this viewer may
@@ -55,22 +55,25 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
     // A random password nobody knows is written first; the invite link is the
     // only way in until the person chooses their own. `must_change_password`
     // keeps every staff endpoint closed until then.
+    const audit = prepareAuditWrite({
+      req,
+      actor: await auditActorForUser(session.userId),
+      action: 'staff.create',
+      entity: { type: 'staff_account', label: data.email },
+      after: { role: data.role },
+    });
     const id = await createStaffAccount({
       name: data.name,
       email: data.email,
       passwordHash: await hashPassword(newToken()),
       role: data.role,
+      audit,
     });
     if (!id) {
       throw new ApiError(500, 'staff_not_created', 'The account could not be created. Try again.');
     }
 
     const emailSent = await invite(data.email, data.name, data.role, user.id);
-    await recordAudit('staff_created', {
-      userId: session.userId,
-      detail: `${data.email} as ${data.role}`,
-    });
-
     sendJson(res, 201, {
       ok: true,
       id,
@@ -116,6 +119,14 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       );
     }
 
+    const audit = prepareAuditWrite({
+      req,
+      actor: await auditActorForUser(session.userId),
+      action: roleChanged ? 'staff.role_change' : 'staff.account_update',
+      entity: { type: 'staff_account', id: target.id, label: target.email },
+      before: { role: target.role },
+      after: { role: data.role },
+    });
     const saved = await updateStaffAccount({
       id: data.id,
       name: data.name ? data.name : null,
@@ -124,6 +135,7 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       // A new address has to be proved, and the set-password link is how this
       // panel already does that: the flag forces the screen, the invite opens it.
       resetPassword: emailChanged,
+      audit,
     }).catch((error: unknown) => {
       if (isUniqueViolation(error)) {
         throw new ApiError(409, 'email_in_use', 'Another account already uses that email.', {
@@ -142,11 +154,6 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       emailSent = await invite(data.email, data.name || data.email, data.role, user.id);
     }
 
-    await recordAudit('staff_updated', {
-      userId: session.userId,
-      detail: `${target.email} -> ${data.email} as ${data.role}${emailChanged ? ' (re-invited)' : ''}`,
-    });
-
     sendJson(res, 200, {
       ok: true,
       emailSent,
@@ -164,14 +171,22 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
     throw new ApiError(400, 'cannot_disable_self', 'You cannot disable your own account.');
   }
 
-  const changed = await setStaffDisabled(data.id, data.disabled);
+  const target = await findStaffAccount(data.id);
+  if (!target) {
+    throw new ApiError(404, 'staff_not_found', 'That staff account no longer exists.');
+  }
+  const audit = prepareAuditWrite({
+    req,
+    actor: await auditActorForUser(session.userId),
+    action: data.disabled ? 'staff.disable' : 'staff.enable',
+    entity: { type: 'staff_account', id: target.id, label: target.email },
+    before: { disabled: target.disabled_at !== null },
+    after: { disabled: data.disabled },
+  });
+  const changed = await setStaffDisabled(data.id, data.disabled, audit);
   if (!changed) {
     throw new ApiError(404, 'staff_not_found', 'That staff account no longer exists.');
   }
-  await recordAudit(data.disabled ? 'staff_disabled' : 'staff_enabled', {
-    userId: session.userId,
-    detail: data.id,
-  });
   sendJson(res, 200, { ok: true });
 });
 

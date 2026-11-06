@@ -1,12 +1,56 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    ...(process.env.ANALYZE === '1'
+      ? [
+          visualizer({
+            filename: 'dist/stats.json',
+            template: 'raw-data',
+            gzipSize: true,
+            brotliSize: true,
+          }),
+        ]
+      : []),
+  ],
   resolve: {
     alias: {
       '@': '/src',
+    },
+  },
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react-vendor',
+              test: /[\\/]node_modules[\\/](?:react|react-dom|scheduler)[\\/]/,
+              priority: 30,
+            },
+            {
+              name: 'router-vendor',
+              test: /[\\/]node_modules[\\/](?:react-router|react-router-dom)[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'motion-vendor',
+              test: /[\\/]node_modules[\\/](?:framer-motion|motion-dom|motion-utils)[\\/]/,
+              priority: 10,
+            },
+            {
+              name: 'gsap-vendor',
+              test: /[\\/]node_modules[\\/]gsap[\\/]/,
+              priority: 10,
+            },
+          ],
+        },
+      },
     },
   },
   server: {

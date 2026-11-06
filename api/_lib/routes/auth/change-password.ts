@@ -5,7 +5,8 @@ import { findSessionUserById, findUserByEmail, setOwnPassword } from '../../db.j
 import { hashPassword, verifyPassword } from '../../security.js';
 import { createSessionToken, sessionTtlSeconds, setSessionCookie } from '../../session.js';
 import { enforceRateLimit } from '../../ratelimit.js';
-import { recordAudit } from '../../audit.js';
+import { prepareAuditWrite } from '../../audit.js';
+import { isAdminPortalRole, isContentManagerRole } from '../../db.js';
 
 /**
  * POST /api/auth/change-password
@@ -41,7 +42,15 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     throw new ApiError(400, 'password_unchanged', 'Choose a password you have not used here before.');
   }
 
-  await setOwnPassword(user.id, await hashPassword(data.password));
+  const audit = isAdminPortalRole(user.role) || isContentManagerRole(user.role)
+    ? prepareAuditWrite({
+      req,
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: 'staff.password_change',
+      entity: { type: 'staff_account', id: user.id, label: user.email },
+    })
+    : undefined;
+  await setOwnPassword(user.id, await hashPassword(data.password), audit);
   const updated = await findSessionUserById(user.id);
   if (updated) {
     const token = await createSessionToken({
@@ -52,7 +61,5 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     });
     setSessionCookie(req, res, token, sessionTtlSeconds(updated.role), portal);
   }
-  await recordAudit('staff_password_changed', { userId: user.id, detail: `portal=${portal}` });
-
   sendJson(res, 200, { ok: true });
 });

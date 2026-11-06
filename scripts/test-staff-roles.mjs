@@ -28,6 +28,7 @@ const STAFF = {
   otherAdmin: `${EMAIL_PREFIX}-admin2@example.com`,
   project: `${EMAIL_PREFIX}-project@example.com`,
   hr: `${EMAIL_PREFIX}-hr@example.com`,
+  data: `${EMAIL_PREFIX}-data@example.com`,
   content: `${EMAIL_PREFIX}-content@example.com`,
 };
 
@@ -107,6 +108,7 @@ async function main() {
     otherAdmin: 'admin',
     project: 'project_manager',
     hr: 'hr_manager',
+    data: 'data_admin',
     content: 'content_manager',
   };
 
@@ -242,6 +244,9 @@ async function main() {
     const contentStaff = await call(baseUrl, '/api/admin/staff', {
       cookie: `pga_content_session=${contentLogin.content}`,
     });
+    const contentAudit = await call(baseUrl, '/api/admin/audit-log', {
+      cookie: `pga_content_session=${contentLogin.content}`,
+    });
     const contentStats = await call(baseUrl, '/api/admin/stats', {
       cookie: `pga_content_session=${contentLogin.content}`,
     });
@@ -250,8 +255,9 @@ async function main() {
       'A content manager cannot read personal data, staff accounts or the dashboard',
       contentData.status === 403 &&
         contentStaff.status === 403 &&
-        contentStats.status === 403,
-      `${contentData.status}/${contentStaff.status}/${contentStats.status}`,
+      contentStats.status === 403 &&
+      contentAudit.status === 403,
+      `${contentData.status}/${contentStaff.status}/${contentStats.status}/${contentAudit.status}`,
     );
 
     const projectLogin = await call(baseUrl, '/api/admin/login', {
@@ -266,13 +272,17 @@ async function main() {
     const projectStats = await call(baseUrl, '/api/admin/stats', {
       cookie: projectCookie,
     });
+    const projectAudit = await call(baseUrl, '/api/admin/audit-log', {
+      cookie: projectCookie,
+    });
     check(
       9,
       'A project manager can read the dashboard and the data lists through the administrator cookie',
       projectLogin.status === 200 &&
         projectData.status === 200 &&
-        projectStats.status === 200,
-      `${projectLogin.status}/${projectData.status}/${projectStats.status}`,
+        projectStats.status === 200 &&
+        projectAudit.status === 403,
+      `${projectLogin.status}/${projectData.status}/${projectStats.status}/${projectAudit.status}`,
     );
 
     const projectPosts = await call(baseUrl, '/api/admin/posts', {
@@ -297,11 +307,20 @@ async function main() {
     const adminStaff = await call(baseUrl, '/api/admin/staff', {
       cookie: `pga_admin_session=${adminLogin.admin}`,
     });
+    const adminAudit = await call(baseUrl, '/api/admin/audit-log', {
+      cookie: `pga_admin_session=${adminLogin.admin}`,
+    });
+    const adminAuditExport = await call(baseUrl, '/api/admin/audit-log-export', {
+      cookie: `pga_admin_session=${adminLogin.admin}`,
+    });
     check(
       11,
-      'An administrator can reach both the content tools and staff management',
-      adminPosts.status === 200 && adminStaff.status === 200,
-      `${adminPosts.status}/${adminStaff.status}`,
+      'An administrator can read audit history, while its export remains super-admin only',
+      adminPosts.status === 200 &&
+        adminStaff.status === 200 &&
+        adminAudit.status === 200 &&
+        adminAuditExport.status === 200,
+      `${adminPosts.status}/${adminStaff.status}/${adminAudit.status}/${adminAuditExport.status}`,
     );
 
     // A token minted for the content desk must not be accepted as an
@@ -349,6 +368,12 @@ async function main() {
     const otherAdminStaff = await call(baseUrl, '/api/admin/staff', {
       cookie: otherAdminCookie,
     });
+    const otherAdminAudit = await call(baseUrl, '/api/admin/audit-log', {
+      cookie: otherAdminCookie,
+    });
+    const otherAdminAuditExport = await call(baseUrl, '/api/admin/audit-log-export', {
+      cookie: otherAdminCookie,
+    });
     const otherAdminInvite = await call(baseUrl, '/api/admin/staff', {
       method: 'POST',
       cookie: otherAdminCookie,
@@ -383,8 +408,24 @@ async function main() {
         otherAdminInvite.status === 403 &&
         otherAdminInvite.json?.code === 'super_admin_only' &&
         otherAdminDisable.status === 403 &&
-        otherAdminEdit.status === 403,
-      `${otherAdminStaff.status}/${otherAdminInvite.status}/${otherAdminDisable.status}/${otherAdminEdit.status}`,
+        otherAdminEdit.status === 403 &&
+        otherAdminAudit.status === 200 &&
+        otherAdminAuditExport.status === 403,
+      `${otherAdminStaff.status}/${otherAdminInvite.status}/${otherAdminDisable.status}/${otherAdminEdit.status}/${otherAdminAudit.status}/${otherAdminAuditExport.status}`,
+    );
+
+    const dataLogin = await call(baseUrl, '/api/admin/login', {
+      method: 'POST',
+      body: { email: STAFF.data, password: PASSWORD },
+    });
+    const dataAudit = await call(baseUrl, '/api/admin/audit-log', {
+      cookie: `pga_admin_session=${dataLogin.admin}`,
+    });
+    check(
+      16,
+      'A data administrator is denied audit history by the server',
+      dataLogin.status === 200 && dataAudit.status === 403,
+      `${dataLogin.status}/${dataAudit.status}`,
     );
   } finally {
     if (ids.length > 0) {

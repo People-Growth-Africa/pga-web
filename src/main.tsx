@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot, hydrateRoot } from 'react-dom/client';
 import App from './App';
+import type { RouteComponents } from './routeComponents';
 import './index.css';
 
 const container = document.getElementById('root')!;
@@ -23,13 +24,27 @@ document.getElementById('fallback-content')?.remove();
  * client-only routes - accounts, legal pages - are served an empty shell and
  * take the createRoot path they always took.
  */
-if (container.firstElementChild) {
+function hydrate(initialRouteComponents?: Partial<RouteComponents>) {
   hydrateRoot(
     container,
     <StrictMode>
-      <App />
+      <App initialRouteComponents={initialRouteComponents} />
     </StrictMode>,
   );
+}
+
+if (container.firstElementChild) {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (document.documentElement.hasAttribute('data-prerendered') && path === '/consultation') {
+    import('./pages/BookConsultation')
+      .then(({ default: BookConsultation }) => hydrate({ BookConsultation }))
+      .catch((error: unknown) => {
+        console.error('Unable to load the prerendered consultation route for hydration.', error);
+        hydrate();
+      });
+  } else {
+    hydrate();
+  }
 } else {
   createRoot(container).render(
     <StrictMode>

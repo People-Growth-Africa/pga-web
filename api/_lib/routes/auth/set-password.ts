@@ -1,9 +1,9 @@
 import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../../http.js';
 import { parseInput, staffInviteAcceptSchema } from '../../validation.js';
-import { findOpenStaffInvite, finishStaffPasswordSetup, useStaffInvite } from '../../db.js';
+import { findOpenStaffInvite, findUserByEmail, finishStaffPasswordSetup, useStaffInvite } from '../../db.js';
 import { hashPassword, hashToken } from '../../security.js';
 import { enforceRateLimit } from '../../ratelimit.js';
-import { recordAudit } from '../../audit.js';
+import { prepareAuditWrite } from '../../audit.js';
 
 /**
  * POST /api/auth/set-password
@@ -27,13 +27,20 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     );
   }
 
-  const userId = await finishStaffPasswordSetup(invite.email, await hashPassword(data.password));
+  const target = await findUserByEmail(invite.email);
+  const audit = target
+    ? prepareAuditWrite({
+      req,
+      actor: { id: target.id, email: target.email, role: target.role },
+      action: 'staff.password_change',
+      entity: { type: 'staff_account', id: target.id, label: target.email },
+    })
+    : undefined;
+  const userId = await finishStaffPasswordSetup(invite.email, await hashPassword(data.password), audit);
   if (!userId) {
     throw new ApiError(400, 'invite_invalid', 'That account is not available. Contact an administrator.');
   }
   await useStaffInvite(invite.id);
-  await recordAudit('staff_invite_accepted', { userId, detail: invite.email });
-
   sendJson(res, 200, {
     ok: true,
     message: 'Your password is set. Sign in to open the admin.',
