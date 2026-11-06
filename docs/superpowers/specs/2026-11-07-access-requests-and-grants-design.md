@@ -50,6 +50,9 @@ of current baseline access; the mapping will be updated to use the granular
 content capabilities while preserving the existing roles’ current behavior.
 An added grant unlocks only that capability inside the portal the account can
 already access; it does not change the account’s role or grant a new portal.
+The existing administrator, project-manager, HR-manager, and data-admin roles
+retain their current export ability through the explicit `export.data` role
+permission. Those users cannot request a permission they already have.
 
 Only these permissions can be requested or granted:
 
