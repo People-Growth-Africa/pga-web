@@ -50,7 +50,7 @@
     "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.8.2",
     "bcryptjs": "3.0.3",
-    "framer-motion": "^13.4.4",
+    "framer-motion": "^14.9.0",
     "gsap": "^3.15.0",
     "jose": "6.2.12",
     "papaparse": "^5.5.3",
