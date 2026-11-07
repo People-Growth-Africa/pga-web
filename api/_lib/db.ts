@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless';
+import type { Permission } from './permissions.js';
 
 /**
  * Every statement in the app lives in this module. User input is only ever sent
@@ -188,6 +189,18 @@ export async function findSessionUserById(id: string): Promise<SessionUserRow | 
     `SELECT ${SESSION_USER_COLUMNS} FROM users WHERE id = $1`,
     [id],
   );
+}
+
+export async function listActiveGrantedPermissions(userId: string): Promise<Permission[]> {
+  const rows = await query<{ permission: Permission }>(
+    `SELECT permission
+       FROM permission_grants
+      WHERE user_id = $1
+        AND revoked_at IS NULL
+        AND (expires_at IS NULL OR expires_at > now())`,
+    [userId],
+  );
+  return rows.map(({ permission }) => permission);
 }
 
 /**

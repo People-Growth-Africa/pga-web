@@ -5,7 +5,8 @@
  *
  * The default mode applies the migration to ACCESS_TEST_DATABASE_URL and
  * checks it twice. --no-migrate checks an already-migrated test database.
- * --permissions-only is a no-database placeholder for the permissions tests.
+ * --permissions-only runs role and permission-combination tests without a
+ * database connection.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -23,7 +24,46 @@ if (unknownArgs.length) {
 }
 
 if (permissionsOnly) {
-  console.log('SKIP database checks (--permissions-only mode; permissions checks are not implemented yet).');
+  const { combinePermissions, permissionsForRole } = await import('../api/_lib/permissions.ts');
+
+  const has = (role, permission) => permissionsForRole(role).includes(permission);
+  const granted = combinePermissions(permissionsForRole('project_manager'), ['content.edit']);
+  const ungranted = combinePermissions(permissionsForRole('project_manager'), []);
+  const roleBased = combinePermissions(permissionsForRole('content_manager'), []);
+
+  assert.equal(granted.has('content.edit'), true);
+  assert.equal(ungranted.has('content.edit'), false);
+  assert.equal(granted.has('email_template.edit'), false);
+  assert.equal(roleBased.has('content.edit'), true);
+
+  for (const permission of [
+    'admin.dashboard.read',
+    'admin.data.read',
+    'admin.content.write',
+    'admin.staff.manage',
+    'audit_log.view',
+    'audit_log.export',
+    'content.edit',
+    'content.publish',
+    'email_template.edit',
+    'export.data',
+  ]) {
+    assert.equal(has('admin', permission), true, `admin keeps ${permission}`);
+  }
+  for (const role of ['project_manager', 'hr_manager', 'data_admin']) {
+    assert.equal(has(role, 'admin.dashboard.read'), true, `${role} keeps dashboard access`);
+    assert.equal(has(role, 'admin.data.read'), true, `${role} keeps data access`);
+    assert.equal(has(role, 'export.data'), true, `${role} keeps export access`);
+    assert.equal(has(role, 'content.edit'), false, `${role} has no default content access`);
+  }
+  assert.equal(has('content_manager', 'content.write'), true);
+  assert.equal(has('content_manager', 'content.edit'), true);
+  assert.equal(has('content_manager', 'content.publish'), true);
+  assert.equal(has('content_manager', 'admin.dashboard.read'), false);
+  assert.equal(has('content_manager', 'admin.data.read'), false);
+  assert.equal(has('content_manager', 'export.data'), false);
+
+  console.log('PASS  role permissions and active-grant combination (no database connection)');
   process.exit(0);
 }
 

@@ -7,7 +7,12 @@ export type Permission =
   | 'admin.staff.manage'
   | 'content.write'
   | 'audit_log.view'
-  | 'audit_log.export';
+  | 'audit_log.export'
+  | 'content.edit'
+  | 'content.publish'
+  | 'email_template.edit'
+  | 'consultation.update'
+  | 'export.data';
 
 const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   talent: [],
@@ -20,11 +25,15 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'admin.staff.manage',
     'audit_log.view',
     'audit_log.export',
+    'content.edit',
+    'content.publish',
+    'email_template.edit',
+    'export.data',
   ],
-  project_manager: ['admin.dashboard.read', 'admin.data.read'],
-  hr_manager: ['admin.dashboard.read', 'admin.data.read'],
-  content_manager: ['content.write'],
-  data_admin: ['admin.dashboard.read', 'admin.data.read'],
+  project_manager: ['admin.dashboard.read', 'admin.data.read', 'export.data'],
+  hr_manager: ['admin.dashboard.read', 'admin.data.read', 'export.data'],
+  content_manager: ['content.write', 'content.edit', 'content.publish'],
+  data_admin: ['admin.dashboard.read', 'admin.data.read', 'export.data'],
 };
 
 export function permissionsForRole(role: Role): readonly Permission[] {
@@ -33,4 +42,11 @@ export function permissionsForRole(role: Role): readonly Permission[] {
 
 export function hasPermission(role: Role, permission: Permission): boolean {
   return permissionsForRole(role).includes(permission);
+}
+
+export function combinePermissions(
+  rolePermissions: Iterable<Permission>,
+  activeGrantedPermissions: Iterable<Permission>,
+): ReadonlySet<Permission> {
+  return new Set([...rolePermissions, ...activeGrantedPermissions]);
 }

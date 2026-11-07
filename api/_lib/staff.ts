@@ -6,6 +6,7 @@ import {
   type Role,
   type SessionUserRow,
 } from './db.js';
+import { hasEffectivePermission } from './access.js';
 import { hasPermission, type Permission } from './permissions.js';
 import {
   clearSessionCookie,
@@ -94,7 +95,7 @@ export async function requirePermission(
   permission: Permission,
 ): Promise<SessionClaims> {
   const session = await requireStaff(req, res);
-  if (!hasPermission(session.role, permission)) {
+  if (!(await hasEffectivePermission(session.userId, session.role, permission))) {
     const adminOnly = permission === 'admin.content.write' || permission === 'admin.staff.manage';
     throw new ApiError(
       403,
