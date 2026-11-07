@@ -80,6 +80,7 @@ export default function PostEditor({
   categories,
   saving,
   error,
+  canPublish = true,
   onCancel,
   onSubmit,
   onAddCategory,
@@ -92,6 +93,8 @@ export default function PostEditor({
   initialType?: LivePostType;
   categories: AdminCategory[];
   saving: boolean;
+  /** False for edit-only staff: saves are forced to drafts by the server. */
+  canPublish?: boolean;
   /** A failure from the last save, shown above the form. */
   error: string | null;
   onCancel: () => void;
@@ -803,6 +806,12 @@ export default function PostEditor({
               Fill in the required fields to save.
             </p>
           )}
+          {!canPublish && mode === 'edit' && savedStatus === 'published' && (
+            <p className="max-w-[34rem] text-[0.8rem] leading-relaxed text-[#754A21]">
+              This post is live. Saving your edits will save it as a draft and take it offline. Request
+              Publish content access to keep it live.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-3">
@@ -815,19 +824,25 @@ export default function PostEditor({
             disabled={!canSubmit || saving}
             className="px-6 py-3 bg-white border border-charcoal/15 rounded-full font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal hover:bg-cream transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {mode === 'edit' && savedStatus === 'published' ? 'Save & unpublish' : ACTION_PHRASES.draft}
+            {!canPublish && mode === 'edit' && savedStatus === 'published'
+              ? 'Save draft & take offline'
+              : mode === 'edit' && savedStatus === 'published'
+                ? 'Save & unpublish'
+                : ACTION_PHRASES.draft}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setStatus('published');
-              onSubmit(buildDraft('published'));
-            }}
-            disabled={!canSubmit || saving}
-            className="px-7 py-3 bg-deep-green text-white rounded-full font-[family-name:var(--font-body)] text-sm font-semibold hover:bg-terracotta transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Saving…' : shownStatus === 'published' ? 'Save changes' : ACTION_PHRASES.publish}
-          </button>
+          {canPublish && (
+            <button
+              type="button"
+              onClick={() => {
+                setStatus('published');
+                onSubmit(buildDraft('published'));
+              }}
+              disabled={!canSubmit || saving}
+              className="px-7 py-3 bg-deep-green text-white rounded-full font-[family-name:var(--font-body)] text-sm font-semibold hover:bg-terracotta transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Saving…' : shownStatus === 'published' ? 'Save changes' : ACTION_PHRASES.publish}
+            </button>
+          )}
         </div>
       </div>
     </div>

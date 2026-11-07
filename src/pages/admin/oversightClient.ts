@@ -7,9 +7,9 @@ import type { RegistrationForm } from '../../lib/registrationForm';
  *
  * Everything goes through `authRequest`, which sends the session cookie and
  * folds a network failure and an HTTP failure into one result. None of these
- * functions decide anything about permissions: the server checks the manager
- * role on every one of them, and this layer only reports what came back. A
- * panel that hid a button would be a courtesy, not a check.
+ * functions decide anything about permissions: the server checks effective
+ * permissions on every one of them, and this layer only reports what came back.
+ * A panel that hides a button would be a courtesy, not a check.
  */
 
 export type PostType = 'blog' | 'event';

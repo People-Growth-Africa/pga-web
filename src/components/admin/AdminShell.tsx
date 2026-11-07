@@ -65,13 +65,13 @@ function navItems(portal: Portal): NavItem[] {
     {
       label: 'Content oversight',
       to: '/admin/oversight',
-      roles: ['admin'],
+      roles: ADMIN_PORTAL_ROLES,
       match: (pathname) => pathname.startsWith('/admin/oversight') || pathname.startsWith('/admin/content'),
     },
     {
       label: 'Email templates',
       to: '/admin/email-templates',
-      roles: ['admin'],
+      roles: ADMIN_PORTAL_ROLES,
       match: (pathname) => pathname.startsWith('/admin/email-templates'),
     },
     {

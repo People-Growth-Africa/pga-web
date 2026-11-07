@@ -4,6 +4,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
 import { authRequest, NETWORK_FAILURE, onSessionEnded } from '../../lib/authClient';
+import AccessRequestDialog from './AccessRequestDialog';
+import {
+  listAccess,
+  requestAccess,
+  type AccessDuration,
+  type AccessOverview,
+} from './AccessClient';
 
 /**
  * /admin/data - all four personal-data lists in one screen.
@@ -144,6 +151,13 @@ function digitsOnly(value: string | null): string {
   return (value ?? '').replace(/[^0-9]/g, '');
 }
 
+function formatAccessDate(value: string): string {
+  return new Intl.DateTimeFormat('en-NG', {
+    dateStyle: 'medium',
+    timeZone: 'Africa/Lagos',
+  }).format(new Date(value));
+}
+
 /** Published event titles for chips and the filter dropdown, slug as fallback. */
 async function loadEventTitles(): Promise<Record<string, string>> {
   try {
@@ -236,6 +250,11 @@ export default function AdminData() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [access, setAccess] = useState<AccessOverview | null>(null);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [checkingAccess, setCheckingAccess] = useState(true);
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
+  const [accessNotice, setAccessNotice] = useState<string | null>(null);
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -254,6 +273,45 @@ export default function AdminData() {
     });
   }, [navigate]);
   useEffect(() => onSessionEnded(() => endSession()), [endSession]);
+
+  const loadAccess = useCallback(async (): Promise<AccessOverview | null> => {
+    const result = await listAccess();
+    setCheckingAccess(false);
+    if (!result.ok) {
+      setAccessError(result.failure.error);
+      setAccess(null);
+      return null;
+    }
+    setAccess(result.data);
+    setAccessError(null);
+    return result.data;
+  }, []);
+
+  useEffect(() => {
+    void loadAccess();
+  }, [loadAccess]);
+
+  const latestExportRequest = useMemo(
+    () =>
+      [...(access?.requests ?? [])]
+        .filter((request) => request.permission === 'export.data')
+        .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))[0] ?? null,
+    [access?.requests],
+  );
+  const canExport = access?.effectivePermissions.includes('export.data') ?? false;
+
+  async function submitExportAccessRequest(reason: string, requestedDuration: AccessDuration) {
+    const result = await requestAccess({
+      permission: 'export.data',
+      reason,
+      requestedDuration,
+    });
+    if (result.ok) {
+      setAccessNotice('Your export-access request was sent for review.');
+      await loadAccess();
+    }
+    return result;
+  }
 
   useEffect(() => {
     void loadEventTitles().then(setEventTitles);
@@ -343,6 +401,10 @@ export default function AdminData() {
   }, [selectedId, closeDetail]);
 
   const exportCsv = async () => {
+    if (!canExport) {
+      if (access && latestExportRequest?.status !== 'pending') setRequestDialogOpen(true);
+      return;
+    }
     setExporting(true);
     setError(null);
     try {
@@ -353,6 +415,13 @@ export default function AdminData() {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
         setError(payload?.error ?? 'The export could not be prepared. Try again.');
         if (response.status === 401) endSession();
+        if (response.status === 403) {
+          const currentAccess = await loadAccess();
+          const currentRequest = currentAccess?.requests
+            .filter((request) => request.permission === 'export.data')
+            .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))[0];
+          if (currentAccess && currentRequest?.status !== 'pending') setRequestDialogOpen(true);
+        }
         return;
       }
       const blob = await response.blob();
@@ -403,18 +472,43 @@ export default function AdminData() {
         title="Data"
         subtitle="Newest first. Personal data, do not share it outside the team."
         actions={
-          <button
-            type="button"
-            onClick={() => void exportCsv()}
-            disabled={exporting || loading}
-            className="inline-flex w-full min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-deep-green bg-deep-green px-6 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta disabled:opacity-60 xl:w-auto"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2 stroke-linecap-round stroke-linejoin-round">
-              <path d="M12 3v12m0 0l-4-4m4 4l4-4" />
-              <path d="M5 21h14" />
-            </svg>
-            {exporting ? 'Preparing CSV…' : 'Export CSV'}
-          </button>
+          canExport ? (
+            <button
+              type="button"
+              onClick={() => void exportCsv()}
+              disabled={exporting || loading}
+              className="inline-flex w-full min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-deep-green bg-deep-green px-6 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta disabled:opacity-60 xl:w-auto"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2 stroke-linecap-round stroke-linejoin-round">
+                <path d="M12 3v12m0 0l-4-4m4 4l4-4" />
+                <path d="M5 21h14" />
+              </svg>
+              {exporting ? 'Preparing CSV…' : 'Export CSV'}
+            </button>
+          ) : access ? (
+            latestExportRequest?.status === 'pending' ? (
+              <span className="inline-flex min-h-[48px] items-center justify-center rounded-[10px] bg-[#F7E9D7] px-5 text-sm font-semibold text-[#754A21]">
+                Export access pending
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setRequestDialogOpen(true)}
+                className="inline-flex min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-white px-5 font-[family-name:var(--font-body)] text-sm font-semibold text-deep-green transition-colors hover:bg-mint"
+              >
+                Request export access
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              disabled
+              title={accessError ?? undefined}
+              className="inline-flex min-h-[48px] items-center justify-center rounded-[10px] border border-charcoal/15 bg-white px-5 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal/50"
+            >
+              {checkingAccess ? 'Checking export access…' : 'Export access unavailable'}
+            </button>
+          )
         }
       >
         {/* Tabs scroll sideways in their own container on narrow screens. */}
@@ -536,6 +630,36 @@ export default function AdminData() {
             {error}
           </p>
         )}
+        {accessError && (
+          <p
+            role="alert"
+            className="mb-5 rounded-[12px] border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta"
+          >
+            Export permission could not be verified: {accessError}
+          </p>
+        )}
+        {accessNotice && (
+          <p
+            role="status"
+            className="mb-5 rounded-[12px] border border-brand-green/30 bg-mint/40 px-4 py-3 text-sm text-charcoal"
+          >
+            {accessNotice}
+          </p>
+        )}
+        {access && !canExport && latestExportRequest?.status === 'declined' && (
+          <p className="mb-5 rounded-[12px] border border-terracotta/25 bg-terracotta/10 px-4 py-3 text-sm text-terracotta">
+            Export access was declined: {latestExportRequest.decision_note || 'No note was provided.'}
+          </p>
+        )}
+        {access && !canExport && latestExportRequest?.status === 'approved' && (
+          <p className="mb-5 rounded-[12px] border border-charcoal/10 bg-white px-4 py-3 text-sm text-charcoal/60">
+            Your previous export request was approved
+            {latestExportRequest.grant_expires_at
+              ? ` until ${formatAccessDate(latestExportRequest.grant_expires_at)}`
+              : ' permanently'}
+            ; that access is no longer active.
+          </p>
+        )}
 
         <p className="mb-3 font-[family-name:var(--font-body)] text-[0.85rem] text-charcoal/55">
           {type === 'registrations'
@@ -593,6 +717,14 @@ export default function AdminData() {
           </div>
         </div>
       </AdminShell>
+      {requestDialogOpen && access && !canExport && (
+        <AccessRequestDialog
+          permission="export.data"
+          currentStatus={latestExportRequest?.status ?? null}
+          onSubmit={submitExportAccessRequest}
+          onCancel={() => setRequestDialogOpen(false)}
+        />
+      )}
     </>
   );
 }

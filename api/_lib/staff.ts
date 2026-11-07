@@ -6,7 +6,7 @@ import {
   type Role,
   type SessionUserRow,
 } from './db.js';
-import { hasEffectivePermission } from './access.js';
+import { getEffectivePermissions, hasEffectivePermission } from './access.js';
 import { hasPermission, type Permission } from './permissions.js';
 import {
   clearSessionCookie,
@@ -106,8 +106,41 @@ export async function requirePermission(
   return session;
 }
 
-/** The dashboard's content oversight is deliberately narrower than the data
- * lists: only the admin role may change what the public sees. */
+export async function requireAnyPermission(
+  req: VercelRequest,
+  res: VercelResponse,
+  permissions: readonly Permission[],
+): Promise<SessionClaims> {
+  const session = await requireStaff(req, res);
+  const effectivePermissions = await getEffectivePermissions(session.userId, session.role);
+  if (!permissions.some((permission) => effectivePermissions.has(permission))) {
+    throw new ApiError(
+      403,
+      'permission_denied',
+      'You do not have permission to access this area.',
+    );
+  }
+  return session;
+}
+
+export async function requireAllPermissions(
+  req: VercelRequest,
+  res: VercelResponse,
+  permissions: readonly Permission[],
+): Promise<SessionClaims> {
+  const session = await requireStaff(req, res);
+  const effectivePermissions = await getEffectivePermissions(session.userId, session.role);
+  if (!permissions.every((permission) => effectivePermissions.has(permission))) {
+    throw new ApiError(
+      403,
+      'permission_denied',
+      'You do not have permission to access this area.',
+    );
+  }
+  return session;
+}
+
+/** Legacy role-level guard; granular content routes use the specific permissions. */
 export async function requireAdmin(
   req: VercelRequest,
   res: VercelResponse,

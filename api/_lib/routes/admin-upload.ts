@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import { coverUrl } from '../cover-url.js';
 import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../http.js';
-import { requireAdmin } from '../staff.js';
+import { requirePermission } from '../staff.js';
 import { enforceRateLimit } from '../ratelimit.js';
 import { recordAuthEvent } from '../audit.js';
 
@@ -177,7 +177,9 @@ export function makeUploadHandler(
 }
 
 /** /api/admin/upload — admin oversight. */
-export default makeUploadHandler(requireAdmin);
+export default makeUploadHandler((req, res) =>
+  requirePermission(req, res, 'content.edit'),
+);
 
 /**
  * Stores one cover and returns the URL a page should use for it.

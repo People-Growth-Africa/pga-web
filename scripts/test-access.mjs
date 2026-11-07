@@ -113,11 +113,34 @@ if (permissionsOnly) {
     false,
   );
 
-  const [appSource, siteShellSource, routeSource, adminShellSource] = await Promise.all([
+  const [
+    appSource,
+    siteShellSource,
+    routeSource,
+    adminShellSource,
+    adminPostsSource,
+    contentPostsSource,
+    oversightSource,
+    staffSource,
+    adminEmailTemplatesSource,
+    adminDataSource,
+    adminRegistrationsSource,
+    emailTemplatesPageSource,
+    dataPageSource,
+  ] = await Promise.all([
     readFile(path.join(root, 'src', 'App.tsx'), 'utf8'),
     readFile(path.join(root, 'src', 'SiteShell.tsx'), 'utf8'),
     readFile(path.join(root, 'src', 'routeComponents.ts'), 'utf8'),
     readFile(path.join(root, 'src', 'components', 'admin', 'AdminShell.tsx'), 'utf8'),
+    readFile(path.join(root, 'api', '_lib', 'routes', 'admin-posts.ts'), 'utf8'),
+    readFile(path.join(root, 'api', '_lib', 'routes', 'content-posts.ts'), 'utf8'),
+    readFile(path.join(root, 'src', 'pages', 'admin', 'AdminOversight.tsx'), 'utf8'),
+    readFile(path.join(root, 'api', '_lib', 'staff.ts'), 'utf8'),
+    readFile(path.join(root, 'api', '_lib', 'routes', 'admin-email-templates.ts'), 'utf8'),
+    readFile(path.join(root, 'api', '_lib', 'routes', 'admin-data.ts'), 'utf8'),
+    readFile(path.join(root, 'api', '_lib', 'routes', 'admin-registrations.ts'), 'utf8'),
+    readFile(path.join(root, 'src', 'pages', 'admin', 'AdminEmailTemplates.tsx'), 'utf8'),
+    readFile(path.join(root, 'src', 'pages', 'admin', 'AdminData.tsx'), 'utf8'),
   ]);
   assert.match(appSource, /AdminAccess: lazy\(\(\) => import\('\.\/pages\/admin\/AdminAccess'\)\)/);
   assert.match(appSource, /AdminMyAccess: lazy\(\(\) => import\('\.\/pages\/admin\/AdminMyAccess'\)\)/);
@@ -128,6 +151,21 @@ if (permissionsOnly) {
   assert.match(routeSource, /AdminMyAccess: RouteComponent/);
   assert.match(adminShellSource, /label: 'My access'/);
   assert.match(adminShellSource, /label: 'Access'/);
+  assert.match(siteShellSource, /path="\/admin\/oversight"[\s\S]*?<RequireAuth roles={ADMIN_PORTAL_ROLES}/);
+  assert.match(adminPostsSource, /read: \(req, res\) =>[\s\S]*?requireAnyPermission[\s\S]*?'content\.edit', 'content\.publish'/);
+  assert.match(adminPostsSource, /edit: \(req, res\) => requirePermission\(req, res, 'content\.edit'\)/);
+  assert.match(adminPostsSource, /publish: \(req, res\) => requirePermission\(req, res, 'content\.publish'\)/);
+  assert.match(adminPostsSource, /: 'draft'/);
+  assert.match(contentPostsSource, /makePostsHandler\(requireContentManager\)/);
+  assert.match(oversightSource, /Request access/);
+  assert.match(oversightSource, /canPublish=\{canPublish\}/);
+  assert.match(staffSource, /export async function requireAllPermissions/);
+  assert.match(adminEmailTemplatesSource, /requirePermission\(req, res, 'email_template\.edit'\)/);
+  assert.match(adminDataSource, /requireAllPermissions\(req, res, \['admin\.data\.read', 'export\.data'\]\)/);
+  assert.match(adminRegistrationsSource, /requireAllPermissions\(req, res, \['admin\.data\.read', 'export\.data'\]\)/);
+  assert.match(siteShellSource, /path="\/admin\/email-templates"[\s\S]*?<RequireAuth roles={ADMIN_PORTAL_ROLES}/);
+  assert.match(emailTemplatesPageSource, /Request access/);
+  assert.match(dataPageSource, /Request export access/);
   console.log('PASS  role permissions, access validation, route guards, and grants (no database connection)');
   process.exit(0);
 }
@@ -171,6 +209,8 @@ let otherRequesterId;
 let adminId;
 let expiredGrantId;
 let server;
+const contentTestPostIds = [];
+let otherPublishRequestId;
 
 function check(description, passed, detail = '') {
   results.push({ description, passed });
@@ -375,6 +415,7 @@ async function runConstraintChecks() {
      RETURNING id`,
     [otherRequesterId],
   );
+  otherPublishRequestId = pendingRequest.id;
   await expectSqlError(
     'only one pending request per requester and permission is allowed',
     '23505',
@@ -518,6 +559,52 @@ async function runApiChecks() {
   const requesterCookie = `pga_admin_session=${requesterLogin.admin}`;
   const otherCookie = `pga_admin_session=${otherLogin.admin}`;
   const adminCookie = `pga_admin_session=${adminLogin.admin}`;
+  const deniedContentList = await call(baseUrl, '/api/admin/posts', {
+    cookie: requesterCookie,
+  });
+  const deniedContentCreate = await call(baseUrl, '/api/admin/posts', {
+    method: 'PUT',
+    cookie: requesterCookie,
+    body: {},
+  });
+  const deniedTemplateRead = await call(baseUrl, '/api/admin/email-templates', {
+    cookie: otherCookie,
+  });
+  const deniedTemplateWrite = await call(baseUrl, '/api/admin/email-templates', {
+    method: 'PUT',
+    cookie: otherCookie,
+    body: {},
+  });
+  check(
+    'staff without content permissions cannot call content list or create endpoints directly',
+    deniedContentList.status === 403 && deniedContentCreate.status === 403,
+    `${deniedContentList.status}/${deniedContentCreate.status}`,
+  );
+  check(
+    'HR staff without email_template.edit cannot read or write templates directly',
+    deniedTemplateRead.status === 403 && deniedTemplateWrite.status === 403,
+    `${deniedTemplateRead.status}/${deniedTemplateWrite.status}`,
+  );
+  const projectDataList = await call(baseUrl, '/api/admin/data?type=subscriptions', {
+    cookie: requesterCookie,
+  });
+  const projectDataExport = await call(baseUrl, '/api/admin/data-export?type=subscriptions', {
+    cookie: requesterCookie,
+  });
+  const hrRegistrationList = await call(baseUrl, '/api/admin/registrations', {
+    cookie: otherCookie,
+  });
+  const hrRegistrationExport = await call(baseUrl, '/api/admin/registrations-export', {
+    cookie: otherCookie,
+  });
+  check(
+    'project and HR roles retain list and CSV access under data-read plus export.data',
+    projectDataList.status === 200 &&
+      projectDataExport.status === 200 &&
+      hrRegistrationList.status === 200 &&
+      hrRegistrationExport.status === 200,
+    `${projectDataList.status}/${projectDataExport.status}/${hrRegistrationList.status}/${hrRegistrationExport.status}`,
+  );
   const auditCount = async () => {
     const [row] = await sql.query(
       'SELECT count(*)::int AS count FROM audit_logs WHERE actor_id = ANY($1)',
@@ -869,6 +956,162 @@ async function runApiChecks() {
     `${requesterHistory.status}`,
   );
 
+  const contentEditRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: requesterCookie,
+    body: {
+      action: 'request',
+      permission: 'content.edit',
+      reason: 'Edit-only content permission test',
+      requestedDuration: 7,
+    },
+  });
+  const contentEditApproval = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: {
+      action: 'approve',
+      requestId: contentEditRequest.json?.request?.id,
+      duration: 7,
+    },
+  });
+  const contentPublishApproval = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: { action: 'approve', requestId: otherPublishRequestId, duration: 7 },
+  });
+  const templateAccessRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: otherCookie,
+    body: {
+      action: 'request',
+      permission: 'email_template.edit',
+      reason: 'Email template permission test',
+      requestedDuration: 7,
+    },
+  });
+  const templateAccessApproval = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: {
+      action: 'approve',
+      requestId: templateAccessRequest.json?.request?.id,
+      duration: 7,
+    },
+  });
+  const grantedTemplateRead = await call(baseUrl, '/api/admin/email-templates', {
+    cookie: otherCookie,
+  });
+  const grantedTemplateWrite = await call(baseUrl, '/api/admin/email-templates', {
+    method: 'PUT',
+    cookie: otherCookie,
+    body: {},
+  });
+  check(
+    'email_template.edit grant unlocks template reads and reaches write validation',
+    templateAccessApproval.status === 200 &&
+      grantedTemplateRead.status === 200 &&
+      grantedTemplateWrite.status === 400,
+    `${templateAccessApproval.status}/${grantedTemplateRead.status}/${grantedTemplateWrite.status}`,
+  );
+  const editOnlyList = await call(baseUrl, '/api/admin/posts', {
+    cookie: requesterCookie,
+  });
+  const editOnlyCategories = await call(baseUrl, '/api/admin/categories', {
+    cookie: requesterCookie,
+  });
+  const publishOnlyList = await call(baseUrl, '/api/admin/posts', {
+    cookie: otherCookie,
+  });
+  const publishOnlyCategories = await call(baseUrl, '/api/admin/categories', {
+    cookie: otherCookie,
+  });
+  check(
+    'granted content.edit and content.publish users can reach the oversight list',
+    contentEditApproval.status === 200 &&
+      contentPublishApproval.status === 200 &&
+      editOnlyList.status === 200 &&
+      editOnlyCategories.status === 200 &&
+      publishOnlyList.status === 200 &&
+      publishOnlyCategories.status === 403,
+    `${contentEditApproval.status}/${contentPublishApproval.status}/${editOnlyList.status}/${editOnlyCategories.status}/${publishOnlyList.status}/${publishOnlyCategories.status}`,
+  );
+
+  const postSlug = `access-test-${testStamp}`;
+  const eventStart = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const editOnlyCreate = await call(baseUrl, '/api/admin/posts', {
+    method: 'PUT',
+    cookie: requesterCookie,
+    body: {
+      type: 'event',
+      slug: postSlug,
+      title: 'Access permission test event',
+      excerpt: 'Access permission integration test.',
+      body: 'Test content.',
+      eventStart,
+      isOnline: true,
+      status: 'published',
+    },
+  });
+  const contentPostId = editOnlyCreate.json?.post?.id;
+  if (contentPostId) contentTestPostIds.push(contentPostId);
+  const editOnlyUpdate = contentPostId
+    ? await call(baseUrl, '/api/admin/post', {
+        method: 'PUT',
+        cookie: requesterCookie,
+        body: {
+          id: contentPostId,
+          type: 'event',
+          slug: postSlug,
+          title: 'Edited access permission test event',
+          excerpt: 'Updated access permission integration test.',
+          body: 'Updated test content.',
+          eventStart,
+          isOnline: true,
+          status: 'published',
+        },
+      })
+    : { status: 0, json: null };
+  const editOnlyPublishAttempt = contentPostId
+    ? await call(baseUrl, '/api/admin/post-status', {
+        method: 'POST',
+        cookie: requesterCookie,
+        body: { id: contentPostId, status: 'published' },
+      })
+    : { status: 0, json: null };
+  const publisherCreateAttempt = await call(baseUrl, '/api/admin/posts', {
+    method: 'PUT',
+    cookie: otherCookie,
+    body: {},
+  });
+  const publisherUpdateAttempt = contentPostId
+    ? await call(baseUrl, '/api/admin/post', {
+        method: 'PUT',
+        cookie: otherCookie,
+        body: {},
+      })
+    : { status: 0, json: null };
+  const publishOnlyStatusChange = contentPostId
+    ? await call(baseUrl, '/api/admin/post-status', {
+        method: 'POST',
+        cookie: otherCookie,
+        body: { id: contentPostId, status: 'published' },
+      })
+    : { status: 0, json: null };
+  check(
+    'content.edit saves published submissions as drafts and cannot publish; content.publish can only change status',
+    editOnlyCreate.status === 201 &&
+      editOnlyCreate.json?.post?.status === 'draft' &&
+      editOnlyUpdate.status === 200 &&
+      editOnlyUpdate.json?.post?.status === 'draft' &&
+      editOnlyPublishAttempt.status === 403 &&
+      publisherCreateAttempt.status === 403 &&
+      publisherUpdateAttempt.status === 403 &&
+      publishOnlyStatusChange.status === 200 &&
+      publishOnlyStatusChange.json?.post?.status === 'published',
+    `${editOnlyCreate.status}/${editOnlyUpdate.status}/${editOnlyPublishAttempt.status}/${publisherCreateAttempt.status}/${publisherUpdateAttempt.status}/${publishOnlyStatusChange.status}`,
+  );
+
   const firstCron = await call(baseUrl, '/api/cron/traffic-cleanup', {
     headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
   });
@@ -899,6 +1142,12 @@ async function runApiChecks() {
 
 async function cleanupTestRows() {
   if (!sql) return;
+  if (contentTestPostIds.length) {
+    await sql.transaction([
+      sql`SELECT set_config('pga.staff_write', 'on', true)`,
+      sql`DELETE FROM posts WHERE id = ANY(${contentTestPostIds})`,
+    ]);
+  }
   const testUserIds = [requesterId, otherRequesterId, adminId].filter(Boolean);
   if (!testUserIds.length) return;
   await sql.query(

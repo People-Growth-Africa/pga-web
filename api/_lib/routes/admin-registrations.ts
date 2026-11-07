@@ -1,7 +1,7 @@
 import type { VercelResponse } from '@vercel/node';
 
 import { endpoint, sendJson } from '../http.js';
-import { requireAdminData } from '../staff.js';
+import { requireAdminData, requireAllPermissions } from '../staff.js';
 import { auditActorForUser, logAudit } from '../audit.js';
 import { csvRows } from '../csv.js';
 import { formatAnswersForCsv } from '../registration-form.js';
@@ -19,11 +19,9 @@ import {
  * GET /api/admin/registrations        - paginated list, filter and search
  * GET /api/admin/registrations-export - the same filter, as CSV
  *
- * Both begin with `requireAdminData`, whose allowlist is admin, project manager
- * and HR manager only, so a talent, employer, content-manager session - or no
- * session at all - is refused before a row is read. The
- * responses carry names, emails and phone numbers, and `sendJson` marks them
- * no-store; the CSV does the same.
+ * Lists require `admin.data.read`; the CSV additionally requires `export.data`.
+ * Both checks run before a row is read. The responses carry names, emails and
+ * phone numbers, and `sendJson` marks them no-store; the CSV does the same.
  */
 
 const PAGE_SIZE = 25;
@@ -56,9 +54,13 @@ function sendCsv(res: VercelResponse, rows: RegistrationRow[], eventSlug?: strin
 }
 
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
-  const session = await requireAdminData(req, res);
-
   const query = req.query ?? {};
+  const requested = `${req.url ?? ''} ${typeof query.path === 'string' ? query.path : ''}`;
+  const exporting = requested.includes('registrations-export');
+  const session = exporting
+    ? await requireAllPermissions(req, res, ['admin.data.read', 'export.data'])
+    : await requireAdminData(req, res);
+
   const parsePage = (raw: string | undefined) => {
     const value = Number(raw);
     return Number.isInteger(value) && value > 0 ? value : 1;
@@ -82,9 +84,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     ...(parsed.search ? { search: parsed.search } : {}),
   };
 
-  const requested = `${req.url ?? ''} ${typeof query.path === 'string' ? query.path : ''}`;
-
-  if (requested.includes('registrations-export')) {
+  if (exporting) {
     const rows = await listRegistrationsForExport(filter);
     await logAudit({
       req,

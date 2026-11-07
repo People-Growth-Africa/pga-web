@@ -127,7 +127,7 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
             path="/admin/oversight"
             element={
               AUTH_ENABLED ? (
-                <RequireAuth roles={['admin']} signInPath="/admin/login">
+                <RequireAuth roles={ADMIN_PORTAL_ROLES} signInPath="/admin/login">
                   <AdminOversight />
                 </RequireAuth>
               ) : (
@@ -213,7 +213,7 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
             path="/admin/email-templates"
             element={
               AUTH_ENABLED ? (
-                <RequireAuth roles={['admin']} signInPath="/admin/login">
+                <RequireAuth roles={ADMIN_PORTAL_ROLES} signInPath="/admin/login">
                   <AdminEmailTemplates />
                 </RequireAuth>
               ) : (

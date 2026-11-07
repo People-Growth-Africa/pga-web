@@ -8,7 +8,8 @@ import {
   parseJsonBody,
   sendJson,
 } from '../http.js';
-import { requireAdmin } from '../staff.js';
+import { hasEffectivePermission } from '../access.js';
+import { requireAnyPermission, requirePermission } from '../staff.js';
 import { auditActorForUser, prepareAuditWrite, recordAuthEvent } from '../audit.js';
 import {
   parseInput,
@@ -27,6 +28,7 @@ import {
   listPostsForAdmin,
   recordPostSlugRedirect,
   updatePost,
+  type Role,
 } from '../db.js';
 import { enforceRateLimit } from '../ratelimit.js';
 import { markContentChanged } from '../content/version.js';
@@ -40,11 +42,10 @@ import { announcePostChange } from '../indexnow.js';
  * POST /api/admin/post-status  - publish or unpublish one post
  * DELETE /api/admin/post?id=   - delete
  *
- * Every one of them starts with the guard it is built with: `requireAdmin` for
- * these /api/admin oversight routes, `requireContentManager` for the content
- * desk's copies. The role comes out of the signed staff session. The panel is
- * hidden from everyone else, but a talent or employer session is a perfectly
- * valid cookie and could call these directly without it.
+ * The oversight routes use separate effective-permission guards for listing,
+ * editing, and publishing. The content desk keeps its original
+ * `requireContentManager` guard. The UI is not an authorization boundary; each
+ * route checks the current account and active grants on the server.
  *
  * Slugs are the one thing worth calling out. A collision is reported as a field
  * error rather than silently suffixed: a manager who types a title, gets
@@ -66,26 +67,55 @@ async function writeRateLimit(userId: string, name: string): Promise<void> {
 }
 
 export function makePostsHandler(
-  guard: (req: VercelRequest, res: VercelResponse) => Promise<{ userId: string }>,
+  guard: PostGuard | PostGuards,
 ) {
   return endpoint({ methods: ['GET', 'PUT', 'POST', 'DELETE'], csrf: true }, async (req, res) => {
-    const manager = await guard(req, res);
     const path = (req.url ?? '').split('?')[0]?.replace(/\/+$/, '') ?? '';
+    const statusRoute = path.endsWith('/post-status');
+    const itemRoute = path.endsWith('/post');
+    const listRoute =
+      req.method === 'GET' ||
+      (req.method === 'POST' && !statusRoute && !itemRoute);
+    const selectedGuard =
+      typeof guard === 'function'
+        ? guard
+        : statusRoute
+          ? guard.publish
+          : listRoute
+            ? guard.read
+            : guard.edit;
+    const manager = await selectedGuard(req, res);
 
     if (req.method === 'GET') return listHandler(req, res);
     if (path.endsWith('/post')) {
-      if (req.method === 'DELETE') return deleteHandler(req, res, manager.userId);
-      return updateHandler(req, res, manager.userId);
+      if (req.method === 'DELETE') return deleteHandler(req, res, manager);
+      return updateHandler(req, res, manager);
     }
-    if (path.endsWith('/post-status')) return statusHandler(req, res, manager.userId);
-    if (req.method === 'PUT') return createHandler(req, res, manager.userId);
+    if (path.endsWith('/post-status')) return statusHandler(req, res, manager);
+    if (req.method === 'PUT') return createHandler(req, res, manager);
 
     return listHandler(req, res);
   });
 }
 
+type PostActor = { userId: string; role: Role };
+type PostGuard = (
+  req: VercelRequest,
+  res: VercelResponse,
+) => Promise<PostActor>;
+type PostGuards = {
+  read: PostGuard;
+  edit: PostGuard;
+  publish: PostGuard;
+};
+
 /** /api/admin/posts, /api/admin/post, /api/admin/post-status — admin oversight. */
-export default makePostsHandler(requireAdmin);
+export default makePostsHandler({
+  read: (req, res) =>
+    requireAnyPermission(req, res, ['content.edit', 'content.publish']),
+  edit: (req, res) => requirePermission(req, res, 'content.edit'),
+  publish: (req, res) => requirePermission(req, res, 'content.publish'),
+});
 
 async function listHandler(req: VercelRequest, res: VercelResponse): Promise<void> {
   const query = req.query ?? {};
@@ -155,9 +185,13 @@ function postColumnsFrom(data: {
   };
 }
 
-async function createHandler(req: VercelRequest, res: VercelResponse, userId: string): Promise<void> {
+async function createHandler(req: VercelRequest, res: VercelResponse, manager: PostActor): Promise<void> {
+  const { userId, role } = manager;
   await writeRateLimit(userId, 'admin-post-write');
   const data = parseInput(postCreateSchema, parseJsonBody(req, MAX_ADMIN_BODY_BYTES));
+  const status = (await hasEffectivePermission(userId, role, 'content.publish'))
+    ? data.status
+    : 'draft';
 
   await assertCategoryExists(data.categoryId ?? null);
 
@@ -167,10 +201,10 @@ async function createHandler(req: VercelRequest, res: VercelResponse, userId: st
       actor: await auditActorForUser(userId),
       action: 'content.create',
       entity: { type: data.type === 'event' ? 'event' : 'post', label: data.title },
-      after: { type: data.type, slug: data.slug, title: data.title, status: data.status },
+      after: { type: data.type, slug: data.slug, title: data.title, status },
     });
     const id = await insertPost({
-      ...postColumnsFrom(data),
+      ...postColumnsFrom({ ...data, status }),
       authorId: userId,
       audit,
     });
@@ -193,9 +227,13 @@ async function createHandler(req: VercelRequest, res: VercelResponse, userId: st
   }
 }
 
-async function updateHandler(req: VercelRequest, res: VercelResponse, userId: string): Promise<void> {
+async function updateHandler(req: VercelRequest, res: VercelResponse, manager: PostActor): Promise<void> {
+  const { userId, role } = manager;
   await writeRateLimit(userId, 'admin-post-write');
   const data = parseInput(postUpdateSchema, parseJsonBody(req, MAX_ADMIN_BODY_BYTES));
+  const status = (await hasEffectivePermission(userId, role, 'content.publish'))
+    ? data.status
+    : 'draft';
 
   const existing = await findPostById(data.id);
   if (!existing) throw new ApiError(404, 'not_found', 'That post could not be found.');
@@ -207,7 +245,7 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
       type: data.type,
       slug: data.slug,
       title: data.title,
-      status: data.status,
+      status,
     };
     const previous = {
       type: existing.type,
@@ -229,7 +267,7 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
     });
     const updated = await updatePost({
       id: data.id,
-      ...postColumnsFrom(data),
+      ...postColumnsFrom({ ...data, status }),
       audit,
     });
     if (!updated) throw new ApiError(500, 'not_saved', 'The post could not be saved. Try again.');
@@ -272,7 +310,8 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, userId: st
  * uploading its body again. The date is stamped in SQL (see updatePost), so a
  * publish time is never a value the client chose.
  */
-async function statusHandler(req: VercelRequest, res: VercelResponse, userId: string): Promise<void> {
+async function statusHandler(req: VercelRequest, res: VercelResponse, manager: PostActor): Promise<void> {
+  const { userId } = manager;
   await writeRateLimit(userId, 'admin-post-write');
   // The status schema rather than a `.pick` of the update one: that schema is
   // now a refinement plus a transform, which has nothing left to pick from.
@@ -334,7 +373,8 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, userId: st
   sendJson(res, 200, { post });
 }
 
-async function deleteHandler(req: VercelRequest, res: VercelResponse, userId: string): Promise<void> {
+async function deleteHandler(req: VercelRequest, res: VercelResponse, manager: PostActor): Promise<void> {
+  const { userId } = manager;
   await writeRateLimit(userId, 'admin-post-delete');
   const { id } = parseInput(postByIdSchema, { id: req.query?.id });
 

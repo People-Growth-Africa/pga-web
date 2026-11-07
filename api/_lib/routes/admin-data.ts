@@ -1,7 +1,7 @@
 import type { VercelResponse } from '@vercel/node';
 
 import { endpoint, sendJson } from '../http.js';
-import { requireAdminData } from '../staff.js';
+import { requireAdminData, requireAllPermissions } from '../staff.js';
 import { parseInput, dataQuerySchema } from '../validation.js';
 import {
   countConsultations,
@@ -29,10 +29,10 @@ import { todayIso } from '../dates.js';
  * GET /api/admin/data?type=registrations|subscriptions|consultations|users
  * GET /api/admin/data-export  (the same filters, as CSV)
  *
- * Only admin, project manager, HR manager and data administrator may read and
- * export these lists. The allowlist is explicit in `requireAdminData`, so
- * content managers and any future role are refused by default. Every response
- * is no-store because the rows carry names, emails and phone numbers.
+ * Lists require `admin.data.read`; CSV routes additionally require `export.data`.
+ * Existing data-role defaults retain both permissions, and future grants cannot
+ * bypass the data-read permission. Every response is no-store because the rows
+ * carry names, emails and phone numbers.
  */
 
 const PAGE_SIZE = 25;
@@ -51,8 +51,12 @@ function str(value: string | string[] | undefined): string | undefined {
 }
 
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
-  const session = await requireAdminData(req, res);
   const query = req.query ?? {};
+  const requested = `${req.url ?? ''} ${typeof query.path === 'string' ? query.path : ''}`;
+  const exporting = requested.includes('data-export');
+  const session = exporting
+    ? await requireAllPermissions(req, res, ['admin.data.read', 'export.data'])
+    : await requireAdminData(req, res);
   const parsed = parseInput(dataQuerySchema, {
     type: query.type,
     page: str(query.page) ?? '1',
@@ -77,11 +81,6 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     ...(parsed.to ? { to: parsed.to } : {}),
     ...(parsed.role ? { role: parsed.role } : {}),
   };
-  // The function can arrive with the endpoint in req.url or in the `path`
-  // query produced by the /api rewrite; accept either.
-  const requested = `${req.url ?? ''} ${typeof query.path === 'string' ? query.path : ''}`;
-  const exporting = requested.includes('data-export');
-
   const auditExport = async (rowCount: number) => {
     await logAudit({
       req,

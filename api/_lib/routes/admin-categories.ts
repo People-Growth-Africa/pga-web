@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { ApiError, endpoint, parseJsonBody, sendJson } from '../http.js';
-import { requireAdmin } from '../staff.js';
+import { requirePermission } from '../staff.js';
 import {
   categoryCreateSchema,
   categoryDeleteSchema,
@@ -56,7 +56,9 @@ export function makeCategoriesHandler(
   );
 }
 
-export default makeCategoriesHandler(requireAdmin);
+export default makeCategoriesHandler((req, res) =>
+  requirePermission(req, res, 'content.edit'),
+);
 
 async function listHandler(res: VercelResponse): Promise<void> {
   sendJson(res, 200, { categories: await listCategories() });

@@ -1,9 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
 import { authRequest, onSessionEnded } from '../../lib/authClient';
+import AccessRequestDialog from './AccessRequestDialog';
+import {
+  listAccess,
+  requestAccess,
+  type AccessDuration,
+  type AccessOverview,
+} from './AccessClient';
 
 type EmailTemplateId =
   | 'verification' | 'password_reset' | 'password_changed' | 'staff_invite_admin'
@@ -63,12 +70,28 @@ export default function AdminEmailTemplates() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [access, setAccess] = useState<AccessOverview | null>(null);
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const navigate = useNavigate();
 
   const endSession = useCallback(() => navigate('/admin/login?expired=1', { replace: true }), [navigate]);
   useEffect(() => onSessionEnded(() => endSession()), [endSession]);
 
   const load = useCallback(async () => {
+    const accessResult = await listAccess();
+    if (!accessResult.ok) {
+      setLoading(false);
+      setError(accessResult.failure.error);
+      return;
+    }
+    setAccess(accessResult.data);
+    if (!accessResult.data.effectivePermissions.includes('email_template.edit')) {
+      setTemplates([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     const result = await authRequest<{ templates: Template[] }>('/api/admin/email-templates', { method: 'GET' });
     setLoading(false);
     if (!result.ok) {
@@ -81,6 +104,28 @@ export default function AdminEmailTemplates() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const latestRequest = useMemo(
+    () =>
+      [...(access?.requests ?? [])]
+        .filter((request) => request.permission === 'email_template.edit')
+        .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))[0] ?? null,
+    [access?.requests],
+  );
+  const hasPermission = access?.effectivePermissions.includes('email_template.edit') ?? false;
+
+  async function submitAccessRequest(reason: string, requestedDuration: AccessDuration) {
+    const result = await requestAccess({
+      permission: 'email_template.edit',
+      reason,
+      requestedDuration,
+    });
+    if (result.ok) {
+      setNotice('Your request was sent for review.');
+      await load();
+    }
+    return result;
+  }
 
   const selected = templates.find((template) => template.id === selectedId) ?? null;
   useEffect(() => {
@@ -128,6 +173,50 @@ export default function AdminEmailTemplates() {
       <AdminShell title="Email templates" subtitle="Shape the messages people receive from the site. Security links stay system-generated.">
         {error && <p role="alert" className="mb-5 rounded-[12px] border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta">{error}</p>}
         {notice && <p role="status" className="mb-5 rounded-[12px] border border-brand-green/30 bg-mint/40 px-4 py-3 text-sm text-charcoal">{notice}</p>}
+        {!access ? (
+          <p role="status" className="rounded-[14px] border border-charcoal/10 bg-white p-6 text-sm text-charcoal/60">
+            Email-template access could not be verified. Try refreshing the page.
+          </p>
+        ) : !hasPermission ? (
+          <section className="flex flex-col justify-between gap-5 rounded-[14px] border border-charcoal/10 bg-white p-6 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-deep-green">
+                Restricted feature
+              </p>
+              <h2 className="mt-1 font-[family-name:var(--font-heading)] text-xl font-semibold text-charcoal">
+                Email-template editing requires access
+              </h2>
+              {latestRequest?.status === 'pending' ? (
+                <p className="mt-2 text-sm text-[#754A21]">Your request is pending review.</p>
+              ) : latestRequest?.status === 'declined' ? (
+                <p className="mt-2 text-sm text-terracotta">
+                  Declined: {latestRequest.decision_note || 'No note was provided.'}
+                </p>
+              ) : latestRequest?.status === 'approved' ? (
+                <p className="mt-2 text-sm text-charcoal/55">
+                  Previously approved
+                  {latestRequest.grant_expires_at
+                    ? ` until ${formatDate(latestRequest.grant_expires_at)}`
+                    : ' permanently'}
+                  ; that access is no longer active.
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-charcoal/60">
+                  Request permission to review and update transactional email copy.
+                </p>
+              )}
+            </div>
+            {latestRequest?.status !== 'pending' && (
+              <button
+                type="button"
+                onClick={() => setRequestDialogOpen(true)}
+                className="inline-flex min-h-[42px] cursor-pointer items-center justify-center rounded-full border border-charcoal/15 bg-white px-4 text-sm font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint"
+              >
+                Request access
+              </button>
+            )}
+          </section>
+        ) : (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
           <section className="space-y-5 rounded-[16px] border border-charcoal/10 bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:p-6">
             <label className={labelClass}>Email type
@@ -172,7 +261,23 @@ export default function AdminEmailTemplates() {
             <div className="border-b-4 border-terracotta px-6 py-8"><h2 className="font-[family-name:var(--font-heading)] text-2xl font-semibold text-charcoal">{previewText(draft?.heading ?? '')}</h2><div className="mt-4 space-y-3 text-sm leading-relaxed text-charcoal/75">{draft?.paragraphs.map((paragraph, index) => <p key={index}>{previewText(paragraph)}</p>)}</div>{draft?.actionLabel && <><div className={`mt-6 inline-flex min-h-11 items-center rounded-full px-5 text-sm font-semibold ${draft.buttonStyle === 'soft-mint' ? 'bg-mint text-deep-green' : draft.buttonStyle === 'outline-green' ? 'border border-deep-green bg-white text-deep-green' : draft.buttonStyle === 'solid-deep-green' ? 'bg-[#0F6E56] text-white' : 'bg-brand-green text-white'}`}>{previewText(draft.actionLabel)}</div>{draft.actionUrl && <p className="mt-2 break-all text-xs text-charcoal/45">{previewText(draft.actionUrl)}</p>}</>}{draft?.links.map((link, index) => <p key={index} className="mt-3 break-all text-sm text-deep-green underline">{previewText(link.label || 'Link label')} · {previewText(link.url || 'Link URL')}</p>)}{draft?.notes.length ? <div className="mt-6 rounded-xl bg-mint p-4 text-xs leading-relaxed text-deep-green">{draft.notes.map(previewText).join(' · ')}</div> : null}</div>
           </aside>
         </div>
+        )}
       </AdminShell>
+      {requestDialogOpen && (
+        <AccessRequestDialog
+          permission="email_template.edit"
+          currentStatus={latestRequest?.status ?? null}
+          onSubmit={submitAccessRequest}
+          onCancel={() => setRequestDialogOpen(false)}
+        />
+      )}
     </>
   );
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat('en-NG', {
+    dateStyle: 'medium',
+    timeZone: 'Africa/Lagos',
+  }).format(new Date(value));
 }

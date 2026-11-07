@@ -1,12 +1,12 @@
 import { endpoint, parseJsonBody, sendJson } from '../http.js';
-import { requireAdmin } from '../staff.js';
+import { requirePermission } from '../staff.js';
 import { parseInput, emailTemplateSaveSchema } from '../validation.js';
 import { emailTemplateCatalog, templateDefinition } from '../email-templates.js';
 import { saveEmailTemplateOverride } from '../db.js';
 import { auditActorForUser, prepareAuditWrite } from '../audit.js';
 
 export default endpoint({ methods: ['GET', 'PUT'], csrf: true }, async (req, res) => {
-  const session = await requireAdmin(req, res);
+  const session = await requirePermission(req, res, 'email_template.edit');
   if (req.method === 'GET') {
     sendJson(res, 200, { templates: await emailTemplateCatalog() });
     return;
