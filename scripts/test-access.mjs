@@ -161,6 +161,48 @@ function check(description, passed, detail = '') {
   console.log(`${passed ? 'PASS' : 'FAIL'}  ${description}${detail ? ` (${detail})` : ''}`);
 }
 
+function cookieValue(setCookies, name) {
+  for (const header of setCookies) {
+    const pair = header.split(';')[0];
+    const separator = pair.indexOf('=');
+    if (separator !== -1 && pair.slice(0, separator) === name) {
+      return pair.slice(separator + 1);
+    }
+  }
+  return '';
+}
+
+async function call(baseUrl, route, options = {}) {
+  const { method = 'GET', body, cookie, headers = {} } = options;
+  const response = await fetch(`${baseUrl}${route}`, {
+    method,
+    headers: {
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(cookie ? { Cookie: cookie } : {}),
+      Origin: baseUrl,
+      ...headers,
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    redirect: 'manual',
+  });
+  const text = await response.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  const setCookies = response.headers.getSetCookie?.() ?? [];
+  return {
+    status: response.status,
+    json,
+    text,
+    setCookies,
+    admin: cookieValue(setCookies, 'pga_admin_session'),
+    content: cookieValue(setCookies, 'pga_content_session'),
+  };
+}
+
 function runMigration() {
   const result = spawnSync(process.execPath, [migrationPath], {
     cwd: root,
