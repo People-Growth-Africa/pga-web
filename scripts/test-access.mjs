@@ -9,12 +9,14 @@
  * permissions and validation without a database connection.
  */
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 
 const args = new Set(process.argv.slice(2));
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const permissionsOnly = args.has('--permissions-only');
 const noMigrate = args.has('--no-migrate');
 const unknownArgs = [...args].filter((arg) => !['--permissions-only', '--no-migrate'].includes(arg));
@@ -111,7 +113,22 @@ if (permissionsOnly) {
     false,
   );
 
-  console.log('PASS  role permissions, access validation, and grants (no database connection)');
+  const [appSource, siteShellSource, routeSource, adminShellSource] = await Promise.all([
+    readFile(path.join(root, 'src', 'App.tsx'), 'utf8'),
+    readFile(path.join(root, 'src', 'SiteShell.tsx'), 'utf8'),
+    readFile(path.join(root, 'src', 'routeComponents.ts'), 'utf8'),
+    readFile(path.join(root, 'src', 'components', 'admin', 'AdminShell.tsx'), 'utf8'),
+  ]);
+  assert.match(appSource, /AdminAccess: lazy\(\(\) => import\('\.\/pages\/admin\/AdminAccess'\)\)/);
+  assert.match(appSource, /AdminMyAccess: lazy\(\(\) => import\('\.\/pages\/admin\/AdminMyAccess'\)\)/);
+  assert.match(siteShellSource, /path="\/admin\/my-access"/);
+  assert.match(siteShellSource, /path="\/admin\/access"/);
+  assert.match(siteShellSource, /<SuperAdminRoute>\s*<AdminAccess \/>/);
+  assert.match(routeSource, /AdminAccess: RouteComponent/);
+  assert.match(routeSource, /AdminMyAccess: RouteComponent/);
+  assert.match(adminShellSource, /label: 'My access'/);
+  assert.match(adminShellSource, /label: 'Access'/);
+  console.log('PASS  role permissions, access validation, route guards, and grants (no database connection)');
   process.exit(0);
 }
 
@@ -139,7 +156,6 @@ process.env.DATABASE_URL = databaseUrl;
 process.env.DATABASE_URL_UNPOOLED = databaseUrl;
 process.env.AUTH_ENABLED = 'true';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const migrationPath = path.join(root, 'scripts', 'migrate-access-requests.mjs');
 const testStamp = `${Date.now().toString(36)}-${randomUUID()}`;
 const requesterEmail = `test-access-${testStamp}-requester@example.invalid`;
@@ -559,6 +575,7 @@ async function runApiChecks() {
     firstRequest.status === 201 &&
       firstRequest.json?.request?.permission === 'content.edit' &&
       firstRequest.json?.request?.status === 'pending' &&
+      !('requester_email' in (firstRequest.json?.request ?? {})) &&
       Boolean(firstRequestId),
     `${firstRequest.status}`,
   );
@@ -746,7 +763,8 @@ async function runApiChecks() {
     'approval atomically creates exactly one grant with a 30-day expiry',
     approved.status === 200 &&
       approved.json?.request?.status === 'approved' &&
-      approvedGrant?.request_id === secondRequestId &&
+    !('requester_email' in (approved.json?.request ?? {})) &&
+    approvedGrant?.request_id === secondRequestId &&
       new Date(approvedGrant.expires_at).getTime() > new Date(approvedGrant.granted_at).getTime() &&
       (await sql.query('SELECT id FROM permission_grants WHERE request_id = $1', [secondRequestId])).length === 1,
     `${approved.status}`,
@@ -803,7 +821,8 @@ async function runApiChecks() {
     'super-admin decline and revocation update their targets',
     declined.status === 200 &&
       declined.json?.request?.status === 'declined' &&
-      declinedRow?.status === 'declined' &&
+    !('requester_email' in (declined.json?.request ?? {})) &&
+    declinedRow?.status === 'declined' &&
       declinedRow?.decision_note === declineNote &&
       revoked.status === 200 &&
       Boolean(revokedRow?.revoked_at) &&

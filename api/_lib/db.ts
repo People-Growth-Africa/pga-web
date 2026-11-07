@@ -407,17 +407,20 @@ export type AccessRequestRow = {
   created_at: string;
   decided_at: string | null;
   decision_note: string | null;
+  grant_expires_at: string | null;
 };
 
 export async function listAccessRequestsByRequester(
   requesterId: string,
 ): Promise<AccessRequestRow[]> {
   return query<AccessRequestRow>(
-    `SELECT id, permission, reason, status, requested_duration,
-            created_at::text AS created_at, decided_at::text AS decided_at, decision_note
-       FROM access_requests
-      WHERE requester_id = $1
-      ORDER BY created_at DESC, id DESC`,
+    `SELECT r.id, r.permission, r.reason, r.status, r.requested_duration,
+            r.created_at::text AS created_at, r.decided_at::text AS decided_at,
+            r.decision_note, g.expires_at::text AS grant_expires_at
+       FROM access_requests r
+       LEFT JOIN permission_grants g ON g.request_id = r.id
+      WHERE r.requester_id = $1
+      ORDER BY r.created_at DESC, r.id DESC`,
     [requesterId],
   );
 }
@@ -428,13 +431,15 @@ export async function listPendingAccessRequests(): Promise<
     requester_name: string | null;
     requester_email: string;
     requester_role: Role;
+    grant_expires_at: null;
   })[]
 > {
   return query(
     `SELECT r.id, r.permission, r.reason, r.status, r.requested_duration,
             r.created_at::text AS created_at, r.decided_at::text AS decided_at,
-            r.decision_note, u.id AS requester_id, u.name AS requester_name,
-            u.email AS requester_email, u.role AS requester_role
+            r.decision_note, NULL::text AS grant_expires_at,
+            u.id AS requester_id, u.name AS requester_name, u.email AS requester_email,
+            u.role AS requester_role
        FROM access_requests r
        JOIN users u ON u.id = r.requester_id
       WHERE r.status = 'pending'
@@ -449,6 +454,8 @@ export async function listActivePermissionGrants(): Promise<
     user_name: string | null;
     user_email: string;
     user_role: Role;
+    grantor_name: string | null;
+    grantor_email: string;
     permission: Permission;
     granted_by: string;
     granted_at: string;
@@ -458,11 +465,13 @@ export async function listActivePermissionGrants(): Promise<
 > {
   return query(
     `SELECT g.id, g.user_id, u.name AS user_name, u.email AS user_email,
-            u.role AS user_role, g.permission, g.granted_by,
+            u.role AS user_role, granted_by_user.name AS grantor_name,
+            granted_by_user.email AS grantor_email, g.permission, g.granted_by,
             g.granted_at::text AS granted_at, g.expires_at::text AS expires_at,
             g.request_id
        FROM permission_grants g
        JOIN users u ON u.id = g.user_id
+       JOIN users granted_by_user ON granted_by_user.id = g.granted_by
       WHERE g.revoked_at IS NULL
         AND (g.expires_at IS NULL OR g.expires_at > now())
       ORDER BY g.granted_at DESC, g.id DESC`,

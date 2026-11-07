@@ -51,6 +51,12 @@ function navItems(portal: Portal): NavItem[] {
       match: (pathname) => pathname.startsWith('/admin/data') || pathname.startsWith('/admin/registrations'),
     },
     {
+      label: 'My access',
+      to: '/admin/my-access',
+      roles: ADMIN_PORTAL_ROLES,
+      match: (pathname) => pathname.startsWith('/admin/my-access'),
+    },
+    {
       label: 'Audit Log',
       to: '/admin/audit-log',
       roles: ['admin'],
@@ -73,6 +79,12 @@ function navItems(portal: Portal): NavItem[] {
       to: '/admin/staff',
       roles: ['admin'],
       match: (pathname) => pathname.startsWith('/admin/staff'),
+    },
+    {
+      label: 'Access',
+      to: '/admin/access',
+      roles: ['admin'],
+      match: (pathname) => pathname.startsWith('/admin/access'),
     },
   ];
 }
@@ -98,7 +110,8 @@ export default function AdminShell({
 
   const items = navItems(portal).filter(
     (item) => user?.role !== undefined && item.roles.includes(user.role) &&
-      (item.to !== '/admin/staff' || isSuperAdmin(user.email)),
+      (item.to !== '/admin/staff' || isSuperAdmin(user.email)) &&
+      (item.to !== '/admin/access' || isSuperAdmin(user.email)),
   );
   const section = portal === 'content' ? 'Content desk' : 'Staff';
   // Only the accounts that carry a name are greeted by it: a seeded or legacy

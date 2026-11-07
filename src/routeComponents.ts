@@ -19,6 +19,8 @@ export interface RouteComponents {
   AdminContent: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminContent').default>>;
   AdminData: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminData').default>>;
   AdminAuditLog: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminAuditLog').default>>;
+  AdminAccess: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminAccess').default>>;
+  AdminMyAccess: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminMyAccess').default>>;
   AdminOversight: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminOversight').default>>;
   AdminSetPassword: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminSetPassword').default>>;
   AdminStaff: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminStaff').default>>;

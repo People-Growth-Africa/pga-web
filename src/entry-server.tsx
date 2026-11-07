@@ -16,6 +16,8 @@ import EmployerDashboard from './pages/EmployerDashboard';
 import AdminContent from './pages/admin/AdminContent';
 import AdminData from './pages/admin/AdminData';
 import AdminAuditLog from './pages/admin/AdminAuditLog';
+import AdminAccess from './pages/admin/AdminAccess';
+import AdminMyAccess from './pages/admin/AdminMyAccess';
 import AdminOversight from './pages/admin/AdminOversight';
 import AdminSetPassword from './pages/admin/AdminSetPassword';
 import AdminStaff from './pages/admin/AdminStaff';
@@ -44,6 +46,8 @@ const routeComponents: RouteComponents = {
   AdminContent,
   AdminData,
   AdminAuditLog,
+  AdminAccess,
+  AdminMyAccess,
   AdminOversight,
   AdminSetPassword,
   AdminStaff,

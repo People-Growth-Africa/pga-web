@@ -59,6 +59,8 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
     AdminContent,
     AdminData,
     AdminAuditLog,
+    AdminAccess,
+    AdminMyAccess,
     AdminOversight,
     AdminSetPassword,
     AdminStaff,
@@ -151,6 +153,32 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
               AUTH_ENABLED ? (
                 <RequireAuth roles={ADMIN_PORTAL_ROLES} signInPath="/admin/login">
                   <AdminData />
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/my-access"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={ADMIN_PORTAL_ROLES} signInPath="/admin/login">
+                  <AdminMyAccess />
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/access"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={['admin']} signInPath="/admin/login">
+                  <SuperAdminRoute>
+                    <AdminAccess />
+                  </SuperAdminRoute>
                 </RequireAuth>
               ) : (
                 <Navigate to="/" replace />
