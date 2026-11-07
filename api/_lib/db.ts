@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless';
+import type { MutationAuditField } from './audit.js';
 import type { Permission } from './permissions.js';
 
 /**
@@ -129,6 +130,140 @@ export type UserRow = {
   disabled_at: string | null;
 };
 
+async function auditedAccessMutation<T>(input: {
+  mutationSql: string;
+  mutationParams: unknown[];
+  audit: AuditWrite;
+  afterFromMutation: readonly MutationAuditField[];
+}): Promise<T | null> {
+  const [row] = await auditedMutation<T>(input);
+  return row ?? null;
+}
+
+export async function createAccessRequest(input: {
+  requesterId: string;
+  permission: Permission;
+  reason: string;
+  requestedDuration: number | null;
+  audit: AuditWrite;
+}): Promise<{ id: string; permission: Permission; status: string } | null> {
+  return auditedAccessMutation({
+    mutationSql: `INSERT INTO access_requests
+                    (requester_id, permission, reason, requested_duration)
+                  VALUES ($1, $2, $3, $4)
+                  ON CONFLICT (requester_id, permission) WHERE status = 'pending'
+                  DO NOTHING
+                  RETURNING id, permission, status`,
+    mutationParams: [
+      input.requesterId,
+      input.permission,
+      input.reason,
+      input.requestedDuration,
+    ],
+    audit: input.audit,
+    afterFromMutation: ['permission', 'status'],
+  });
+}
+
+export async function cancelAccessRequest(input: {
+  requestId: string;
+  requesterId: string;
+  audit: AuditWrite;
+}): Promise<{ id: string; permission: Permission; status: string } | null> {
+  return auditedAccessMutation({
+    mutationSql: `UPDATE access_requests
+                     SET status = 'cancelled'
+                   WHERE id = $1 AND requester_id = $2 AND status = 'pending'
+                   RETURNING id, permission, status`,
+    mutationParams: [input.requestId, input.requesterId],
+    audit: input.audit,
+    afterFromMutation: ['permission', 'status'],
+  });
+}
+
+export async function approveAccessRequest(input: {
+  requestId: string;
+  decidedBy: string;
+  duration: number | null;
+  audit: AuditWrite;
+}): Promise<{
+  id: string;
+  permission: Permission;
+  status: string;
+  expires_at: string | null;
+  grant_id: string;
+} | null> {
+  return auditedAccessMutation({
+    mutationSql: `WITH approved AS (
+                    UPDATE access_requests
+                       SET status = 'approved', decided_by = $2, decided_at = now(),
+                           decision_note = NULL
+                     WHERE id = $1 AND status = 'pending'
+                     RETURNING id, requester_id, permission, status
+                  ),
+                  new_grant AS (
+                    INSERT INTO permission_grants
+                      (user_id, permission, granted_by, granted_at, expires_at, request_id)
+                    SELECT requester_id, permission, $2, now(),
+                           CASE WHEN $3::smallint IS NULL THEN NULL
+                                ELSE now() + make_interval(days => $3::integer)
+                           END,
+                           id
+                      FROM approved
+                    RETURNING id, request_id, expires_at
+                  )
+                  SELECT approved.id, approved.permission, approved.status,
+                         new_grant.expires_at::text AS expires_at, new_grant.id AS grant_id
+                    FROM approved
+                    JOIN new_grant ON new_grant.request_id = approved.id`,
+    mutationParams: [input.requestId, input.decidedBy, input.duration],
+    audit: input.audit,
+    afterFromMutation: ['permission', 'status', 'expires_at'],
+  });
+}
+
+export async function declineAccessRequest(input: {
+  requestId: string;
+  decidedBy: string;
+  decisionNote: string;
+  audit: AuditWrite;
+}): Promise<{ id: string; permission: Permission; status: string } | null> {
+  return auditedAccessMutation({
+    mutationSql: `UPDATE access_requests
+                     SET status = 'declined', decided_by = $2, decided_at = now(),
+                         decision_note = $3
+                   WHERE id = $1 AND status = 'pending'
+                   RETURNING id, permission, status`,
+    mutationParams: [input.requestId, input.decidedBy, input.decisionNote],
+    audit: input.audit,
+    afterFromMutation: ['permission', 'status'],
+  });
+}
+
+export async function revokePermissionGrant(input: {
+  grantId: string;
+  revokedBy: string;
+  audit: AuditWrite;
+}): Promise<{
+  id: string;
+  permission: Permission;
+  expires_at: string | null;
+  revoked_at: string;
+} | null> {
+  return auditedAccessMutation({
+    mutationSql: `UPDATE permission_grants
+                     SET revoked_at = now(), revoked_by = $2
+                   WHERE id = $1
+                     AND revoked_at IS NULL
+                     AND (expires_at IS NULL OR expires_at > now())
+                   RETURNING id, permission, expires_at::text AS expires_at,
+                             revoked_at::text AS revoked_at, 'revoked'::text AS status`,
+    mutationParams: [input.grantId, input.revokedBy],
+    audit: input.audit,
+    afterFromMutation: ['permission', 'status', 'expires_at', 'revoked_at'],
+  });
+}
+
 export type SessionUserRow = Omit<UserRow, 'password_hash'>;
 
 const USER_COLUMNS =
@@ -201,6 +336,77 @@ export async function listActiveGrantedPermissions(userId: string): Promise<Perm
     [userId],
   );
   return rows.map(({ permission }) => permission);
+}
+
+export type AccessRequestRow = {
+  id: string;
+  permission: Permission;
+  reason: string;
+  status: 'pending' | 'approved' | 'declined' | 'cancelled';
+  requested_duration: number | null;
+  created_at: string;
+  decided_at: string | null;
+  decision_note: string | null;
+};
+
+export async function listAccessRequestsByRequester(
+  requesterId: string,
+): Promise<AccessRequestRow[]> {
+  return query<AccessRequestRow>(
+    `SELECT id, permission, reason, status, requested_duration,
+            created_at::text AS created_at, decided_at::text AS decided_at, decision_note
+       FROM access_requests
+      WHERE requester_id = $1
+      ORDER BY created_at DESC, id DESC`,
+    [requesterId],
+  );
+}
+
+export async function listPendingAccessRequests(): Promise<
+  (AccessRequestRow & {
+    requester_id: string;
+    requester_name: string | null;
+    requester_email: string;
+    requester_role: Role;
+  })[]
+> {
+  return query(
+    `SELECT r.id, r.permission, r.reason, r.status, r.requested_duration,
+            r.created_at::text AS created_at, r.decided_at::text AS decided_at,
+            r.decision_note, u.id AS requester_id, u.name AS requester_name,
+            u.email AS requester_email, u.role AS requester_role
+       FROM access_requests r
+       JOIN users u ON u.id = r.requester_id
+      WHERE r.status = 'pending'
+      ORDER BY r.created_at ASC, r.id ASC`,
+  );
+}
+
+export async function listActivePermissionGrants(): Promise<
+  {
+    id: string;
+    user_id: string;
+    user_name: string | null;
+    user_email: string;
+    user_role: Role;
+    permission: Permission;
+    granted_by: string;
+    granted_at: string;
+    expires_at: string | null;
+    request_id: string | null;
+  }[]
+> {
+  return query(
+    `SELECT g.id, g.user_id, u.name AS user_name, u.email AS user_email,
+            u.role AS user_role, g.permission, g.granted_by,
+            g.granted_at::text AS granted_at, g.expires_at::text AS expires_at,
+            g.request_id
+       FROM permission_grants g
+       JOIN users u ON u.id = g.user_id
+      WHERE g.revoked_at IS NULL
+        AND (g.expires_at IS NULL OR g.expires_at > now())
+      ORDER BY g.granted_at DESC, g.id DESC`,
+  );
 }
 
 /**
@@ -1483,10 +1689,23 @@ export async function auditedMutation<T>(input: {
   mutationSql: string;
   mutationParams: unknown[];
   audit: AuditWrite;
+  afterFromMutation?: readonly MutationAuditField[];
 }): Promise<T[]> {
   const offset = input.mutationParams.length;
   const p = (index: number) => `$${offset + index}`;
   const audit = input.audit;
+  const mutationAuditColumns: Record<MutationAuditField, string> = {
+    permission: 'permission',
+    status: 'status',
+    expires_at: 'expires_at',
+    revoked_at: 'revoked_at',
+    expiration_audited_at: 'expiration_audited_at',
+  };
+  const dynamicAfter = input.afterFromMutation?.length
+    ? `COALESCE(jsonb_build_object(${input.afterFromMutation
+        .map((field) => `'${field}', changed.${mutationAuditColumns[field]}`)
+        .join(', ')}), ${p(9)}::jsonb)`
+    : `${p(9)}::jsonb`;
   const text = `WITH changed AS (${input.mutationSql}),
     logged AS (
       INSERT INTO audit_logs (
@@ -1495,7 +1714,7 @@ export async function auditedMutation<T>(input: {
       )
       SELECT ${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)},
              COALESCE(${p(6)}, to_jsonb(changed)->>'id'),
-             ${p(7)}, ${p(8)}::jsonb, ${p(9)}::jsonb, ${p(10)}, ${p(11)}, ${p(12)}
+           ${p(7)}, ${p(8)}::jsonb, ${dynamicAfter}, ${p(10)}, ${p(11)}, ${p(12)}
         FROM changed
       RETURNING id
     )

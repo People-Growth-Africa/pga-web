@@ -31,7 +31,20 @@ const AUDIT_FIELDS: Record<string, readonly string[]> = {
   'auth.login_failed': [],
   'auth.logout': [],
   'audit_log.export': ['dataset', 'filters', 'rowCount'],
+  'access.request_created': ['permission', 'status'],
+  'access.request_approved': ['permission', 'status', 'expires_at'],
+  'access.request_declined': ['permission', 'status'],
+  'access.request_cancelled': ['permission', 'status'],
+  'access.grant_revoked': ['permission', 'status', 'expires_at', 'revoked_at'],
+  'access.grant_expired': ['permission', 'status', 'expires_at', 'expiration_audited_at'],
 };
+
+export type MutationAuditField =
+  | 'permission'
+  | 'status'
+  | 'expires_at'
+  | 'revoked_at'
+  | 'expiration_audited_at';
 
 function requestMetadata(req: VercelRequest) {
   const forwarded = req.headers['x-forwarded-for'];
@@ -98,12 +111,14 @@ export async function logAudit(input: AuditInput): Promise<void> {
 export async function auditedMutation<T>(input: AuditInput & {
   mutationSql: string;
   mutationParams: unknown[];
+  afterFromMutation?: readonly MutationAuditField[];
 }): Promise<T[]> {
-  const { mutationSql, mutationParams, ...audit } = input;
+  const { mutationSql, mutationParams, afterFromMutation, ...audit } = input;
   return runAuditedMutation<T>({
     mutationSql,
     mutationParams,
     audit: prepareAuditWrite(audit),
+    ...(afterFromMutation ? { afterFromMutation } : {}),
   });
 }
 

@@ -91,6 +91,7 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/admin/traffic': gatedAuth(async () => (await import('./admin-traffic.js')).default),
   '/admin/staff': gatedAuth(async () => (await import('./admin-staff.js')).default),
   '/admin/email-templates': gatedAuth(async () => (await import('./admin-email-templates.js')).default),
+  '/admin/access': gatedAuth(async () => (await import('./admin-access.js')).default),
   '/admin/audit-log': gatedAuth(async () => (await import('./admin-audit.js')).default),
   '/admin/audit-log-export': gatedAuth(async () => (await import('./admin-audit.js')).default),
   //     Writing one account's name, email or role. Same module, its own path,

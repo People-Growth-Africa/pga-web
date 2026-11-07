@@ -697,6 +697,46 @@ export const auditLogQuerySchema = z.strictObject({
   page: z.coerce.number().int().min(1).max(100000).default(1),
 });
 
+export const ACCESS_REQUEST_PERMISSIONS = [
+  'content.edit',
+  'content.publish',
+  'email_template.edit',
+  'consultation.update',
+  'export.data',
+] as const;
+
+const accessDuration = z.union([z.literal(7), z.literal(30), z.literal(90), z.null()]);
+const accessRequestId = z.string().uuid('Choose a valid access request.');
+const accessGrantId = z.string().uuid('Choose a valid permission grant.');
+
+export const accessRequestCreateSchema = z.strictObject({
+  action: z.literal('request'),
+  permission: z.enum(ACCESS_REQUEST_PERMISSIONS),
+  reason: requiredText(1000, 'reason'),
+  requestedDuration: accessDuration,
+});
+
+export const accessRequestMutationSchema = z.discriminatedUnion('action', [
+  z.strictObject({
+    action: z.literal('cancel'),
+    requestId: accessRequestId,
+  }),
+  z.strictObject({
+    action: z.literal('approve'),
+    requestId: accessRequestId,
+    duration: accessDuration,
+  }),
+  z.strictObject({
+    action: z.literal('decline'),
+    requestId: accessRequestId,
+    decisionNote: requiredText(1000, 'decision note'),
+  }),
+  z.strictObject({
+    action: z.literal('revoke'),
+    grantId: accessGrantId,
+  }),
+]);
+
 export const trackSchema = z.strictObject({
   path: z.string().trim().min(1).max(300),
   referrer: z.string().trim().max(300).optional(),

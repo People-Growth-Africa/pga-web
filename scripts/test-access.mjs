@@ -1,18 +1,18 @@
 /**
- * Disposable-database checks for the access-request and grant schema.
+ * Disposable-database checks for access schema and the real HTTP lifecycle API.
  *
  *   ACCESS_TEST_DATABASE_URL=... npm run test:access
  *
- * The default mode applies the migration to ACCESS_TEST_DATABASE_URL and
- * checks it twice. --no-migrate checks an already-migrated test database.
- * --permissions-only runs role and permission-combination tests without a
- * database connection.
+ * The default mode applies the migration to ACCESS_TEST_DATABASE_URL, checks
+ * it twice, and exercises the API with temporary staff accounts. --no-migrate
+ * checks an already-migrated test database. --permissions-only checks role
+ * permissions and validation without a database connection.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 const args = new Set(process.argv.slice(2));
 const permissionsOnly = args.has('--permissions-only');
@@ -24,7 +24,13 @@ if (unknownArgs.length) {
 }
 
 if (permissionsOnly) {
+  await import('./api-server.mjs');
   const { combinePermissions, permissionsForRole } = await import('../api/_lib/permissions.ts');
+  const {
+    ACCESS_REQUEST_PERMISSIONS,
+    accessRequestCreateSchema,
+    accessRequestMutationSchema,
+  } = await import('../api/_lib/validation.ts');
 
   const has = (role, permission) => permissionsForRole(role).includes(permission);
   const granted = combinePermissions(permissionsForRole('project_manager'), ['content.edit']);
@@ -63,7 +69,49 @@ if (permissionsOnly) {
   assert.equal(has('content_manager', 'admin.data.read'), false);
   assert.equal(has('content_manager', 'export.data'), false);
 
-  console.log('PASS  role permissions and active-grant combination (no database connection)');
+  const request = {
+    action: 'request',
+    permission: 'content.edit',
+    reason: 'Need to update content',
+    requestedDuration: null,
+  };
+  assert.equal(accessRequestCreateSchema.safeParse(request).success, true);
+  assert.equal(accessRequestCreateSchema.safeParse({ ...request, reason: '  ' }).success, false);
+  assert.equal(accessRequestCreateSchema.safeParse({ ...request, permission: 'access.manage' }).success, false);
+  assert.equal(accessRequestCreateSchema.safeParse({ ...request, requestedDuration: 14 }).success, false);
+  assert.equal(accessRequestCreateSchema.safeParse({ ...request, extra: true }).success, false);
+  assert.deepEqual([...ACCESS_REQUEST_PERMISSIONS].sort(), [
+    'consultation.update',
+    'content.edit',
+    'content.publish',
+    'email_template.edit',
+    'export.data',
+  ]);
+  assert.equal(
+    accessRequestMutationSchema.safeParse({
+      action: 'approve',
+      requestId: randomUUID(),
+      duration: null,
+    }).success,
+    true,
+  );
+  assert.equal(
+    accessRequestMutationSchema.safeParse({
+      action: 'decline',
+      requestId: randomUUID(),
+      decisionNote: '  ',
+    }).success,
+    false,
+  );
+  assert.equal(
+    accessRequestMutationSchema.safeParse({
+      action: 'cancel',
+      requestId: 'not-a-uuid',
+    }).success,
+    false,
+  );
+
+  console.log('PASS  role permissions, access validation, and grants (no database connection)');
   process.exit(0);
 }
 
@@ -95,14 +143,17 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const migrationPath = path.join(root, 'scripts', 'migrate-access-requests.mjs');
 const testStamp = `${Date.now().toString(36)}-${randomUUID()}`;
 const requesterEmail = `test-access-${testStamp}-requester@example.invalid`;
+const otherRequesterEmail = `test-access-${testStamp}-other@example.invalid`;
 const adminEmail = `test-access-${testStamp}-admin@example.invalid`;
+const testPassword = `Access-Test-${randomUUID()}-aA7!`;
 process.env.SUPER_ADMIN_EMAIL = adminEmail;
-const testPasswordHash = `test-access-placeholder-${randomUUID()}`;
 const results = [];
 let failures = 0;
 let sql;
 let requesterId;
+let otherRequesterId;
 let adminId;
+let server;
 
 function check(description, passed, detail = '') {
   results.push({ description, passed });
@@ -242,33 +293,35 @@ async function verifySchema() {
 }
 
 async function runConstraintChecks() {
-  const [requester] = await sql.query(
-    `INSERT INTO users (email, password_hash, role, email_verified)
-     VALUES ($1, $2, 'talent', true)
-     RETURNING id`,
-    [requesterEmail, testPasswordHash],
-  );
-  requesterId = requester.id;
-  const adminResult = await sql.transaction([
-    sql`SELECT set_config('pga.staff_write', 'on', true)`,
-    sql`INSERT INTO users (email, password_hash, role, email_verified)
-        VALUES (${adminEmail}, ${testPasswordHash}, 'admin', true)
-        RETURNING id`,
-  ]);
-  adminId = adminResult[1]?.[0]?.id;
+  const bcrypt = (await import('bcryptjs')).default;
+  const passwordPrehash = createHash('sha256').update(testPassword, 'utf8').digest('base64');
+  const passwordHash = await bcrypt.hash(passwordPrehash, 12);
+  const createStaff = async (email, role, name) => {
+    const result = await sql.transaction([
+      sql`SELECT set_config('pga.staff_write', 'on', true)`,
+      sql`INSERT INTO users
+            (name, email, password_hash, role, email_verified, must_change_password)
+          VALUES (${name}, ${email}, ${passwordHash}, ${role}, true, false)
+          RETURNING id`,
+    ]);
+    return result[1]?.[0]?.id;
+  };
+  requesterId = await createStaff(requesterEmail, 'project_manager', 'Access Test Requester');
+  otherRequesterId = await createStaff(otherRequesterEmail, 'hr_manager', 'Access Test Other');
+  adminId = await createStaff(adminEmail, 'admin', 'Access Test Admin');
 
   const [pendingRequest] = await sql.query(
     `INSERT INTO access_requests (requester_id, permission, reason, requested_duration)
-     VALUES ($1, 'content.edit', 'Access migration test', 7)
+     VALUES ($1, 'content.publish', 'Access migration test', 7)
      RETURNING id`,
-    [requesterId],
+    [otherRequesterId],
   );
   await expectSqlError(
     'only one pending request per requester and permission is allowed',
     '23505',
     `INSERT INTO access_requests (requester_id, permission, reason)
-     VALUES ($1, 'content.edit', 'Duplicate pending test')`,
-    [requesterId],
+     VALUES ($1, 'content.publish', 'Duplicate pending test')`,
+    [otherRequesterId],
   );
   await expectSqlError(
     'access request rejects an unknown status',
@@ -315,28 +368,406 @@ async function runConstraintChecks() {
 
   const [secondRequest] = await sql.query(
     `INSERT INTO access_requests (requester_id, permission, reason, status)
-     VALUES ($1, 'content.publish', 'Grant uniqueness test', 'approved')
+     VALUES ($1, 'consultation.update', 'Grant uniqueness test', 'approved')
      RETURNING id`,
     [requesterId],
   );
   await sql.query(
     `INSERT INTO permission_grants (user_id, permission, granted_by, request_id)
-     VALUES ($1, 'content.publish', $2, $3)`,
+     VALUES ($1, 'consultation.update', $2, $3)`,
     [requesterId, adminId, secondRequest.id],
   );
   await expectSqlError(
     'a request cannot create more than one permission grant',
     '23505',
     `INSERT INTO permission_grants (user_id, permission, granted_by, request_id)
-     VALUES ($1, 'content.edit', $2, $3)`,
+     VALUES ($1, 'content.publish', $2, $3)`,
     [requesterId, adminId, secondRequest.id],
   );
   check('a valid request and grant can be stored', Boolean(pendingRequest?.id && secondRequest?.id));
 }
 
+async function runApiChecks() {
+  process.env.JWT_SECRET ??= `access-test-secret-${randomUUID()}-long-enough`;
+  delete process.env.UPSTASH_REDIS_REST_URL;
+  delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  const { startApiServer } = await import('./api-server.mjs');
+  server = await startApiServer({ quiet: true, serveStatic: false });
+  const baseUrl = server.origin;
+
+  const requesterLogin = await call(baseUrl, '/api/admin/login', {
+    method: 'POST',
+    body: { email: requesterEmail, password: testPassword },
+  });
+  const otherLogin = await call(baseUrl, '/api/admin/login', {
+    method: 'POST',
+    body: { email: otherRequesterEmail, password: testPassword },
+  });
+  const adminLogin = await call(baseUrl, '/api/admin/login', {
+    method: 'POST',
+    body: { email: adminEmail, password: testPassword },
+  });
+  check(
+    'real project-manager, HR-manager, and admin test accounts sign in over HTTP',
+    requesterLogin.status === 200 &&
+      otherLogin.status === 200 &&
+      adminLogin.status === 200 &&
+      requesterLogin.json?.user?.role === 'project_manager' &&
+      otherLogin.json?.user?.role === 'hr_manager' &&
+      adminLogin.json?.user?.role === 'admin',
+    `${requesterLogin.status}/${otherLogin.status}/${adminLogin.status}`,
+  );
+  const requesterCookie = `pga_admin_session=${requesterLogin.admin}`;
+  const otherCookie = `pga_admin_session=${otherLogin.admin}`;
+  const adminCookie = `pga_admin_session=${adminLogin.admin}`;
+  const auditCount = async () => {
+    const [row] = await sql.query(
+      'SELECT count(*)::int AS count FROM audit_logs WHERE actor_id = ANY($1)',
+      [[requesterId, otherRequesterId, adminId]],
+    );
+    return row?.count ?? 0;
+  };
+  const findAudit = async (entityId) =>
+    sql.query(
+      `SELECT action, "before", "after"
+         FROM audit_logs
+        WHERE entity_id = $1
+          AND actor_id = ANY($2)
+        ORDER BY created_at, id`,
+      [entityId, [requesterId, otherRequesterId, adminId]],
+    );
+
+  const requesterOverview = await call(baseUrl, '/api/admin/access', {
+    cookie: requesterCookie,
+  });
+  const adminOverview = await call(baseUrl, '/api/admin/access', {
+    cookie: adminCookie,
+  });
+  check(
+    'GET returns own requests and effective permissions, with review data only for the super administrator',
+    requesterOverview.status === 200 &&
+      Array.isArray(requesterOverview.json?.requests) &&
+      requesterOverview.json?.effectivePermissions?.includes('export.data') &&
+      !('pendingRequests' in (requesterOverview.json ?? {})) &&
+      !('activeGrants' in (requesterOverview.json ?? {})) &&
+      adminOverview.status === 200 &&
+      Array.isArray(adminOverview.json?.pendingRequests) &&
+      Array.isArray(adminOverview.json?.activeGrants),
+    `${requesterOverview.status}/${adminOverview.status}`,
+  );
+
+  const firstReason = `test reason ${testStamp}`;
+  const firstRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: requesterCookie,
+    body: {
+      action: 'request',
+      permission: 'content.edit',
+      reason: firstReason,
+      requestedDuration: 7,
+    },
+  });
+  const firstRequestId = firstRequest.json?.request?.id;
+  check(
+    'a staff account can create a pending request for a permission it does not have',
+    firstRequest.status === 201 &&
+      firstRequest.json?.request?.permission === 'content.edit' &&
+      firstRequest.json?.request?.status === 'pending' &&
+      Boolean(firstRequestId),
+    `${firstRequest.status}`,
+  );
+
+  const auditCountAfterCreate = await auditCount();
+  const duplicateRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: requesterCookie,
+    body: {
+      action: 'request',
+      permission: 'content.edit',
+      reason: 'duplicate request',
+      requestedDuration: null,
+    },
+  });
+  check(
+    'a duplicate pending request conflicts without an audit row',
+    duplicateRequest.status === 409 && (await auditCount()) === auditCountAfterCreate,
+    `${duplicateRequest.status}`,
+  );
+
+  const rolePermissionRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: requesterCookie,
+    body: {
+      action: 'request',
+      permission: 'export.data',
+      reason: 'role permission',
+      requestedDuration: null,
+    },
+  });
+  const grantPermissionRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: requesterCookie,
+    body: {
+      action: 'request',
+      permission: 'consultation.update',
+      reason: 'existing active grant',
+      requestedDuration: 30,
+    },
+  });
+  check(
+    'requests conflict when the permission already comes from a role or active grant',
+    rolePermissionRequest.status === 409 && grantPermissionRequest.status === 409,
+    `${rolePermissionRequest.status}/${grantPermissionRequest.status}`,
+  );
+
+  const forbiddenPermissions = [
+    'staff.manage',
+    'admin.staff.manage',
+    'audit.view',
+    'audit_log.view',
+    'audit_log.export',
+    'registration.purge',
+    'export.accounts',
+    'access.manage',
+  ];
+  const forbiddenResponses = await Promise.all(
+    forbiddenPermissions.map((permission) =>
+      call(baseUrl, '/api/admin/access', {
+        method: 'POST',
+        cookie: requesterCookie,
+        body: {
+          action: 'request',
+          permission,
+          reason: 'forbidden permission',
+          requestedDuration: null,
+        },
+      }),
+    ),
+  );
+  const strictRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: requesterCookie,
+    body: {
+      action: 'request',
+      permission: 'content.publish',
+      reason: 'strict schema',
+      requestedDuration: null,
+      extra: true,
+    },
+  });
+  check(
+    'all non-allowlisted permissions and extra request properties are rejected',
+    forbiddenResponses.every((response) => response.status === 400) && strictRequest.status === 400,
+    `${forbiddenResponses.map((response) => response.status).join('/')}/${strictRequest.status}`,
+  );
+
+  const secondRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: requesterCookie,
+    body: {
+      action: 'request',
+      permission: 'content.publish',
+      reason: 'temporary grant test',
+      requestedDuration: 7,
+    },
+  });
+  const secondRequestId = secondRequest.json?.request?.id;
+  const declineRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: otherCookie,
+    body: {
+      action: 'request',
+      permission: 'email_template.edit',
+      reason: 'decline test',
+      requestedDuration: null,
+    },
+  });
+  const declineRequestId = declineRequest.json?.request?.id;
+  const [activeGrantRow] = await sql.query(
+    `SELECT id FROM permission_grants
+      WHERE user_id = $1 AND permission = 'consultation.update'
+        AND revoked_at IS NULL`,
+    [requesterId],
+  );
+
+  const beforeUnauthorizedWrites = await auditCount();
+  const deniedApprove = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: requesterCookie,
+    body: { action: 'approve', requestId: secondRequestId, duration: 7 },
+  });
+  const deniedDecline = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: requesterCookie,
+    body: { action: 'decline', requestId: declineRequestId, decisionNote: 'no' },
+  });
+  const deniedRevoke = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: requesterCookie,
+    body: { action: 'revoke', grantId: activeGrantRow?.id },
+  });
+  check(
+    'non-super-admins cannot approve, decline, or revoke and make no audit rows',
+    deniedApprove.status === 403 &&
+      deniedDecline.status === 403 &&
+      deniedRevoke.status === 403 &&
+      (await auditCount()) === beforeUnauthorizedWrites,
+    `${deniedApprove.status}/${deniedDecline.status}/${deniedRevoke.status}`,
+  );
+
+  const otherCancel = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: otherCookie,
+    body: { action: 'cancel', requestId: firstRequestId },
+  });
+  const ownCancel = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: requesterCookie,
+    body: { action: 'cancel', requestId: firstRequestId },
+  });
+  const beforeFailedTransition = await auditCount();
+  const failedApproval = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: { action: 'approve', requestId: firstRequestId, duration: 7 },
+  });
+  const [cancelledRow] = await sql.query(
+    'SELECT status FROM access_requests WHERE id = $1',
+    [firstRequestId],
+  );
+  check(
+    'only the requester may cancel, and invalid state transitions leave row and audit unchanged',
+    otherCancel.status === 409 &&
+      ownCancel.status === 200 &&
+      failedApproval.status === 409 &&
+      cancelledRow?.status === 'cancelled' &&
+      (await auditCount()) === beforeFailedTransition,
+    `${otherCancel.status}/${ownCancel.status}/${failedApproval.status}`,
+  );
+
+  const approved = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: { action: 'approve', requestId: secondRequestId, duration: 30 },
+  });
+  const [approvedGrant] = await sql.query(
+    `SELECT id, granted_at, expires_at, request_id
+       FROM permission_grants
+      WHERE request_id = $1`,
+    [secondRequestId],
+  );
+  check(
+    'approval atomically creates exactly one grant with a 30-day expiry',
+    approved.status === 200 &&
+      approved.json?.request?.status === 'approved' &&
+      approvedGrant?.request_id === secondRequestId &&
+      new Date(approvedGrant.expires_at).getTime() > new Date(approvedGrant.granted_at).getTime() &&
+      (await sql.query('SELECT id FROM permission_grants WHERE request_id = $1', [secondRequestId])).length === 1,
+    `${approved.status}`,
+  );
+
+  const permanentRequest = await call(baseUrl, '/api/admin/access', {
+    method: 'POST',
+    cookie: requesterCookie,
+    body: {
+      action: 'request',
+      permission: 'email_template.edit',
+      reason: 'permanent grant test',
+      requestedDuration: null,
+    },
+  });
+  const permanentRequestId = permanentRequest.json?.request?.id;
+  const permanentApproval = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: { action: 'approve', requestId: permanentRequestId, duration: null },
+  });
+  const [permanentGrant] = await sql.query(
+    'SELECT expires_at FROM permission_grants WHERE request_id = $1',
+    [permanentRequestId],
+  );
+  check(
+    'permanent approval stores a NULL grant expiry',
+    permanentApproval.status === 200 &&
+      permanentApproval.json?.request?.status === 'approved' &&
+      permanentGrant?.expires_at === null,
+    `${permanentApproval.status}`,
+  );
+
+  const declineNote = `private decision note ${testStamp}`;
+  const declined = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: { action: 'decline', requestId: declineRequestId, decisionNote: declineNote },
+  });
+  const [declinedRow] = await sql.query(
+    'SELECT status, decision_note FROM access_requests WHERE id = $1',
+    [declineRequestId],
+  );
+  const revoked = await call(baseUrl, '/api/admin/access', {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: { action: 'revoke', grantId: activeGrantRow?.id },
+  });
+  const [revokedRow] = await sql.query(
+    'SELECT revoked_at, revoked_by FROM permission_grants WHERE id = $1',
+    [activeGrantRow?.id],
+  );
+  check(
+    'super-admin decline and revocation update their targets',
+    declined.status === 200 &&
+      declined.json?.request?.status === 'declined' &&
+      declinedRow?.status === 'declined' &&
+      declinedRow?.decision_note === declineNote &&
+      revoked.status === 200 &&
+      Boolean(revokedRow?.revoked_at) &&
+      revokedRow?.revoked_by === adminId,
+    `${declined.status}/${revoked.status}`,
+  );
+
+  const accessActions = new Map();
+  for (const id of [
+    firstRequestId,
+    secondRequestId,
+    permanentRequestId,
+    declineRequestId,
+    activeGrantRow?.id,
+  ]) {
+    if (!id) continue;
+    for (const row of await findAudit(id)) {
+      accessActions.set(row.action, row);
+    }
+  }
+  const auditJson = JSON.stringify([...accessActions.values()]);
+  check(
+    'request, approve, decline, cancel, and revoke audit actions omit reason and decision-note text',
+    [
+      'access.request_created',
+      'access.request_approved',
+      'access.request_declined',
+      'access.request_cancelled',
+      'access.grant_revoked',
+    ].every((action) => accessActions.has(action)) &&
+      !auditJson.includes(firstReason) &&
+      !auditJson.includes(declineNote),
+    [...accessActions.keys()].join(','),
+  );
+
+  const requesterHistory = await call(baseUrl, '/api/admin/access', {
+    cookie: requesterCookie,
+  });
+  check(
+    'request history reflects approved and cancelled lifecycle states',
+    requesterHistory.status === 200 &&
+      requesterHistory.json?.requests?.some((request) => request.id === firstRequestId && request.status === 'cancelled') &&
+      requesterHistory.json?.requests?.some((request) => request.id === secondRequestId && request.status === 'approved'),
+    `${requesterHistory.status}`,
+  );
+}
+
 async function cleanupTestRows() {
   if (!sql) return;
-  const testUserIds = [requesterId, adminId].filter(Boolean);
+  const testUserIds = [requesterId, otherRequesterId, adminId].filter(Boolean);
   if (!testUserIds.length) return;
   await sql.query(
     'DELETE FROM permission_grants WHERE user_id = ANY($1) OR granted_by = ANY($1) OR revoked_by = ANY($1)',
@@ -364,11 +795,13 @@ async function main() {
       await verifySchema();
       const [request] = await sql.query(
         'SELECT id FROM access_requests WHERE requester_id = $1 AND permission = $2 AND status = $3',
-        [requesterId, 'content.edit', 'pending'],
+        [otherRequesterId, 'content.publish', 'pending'],
       );
       check('a second migration run succeeds without losing existing test data', Boolean(request?.id));
     }
+    await runApiChecks();
   } finally {
+    if (server) await server.close();
     await cleanupTestRows();
   }
 
