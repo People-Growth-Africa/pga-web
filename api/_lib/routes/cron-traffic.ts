@@ -1,7 +1,11 @@
 import { timingSafeEqual } from 'node:crypto';
 
 import { ApiError, endpoint, headerValue, sendJson } from '../http.js';
-import { cleanupPendingNewsletterSubscribers, cleanupTrafficHashes } from '../db.js';
+import {
+  auditExpiredPermissionGrants,
+  cleanupPendingNewsletterSubscribers,
+  cleanupTrafficHashes,
+} from '../db.js';
 
 /**
  * GET /api/cron/traffic-cleanup
@@ -28,9 +32,10 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     throw new ApiError(401, 'unauthorized', 'Not allowed.');
   }
 
-  const [deleted, pendingSubscribersDeleted] = await Promise.all([
+  const [deleted, pendingSubscribersDeleted, expiredGrantsAudited] = await Promise.all([
     cleanupTrafficHashes(),
     cleanupPendingNewsletterSubscribers(),
+    auditExpiredPermissionGrants(),
   ]);
-  sendJson(res, 200, { ok: true, deleted, pendingSubscribersDeleted });
+  sendJson(res, 200, { ok: true, deleted, pendingSubscribersDeleted, expiredGrantsAudited });
 });

@@ -3,6 +3,8 @@ import { Resend } from 'resend';
 import { renderEmail, renderEmailText, renderLeadEmail } from './email-template.js';
 import { resolveEmailTemplate } from './email-templates.js';
 import { counterKey } from './security.js';
+import { superAdminEmail } from './staff.js';
+import type { Permission } from './permissions.js';
 
 /**
  * Transactional email. When RESEND_API_KEY is not configured the message is
@@ -141,6 +143,93 @@ export async function sendStaffInviteEmail(
       site: appUrl(),
     }),
   });
+}
+
+type AccessNotificationOutcome = 'request' | 'approved' | 'declined';
+
+function accessNotificationCopy(
+  name: string | null,
+  permission: Permission,
+  outcome: AccessNotificationOutcome,
+) {
+  const displayName = name?.replace(/\s+/g, ' ').trim().slice(0, 100) || 'A staff member';
+  if (outcome === 'request') {
+    return {
+      subject: 'New staff access request',
+      heading: 'Access requested',
+      paragraphs: [`${displayName} requested access to ${permission}.`],
+    };
+  }
+  if (outcome === 'approved') {
+    return {
+      subject: 'Staff access approved',
+      heading: 'Access approved',
+      paragraphs: [`Hello ${displayName}.`, `Your request for ${permission} access was approved.`],
+    };
+  }
+  return {
+    subject: 'Staff access declined',
+    heading: 'Access declined',
+    paragraphs: [`Hello ${displayName}.`, `Your request for ${permission} access was declined.`],
+  };
+}
+
+export function buildAccessNotificationContent(
+  name: string | null,
+  permission: Permission,
+  outcome: AccessNotificationOutcome,
+): { subject: string; text: string } {
+  const content = accessNotificationCopy(name, permission, outcome);
+  return {
+    subject: content.subject,
+    text: renderEmailText({ paragraphs: content.paragraphs }),
+  };
+}
+
+async function sendAccessNotification(
+  to: string,
+  name: string | null,
+  permission: Permission,
+  outcome: AccessNotificationOutcome,
+): Promise<boolean> {
+  try {
+    const copy = accessNotificationCopy(name, permission, outcome);
+    const content = buildAccessNotificationContent(name, permission, outcome);
+    return await sendEmail({
+      to,
+      tag: 'access',
+      subject: content.subject,
+      text: content.text,
+      html: renderEmail({
+        preheader: content.subject,
+        heading: copy.heading,
+        paragraphs: copy.paragraphs,
+        reason: 'You are getting this because of a staff access request.',
+        site: appUrl(),
+      }),
+    });
+  } catch (error) {
+    console.error(
+      `[access] notification preparation failed (${error instanceof Error ? error.name : 'unknown'})`,
+    );
+    return false;
+  }
+}
+
+export function sendAccessRequestNotification(
+  name: string | null,
+  permission: Permission,
+): Promise<boolean> {
+  return sendAccessNotification(superAdminEmail(), name, permission, 'request');
+}
+
+export function sendAccessDecisionNotification(
+  to: string,
+  name: string | null,
+  permission: Permission,
+  outcome: 'approved' | 'declined',
+): Promise<boolean> {
+  return sendAccessNotification(to, name, permission, outcome);
 }
 
 /**

@@ -1,6 +1,10 @@
 import { getEffectivePermissions } from '../access.js';
 import { auditActorForUser, prepareAuditWrite } from '../audit.js';
 import {
+  sendAccessDecisionNotification,
+  sendAccessRequestNotification,
+} from '../email.js';
+import {
   approveAccessRequest,
   cancelAccessRequest,
   createAccessRequest,
@@ -85,7 +89,12 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       audit,
     });
     if (!request) throw conflict();
-    sendJson(res, 201, { request });
+    if (!(await sendAccessRequestNotification(request.requester_name, request.permission))) {
+      console.error('[access] request notification was not sent');
+    }
+    sendJson(res, 201, {
+      request: { id: request.id, permission: request.permission, status: request.status },
+    });
     return;
   }
 
@@ -105,7 +114,9 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       audit,
     });
     if (!request) throw conflict();
-    sendJson(res, 200, { request });
+    sendJson(res, 200, {
+      request: { id: request.id, permission: request.permission, status: request.status },
+    });
     return;
   }
 
@@ -127,7 +138,25 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       audit,
     });
     if (!request) throw conflict();
-    sendJson(res, 200, { request });
+    if (
+      !(await sendAccessDecisionNotification(
+        request.requester_email,
+        request.requester_name,
+        request.permission,
+        'approved',
+      ))
+    ) {
+      console.error('[access] approval notification was not sent');
+    }
+    sendJson(res, 200, {
+      request: {
+        id: request.id,
+        permission: request.permission,
+        status: request.status,
+        expires_at: request.expires_at,
+        grant_id: request.grant_id,
+      },
+    });
     return;
   }
 
@@ -146,7 +175,19 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       audit,
     });
     if (!request) throw conflict();
-    sendJson(res, 200, { request });
+    if (
+      !(await sendAccessDecisionNotification(
+        request.requester_email,
+        request.requester_name,
+        request.permission,
+        'declined',
+      ))
+    ) {
+      console.error('[access] decline notification was not sent');
+    }
+    sendJson(res, 200, {
+      request: { id: request.id, permission: request.permission, status: request.status },
+    });
     return;
   }
 

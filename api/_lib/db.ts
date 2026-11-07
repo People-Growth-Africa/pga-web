@@ -146,14 +146,26 @@ export async function createAccessRequest(input: {
   reason: string;
   requestedDuration: number | null;
   audit: AuditWrite;
-}): Promise<{ id: string; permission: Permission; status: string } | null> {
+}): Promise<{
+  id: string;
+  permission: Permission;
+  status: string;
+  requester_name: string | null;
+  requester_email: string;
+} | null> {
   return auditedAccessMutation({
-    mutationSql: `INSERT INTO access_requests
-                    (requester_id, permission, reason, requested_duration)
-                  VALUES ($1, $2, $3, $4)
-                  ON CONFLICT (requester_id, permission) WHERE status = 'pending'
-                  DO NOTHING
-                  RETURNING id, permission, status`,
+    mutationSql: `WITH created AS (
+                    INSERT INTO access_requests
+                      (requester_id, permission, reason, requested_duration)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (requester_id, permission) WHERE status = 'pending'
+                    DO NOTHING
+                    RETURNING id, requester_id, permission, status
+                  )
+                  SELECT created.id, created.permission, created.status,
+                         users.name AS requester_name, users.email AS requester_email
+                    FROM created
+                    JOIN users ON users.id = created.requester_id`,
     mutationParams: [
       input.requesterId,
       input.permission,
@@ -192,6 +204,8 @@ export async function approveAccessRequest(input: {
   status: string;
   expires_at: string | null;
   grant_id: string;
+  requester_name: string | null;
+  requester_email: string;
 } | null> {
   return auditedAccessMutation({
     mutationSql: `WITH approved AS (
@@ -213,9 +227,11 @@ export async function approveAccessRequest(input: {
                     RETURNING id, request_id, expires_at
                   )
                   SELECT approved.id, approved.permission, approved.status,
-                         new_grant.expires_at::text AS expires_at, new_grant.id AS grant_id
+                         new_grant.expires_at::text AS expires_at, new_grant.id AS grant_id,
+                         users.name AS requester_name, users.email AS requester_email
                     FROM approved
-                    JOIN new_grant ON new_grant.request_id = approved.id`,
+                    JOIN new_grant ON new_grant.request_id = approved.id
+                    JOIN users ON users.id = approved.requester_id`,
     mutationParams: [input.requestId, input.decidedBy, input.duration],
     audit: input.audit,
     afterFromMutation: ['permission', 'status', 'expires_at'],
@@ -227,13 +243,25 @@ export async function declineAccessRequest(input: {
   decidedBy: string;
   decisionNote: string;
   audit: AuditWrite;
-}): Promise<{ id: string; permission: Permission; status: string } | null> {
+}): Promise<{
+  id: string;
+  permission: Permission;
+  status: string;
+  requester_name: string | null;
+  requester_email: string;
+} | null> {
   return auditedAccessMutation({
-    mutationSql: `UPDATE access_requests
-                     SET status = 'declined', decided_by = $2, decided_at = now(),
-                         decision_note = $3
-                   WHERE id = $1 AND status = 'pending'
-                   RETURNING id, permission, status`,
+    mutationSql: `WITH declined AS (
+                    UPDATE access_requests
+                       SET status = 'declined', decided_by = $2, decided_at = now(),
+                           decision_note = $3
+                     WHERE id = $1 AND status = 'pending'
+                     RETURNING id, requester_id, permission, status
+                  )
+                  SELECT declined.id, declined.permission, declined.status,
+                         users.name AS requester_name, users.email AS requester_email
+                    FROM declined
+                    JOIN users ON users.id = declined.requester_id`,
     mutationParams: [input.requestId, input.decidedBy, input.decisionNote],
     audit: input.audit,
     afterFromMutation: ['permission', 'status'],
@@ -262,6 +290,38 @@ export async function revokePermissionGrant(input: {
     audit: input.audit,
     afterFromMutation: ['permission', 'status', 'expires_at', 'revoked_at'],
   });
+}
+
+export async function auditExpiredPermissionGrants(): Promise<number> {
+  const [row] = await query<{ count: number }>(
+    `WITH expired AS (
+       UPDATE permission_grants
+          SET expiration_audited_at = now()
+        WHERE expires_at <= now()
+          AND revoked_at IS NULL
+          AND expiration_audited_at IS NULL
+        RETURNING id, permission, expires_at, expiration_audited_at
+     ),
+     logged AS (
+       INSERT INTO audit_logs (
+         actor_id, actor_email, actor_role, action, entity_type, entity_id,
+         entity_label, "before", "after", ip, user_agent, request_id
+       )
+       SELECT NULL, NULL, NULL, 'access.grant_expired', 'permission_grant',
+              id::text, permission,
+              jsonb_build_object('status', 'active', 'expires_at', expires_at),
+              jsonb_build_object(
+                'status', 'expired',
+                'expires_at', expires_at,
+                'expiration_audited_at', expiration_audited_at
+              ),
+              NULL, NULL, NULL
+         FROM expired
+       RETURNING id
+     )
+     SELECT count(*)::int AS count FROM logged`,
+  );
+  return row?.count ?? 0;
 }
 
 export type SessionUserRow = Omit<UserRow, 'password_hash'>;

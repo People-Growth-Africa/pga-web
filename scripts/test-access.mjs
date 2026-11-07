@@ -153,6 +153,7 @@ let sql;
 let requesterId;
 let otherRequesterId;
 let adminId;
+let expiredGrantId;
 let server;
 
 function check(description, passed, detail = '') {
@@ -426,13 +427,52 @@ async function runConstraintChecks() {
      VALUES ($1, 'content.publish', $2, $3)`,
     [requesterId, adminId, secondRequest.id],
   );
+  const [expiredGrant] = await sql.query(
+    `INSERT INTO permission_grants
+       (user_id, permission, granted_by, granted_at, expires_at)
+     VALUES ($1, 'content.edit', $2, now() - interval '2 days', now() - interval '1 day')
+     RETURNING id`,
+    [requesterId, adminId],
+  );
+  expiredGrantId = expiredGrant.id;
   check('a valid request and grant can be stored', Boolean(pendingRequest?.id && secondRequest?.id));
 }
 
 async function runApiChecks() {
   process.env.JWT_SECRET ??= `access-test-secret-${randomUUID()}-long-enough`;
+  process.env.VERCEL_ENV = 'development';
+  process.env.CRON_SECRET = `access-test-cron-${randomUUID()}`;
+  delete process.env.RESEND_API_KEY;
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  const { buildAccessNotificationContent } = await import('../api/_lib/email.ts');
+  const accessPermissions = [
+    'content.edit',
+    'content.publish',
+    'email_template.edit',
+    'consultation.update',
+    'export.data',
+  ];
+  const outcomes = ['request', 'approved', 'declined'];
+  const notificationContents = accessPermissions.flatMap((permission) =>
+    outcomes.map((outcome) => ({
+      permission,
+      content: buildAccessNotificationContent('Access Test Name', permission, outcome),
+    })),
+  );
+  check(
+    'access email copy contains only the supplied name and permission',
+    notificationContents.every(
+      ({ permission, content }) =>
+        content.text.includes('Access Test Name') &&
+        content.text.includes(permission) &&
+        !content.text.includes(requesterEmail) &&
+        !content.text.includes(otherRequesterEmail) &&
+        !content.text.includes('private reason') &&
+        !content.text.includes('private decision note') &&
+        !content.text.includes('grant identifier'),
+    ),
+  );
   const { startApiServer } = await import('./api-server.mjs');
   server = await startApiServer({ quiet: true, serveStatic: false });
   const baseUrl = server.origin;
@@ -496,6 +536,10 @@ async function runApiChecks() {
       Array.isArray(adminOverview.json?.pendingRequests) &&
       Array.isArray(adminOverview.json?.activeGrants),
     `${requesterOverview.status}/${adminOverview.status}`,
+  );
+  check(
+    'expired grants stop contributing to effective permissions before expiry auditing',
+    !requesterOverview.json?.effectivePermissions?.includes('content.edit'),
   );
 
   const firstReason = `test reason ${testStamp}`;
@@ -804,6 +848,33 @@ async function runApiChecks() {
       requesterHistory.json?.requests?.some((request) => request.id === firstRequestId && request.status === 'cancelled') &&
       requesterHistory.json?.requests?.some((request) => request.id === secondRequestId && request.status === 'approved'),
     `${requesterHistory.status}`,
+  );
+
+  const firstCron = await call(baseUrl, '/api/cron/traffic-cleanup', {
+    headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+  });
+  const secondCron = await call(baseUrl, '/api/cron/traffic-cleanup', {
+    headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+  });
+  const [expiredGrant] = await sql.query(
+    'SELECT expiration_audited_at FROM permission_grants WHERE id = $1',
+    [expiredGrantId],
+  );
+  const [expiryAuditCount] = await sql.query(
+    `SELECT count(*)::int AS count
+       FROM audit_logs
+      WHERE action = 'access.grant_expired' AND entity_id = $1`,
+    [expiredGrantId],
+  );
+  check(
+    'daily cron audits each expired grant once across repeated runs',
+    firstCron.status === 200 &&
+      firstCron.json?.expiredGrantsAudited >= 1 &&
+      secondCron.status === 200 &&
+      secondCron.json?.expiredGrantsAudited === 0 &&
+      Boolean(expiredGrant?.expiration_audited_at) &&
+      expiryAuditCount?.count === 1,
+    `${firstCron.status}/${firstCron.json?.expiredGrantsAudited}/${secondCron.status}/${secondCron.json?.expiredGrantsAudited}`,
   );
 }
 
