@@ -1,12 +1,19 @@
 import { SignJWT, jwtVerify } from 'jose';
+import { randomUUID } from 'node:crypto';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ApiError, headerValue } from './http.js';
-import type { Role } from './db.js';
+import {
+  createServerSession,
+  extendServerSession,
+  touchServerSession,
+  type Role,
+} from './db.js';
 
 /**
  * Sessions are a signed JWT in an httpOnly cookie. The token carries the user's
- * id, role and token_version; the version is re-checked against the database on
- * every authenticated request, so bumping it ends every existing session.
+ * id, role, token_version and server-side session id. Every authenticated
+ * request validates both the session row and current account state, so revoke,
+ * disable and token-version changes take effect immediately.
  *
  * There are three separate cookies, one per portal:
  *
@@ -96,6 +103,7 @@ function loadJwtSecret(): Uint8Array {
 
 export type SessionClaims = {
   userId: string;
+  sessionId: string;
   role: Role;
   tokenVersion: number;
   /** When this sign-in began. The idle window slides; this does not. */
@@ -131,6 +139,17 @@ function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+function isRole(value: unknown): value is Role {
+  return value === 'talent' ||
+    value === 'employer' ||
+    value === 'manager' ||
+    value === 'admin' ||
+    value === 'project_manager' ||
+    value === 'hr_manager' ||
+    value === 'content_manager' ||
+    value === 'data_admin';
+}
+
 /**
  * Kept so an endpoint can check the configuration up front and answer 500 with
  * a readable message instead of failing at module load. The real check already
@@ -151,6 +170,8 @@ export async function createSessionToken(claims: {
   userId: string;
   role: Role;
   tokenVersion: number;
+  sessionId?: string;
+  req?: VercelRequest;
   /** Carried through a refresh so the absolute limit still holds. */
   absoluteStart?: number;
   /** Which portal this token belongs to. Public by default. */
@@ -158,17 +179,37 @@ export async function createSessionToken(claims: {
 }): Promise<string> {
   const issuedAt = nowSeconds();
   const portal = claims.portal ?? 'public';
+  const sessionId = claims.sessionId ?? randomUUID();
+  const absoluteStart = claims.absoluteStart ?? issuedAt;
+  const expiresAt = issuedAt + Math.min(
+    sessionTtlSeconds(claims.role),
+    Math.max(0, absoluteStart + absoluteLimitSeconds(claims.role) - issuedAt),
+  );
+  if (!claims.sessionId) {
+    const forwarded = claims.req?.headers['x-forwarded-for'];
+    const ipHeader = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    const userAgent = claims.req?.headers['user-agent'];
+    await createServerSession({
+      id: sessionId,
+      userId: claims.userId,
+      portal,
+      expiresAt: new Date(expiresAt * 1000).toISOString(),
+      ip: typeof ipHeader === 'string' ? ipHeader.split(',')[0]?.trim().slice(0, 100) ?? null : null,
+      userAgent: (Array.isArray(userAgent) ? userAgent[0] : userAgent)?.slice(0, 500) ?? null,
+    });
+  }
   return new SignJWT({
     role: claims.role,
     ver: claims.tokenVersion,
-    abs: claims.absoluteStart ?? issuedAt,
+    abs: absoluteStart,
+    sid: sessionId,
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(claims.userId)
     .setIssuer(ISSUER)
     .setAudience(AUDIENCES[portal])
     .setIssuedAt(issuedAt)
-    .setExpirationTime(issuedAt + sessionTtlSeconds(claims.role))
+    .setExpirationTime(expiresAt)
     .sign(JWT_SECRET);
 }
 
@@ -187,10 +228,23 @@ export async function refreshManagerSession(
   if (!isStaffSessionRole(session.role)) return;
   if (nowSeconds() - session.issuedAt < SESSION_TOUCH_SECONDS) return;
 
+  const expiresAt = nowSeconds() + Math.min(
+    MANAGER_IDLE_SECONDS,
+    Math.max(0, session.absoluteStart + MANAGER_ABSOLUTE_SECONDS - nowSeconds()),
+  );
+  if (!(await extendServerSession({
+    id: session.sessionId,
+    userId: session.userId,
+    portal,
+    expiresAt: new Date(expiresAt * 1000).toISOString(),
+  }))) {
+    throw new ApiError(401, 'session_expired', 'Your session ended. Log in again.');
+  }
   const token = await createSessionToken({
     userId: session.userId,
     role: session.role,
     tokenVersion: session.tokenVersion,
+    sessionId: session.sessionId,
     absoluteStart: session.absoluteStart,
     portal,
   });
@@ -218,32 +272,21 @@ export async function readSession(
   const token = readCookie(req, COOKIE_NAMES[portal]);
   if (!token) return null;
 
+  let payload: Awaited<ReturnType<typeof jwtVerify>>['payload'];
   try {
-    // Pinning the algorithm stops a token that claims "none" or a different
-    // algorithm from ever being accepted. The issuer and audience checks stop a
-    // token minted for another portal from being replayed here.
-    const { payload } = await jwtVerify(token, JWT_SECRET, {
+    ({ payload } = await jwtVerify(token, JWT_SECRET, {
       issuer: ISSUER,
       audience: AUDIENCES[portal],
       algorithms: ['HS256'],
-    });
+    }));
+  } catch {
+    return null;
+  }
     const role = payload.role;
     const ver = payload.ver;
-    if (typeof payload.sub !== 'string' || typeof ver !== 'number') return null;
-    // An allow list rather than a lookup: a token carrying any other value is
-    // refused outright. The guards read the role from this claim.
-    if (
-      role !== 'talent' &&
-      role !== 'employer' &&
-      role !== 'manager' &&
-      role !== 'admin' &&
-      role !== 'project_manager' &&
-      role !== 'hr_manager' &&
-      role !== 'content_manager' &&
-      role !== 'data_admin'
-    ) {
-      return null;
-    }
+    const sessionId = payload.sid;
+    if (typeof payload.sub !== 'string' || typeof ver !== 'number' || typeof sessionId !== 'string') return null;
+    if (!isRole(role)) return null;
 
     // Tokens minted before this limit existed carry no `abs`; their `iat` is the
     // closest true answer, and it is the same day the token was made.
@@ -253,10 +296,16 @@ export async function readSession(
     // that stops a staff member from working around it by staying busy for days.
     if (nowSeconds() - absoluteStart > absoluteLimitSeconds(role)) return null;
 
-    return { userId: payload.sub, role, tokenVersion: ver, absoluteStart, issuedAt };
-  } catch {
-    return null;
-  }
+  const session = {
+    userId: payload.sub,
+    sessionId,
+    role,
+    tokenVersion: ver,
+    absoluteStart,
+    issuedAt,
+  };
+  if (!(await touchServerSession({ id: sessionId, userId: session.userId, portal }))) return null;
+  return session;
 }
 
 /**

@@ -9,7 +9,9 @@ import {
   setOnlySessionCookie,
 } from '../../session.js';
 import { enforceRateLimit } from '../../ratelimit.js';
-import { recordAuthEvent } from '../../audit.js';
+import { recordAuthEvent, recordLoginEvent } from '../../audit.js';
+import { reportFailedLogin } from '../../security-alerts.js';
+import { scheduleBestEffort } from '../../best-effort.js';
 
 /**
  * POST /api/auth/login
@@ -40,12 +42,16 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     // timed to reveal whether the email is registered.
     await spendPasswordTime(data.password);
     await recordAuthEvent('login_failed_unknown_email', { ip });
+    await recordLoginEvent(req, { userId: null, emailAttempted: data.email, success: false });
+    scheduleBestEffort(() => reportFailedLogin(data.email, ip), 'security-alert');
     throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
   }
 
   const passwordMatches = await verifyPassword(data.password, user.password_hash);
   if (!passwordMatches) {
     await recordAuthEvent('login_failed_bad_password', { userId: user.id, ip });
+    await recordLoginEvent(req, { userId: user.id, emailAttempted: data.email, success: false });
+    scheduleBestEffort(() => reportFailedLogin(data.email, ip), 'security-alert');
     throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
   }
 
@@ -53,6 +59,8 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   // address has a disabled account.
   if (user.disabled_at !== null) {
     await recordAuthEvent('login_failed_disabled', { userId: user.id, ip });
+    await recordLoginEvent(req, { userId: user.id, emailAttempted: data.email, success: false });
+    scheduleBestEffort(() => reportFailedLogin(data.email, ip), 'security-alert');
     throw new ApiError(403, 'account_disabled', 'This account has been disabled. Contact an administrator.');
   }
 
@@ -63,6 +71,8 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     // wrong password, so this endpoint cannot be used to enumerate accounts, and
     // the rate limits and lockout above have already charged the attempt.
     await recordAuthEvent('login_failed_wrong_portal', { userId: user.id, ip });
+    await recordLoginEvent(req, { userId: user.id, emailAttempted: data.email, success: false });
+    scheduleBestEffort(() => reportFailedLogin(data.email, ip), 'security-alert');
     throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
   }
   const portal = 'public';
@@ -82,11 +92,13 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     role: user.role,
     tokenVersion,
     portal,
+    req,
   });
   // Signing in here also clears the other portal cookies, so one browser has
   // one identity and a panel cannot keep showing a person who just left.
   setOnlySessionCookie(req, res, sessionToken, sessionTtlSeconds(user.role), portal);
   await recordAuthEvent('login', { userId: user.id, ip });
+  await recordLoginEvent(req, { userId: user.id, emailAttempted: data.email, success: true });
 
   sendJson(res, 200, {
     user: {

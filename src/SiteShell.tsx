@@ -28,10 +28,8 @@ import type { RouteComponents } from './routeComponents';
  * and React elements carry their props from the moment they were created. Pass
  * the new location in and the outgoing page would redraw as the incoming one.
  */
-const DEFAULT_SUPER_ADMIN_EMAIL = 'admin@peoplegrowthafrica.com';
-const configuredSuperAdminEmail = (import.meta.env.VITE_SUPER_ADMIN_EMAIL ?? DEFAULT_SUPER_ADMIN_EMAIL).trim().toLowerCase();
 function isSuperAdminUser(user: AuthUser | null): boolean {
-  return Boolean(user?.email && user.email.trim().toLowerCase() === configuredSuperAdminEmail);
+  return user?.isSuperAdmin === true;
 }
 
 function SuperAdminRoute({ children }: { children: import('react').ReactNode }) {
@@ -61,9 +59,12 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
     AdminAuditLog,
     AdminAccess,
     AdminMyAccess,
+    AdminNotifications,
+    AdminRetention,
     AdminOversight,
     AdminSetPassword,
     AdminStaff,
+    AdminSecurity,
     AdminStats,
     AdminEmailTemplates,
     ManagerLogin,
@@ -172,6 +173,52 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
             }
           />
           <Route
+            path="/admin/my-security"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={ADMIN_PORTAL_ROLES} signInPath="/admin/login">
+                  <AdminSecurity />
+                </RequireAuth>
+              ) : <Navigate to="/" replace />
+            }
+          />
+          <Route
+            path="/admin/security"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={['admin']} signInPath="/admin/login">
+                  <SuperAdminRoute><AdminSecurity /></SuperAdminRoute>
+                </RequireAuth>
+              ) : <Navigate to="/" replace />
+            }
+          />
+          <Route
+            path="/admin/notifications"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={ADMIN_PORTAL_ROLES} signInPath="/admin/login">
+                  <AdminNotifications />
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/retention"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={['admin']} signInPath="/admin/login">
+                  <SuperAdminRoute>
+                    <AdminRetention />
+                  </SuperAdminRoute>
+                </RequireAuth>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
             path="/admin/access"
             element={
               AUTH_ENABLED ? (
@@ -247,6 +294,16 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
               ) : (
                 <Navigate to="/" replace />
               )
+            }
+          />
+          <Route
+            path="/content/my-security"
+            element={
+              AUTH_ENABLED ? (
+                <RequireAuth roles={['content_manager']} signInPath="/content/login">
+                  <AdminSecurity />
+                </RequireAuth>
+              ) : <Navigate to="/" replace />
             }
           />
           <Route path="/terms" element={<Terms />} />

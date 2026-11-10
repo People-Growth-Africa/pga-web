@@ -3,7 +3,7 @@ import { Resend } from 'resend';
 import { renderEmail, renderEmailText, renderLeadEmail } from './email-template.js';
 import { resolveEmailTemplate } from './email-templates.js';
 import { counterKey } from './security.js';
-import { superAdminEmail } from './staff.js';
+import { listActiveSuperAdminEmails } from './db.js';
 import type { Permission } from './permissions.js';
 
 /**
@@ -220,7 +220,8 @@ export function sendAccessRequestNotification(
   name: string | null,
   permission: Permission,
 ): Promise<boolean> {
-  return sendAccessNotification(superAdminEmail(), name, permission, 'request');
+  return sendToActiveSuperAdmins((email) =>
+    sendAccessNotification(email, name, permission, 'request'));
 }
 
 export function sendAccessDecisionNotification(
@@ -230,6 +231,83 @@ export function sendAccessDecisionNotification(
   outcome: 'approved' | 'declined',
 ): Promise<boolean> {
   return sendAccessNotification(to, name, permission, outcome);
+}
+
+/**
+ * A deliberately aggregate-only retention receipt. Callers must provide row
+ * counts by dataset, never record details or user identifiers.
+ */
+export async function sendRetentionPurgeSummary(input: {
+  deletedByDataset: Record<string, number>;
+}): Promise<boolean> {
+  const allowedDatasets = new Set([
+    'registrations',
+    'event_registrations',
+    'newsletter_subscribers',
+    'consultation_bookings',
+    'failed_login_events',
+    'sessions',
+    'alerts',
+    'audit_logs',
+    'notifications',
+    'traffic_hits',
+  ]);
+  const summary = Object.entries(input.deletedByDataset)
+    .filter(([dataset, count]) =>
+      allowedDatasets.has(dataset) && Number.isSafeInteger(count) && count >= 0,
+    )
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (summary.length === 0) return false;
+
+  const lines = summary.map(([dataset, count]) => `${dataset}: ${count}`);
+  const text = ['Retention purge summary', '', ...lines].join('\n');
+  return sendToActiveSuperAdmins((email) => sendEmail({
+      to: email,
+      tag: 'retention',
+      subject: 'Retention purge summary',
+      text,
+      html: renderEmail({
+        preheader: 'A retention purge completed.',
+        heading: 'Retention purge summary',
+        paragraphs: lines,
+        reason: 'You are receiving this operational summary because a retention purge completed.',
+        site: appUrl(),
+      }),
+    }));
+}
+
+export async function sendSecurityAlertEmail(input: {
+  title: string;
+  body: string;
+}): Promise<boolean> {
+  const title = input.title.replace(/\s+/g, ' ').trim().slice(0, 120);
+  const body = input.body.replace(/\s+/g, ' ').trim().slice(0, 500);
+  if (!title || !body) return false;
+  return sendToActiveSuperAdmins((email) => sendEmail({
+      to: email,
+      tag: 'security-alert',
+      subject: `Security alert: ${title}`,
+      text: `${title}\n\n${body}`,
+      html: renderEmail({
+        preheader: title,
+        heading: title,
+        paragraphs: [body],
+        reason: 'You are receiving this operational security alert because an administrative activity threshold was reached.',
+        site: appUrl(),
+      }),
+    }));
+}
+
+async function sendToActiveSuperAdmins(
+  send: (email: string) => Promise<boolean>,
+): Promise<boolean> {
+  const recipients = await listActiveSuperAdminEmails();
+  if (recipients.length === 0) {
+    console.error('[admin-notification] no active super administrators found');
+    return false;
+  }
+  const results = await Promise.allSettled(recipients.map(send));
+  return results.every((result) => result.status === 'fulfilled' && result.value);
 }
 
 /**

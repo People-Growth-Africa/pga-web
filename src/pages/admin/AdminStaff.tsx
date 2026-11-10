@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
@@ -24,6 +25,7 @@ type Staff = {
   name: string | null;
   email: string;
   role: Role;
+  is_super_admin: boolean;
   disabled_at: string | null;
   must_change_password: boolean;
   created_at: string;
@@ -54,6 +56,7 @@ export default function AdminStaff() {
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editRole, setEditRole] = useState<StaffRole>('content_manager');
+  const [editIsSuperAdmin, setEditIsSuperAdmin] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -131,6 +134,7 @@ export default function AdminStaff() {
     setEditName(account.name ?? '');
     setEditEmail(account.email);
     setEditRole(account.role as StaffRole);
+    setEditIsSuperAdmin(account.is_super_admin);
     setEditError(null);
     setNotice(null);
     setError(null);
@@ -149,7 +153,13 @@ export default function AdminStaff() {
     setEditError(null);
     const result = await authRequest<{ ok: boolean; message: string }>('/api/admin/staff-detail', {
       method: 'PATCH',
-      body: { id: editing.id, name: editName, email: editEmail, role: editRole },
+      body: {
+        id: editing.id,
+        name: editName,
+        email: editEmail,
+        role: editRole,
+        isSuperAdmin: editIsSuperAdmin,
+      },
     });
     setSavingEdit(false);
 
@@ -292,12 +302,23 @@ export default function AdminStaff() {
                       <td className="break-all px-5 py-4 text-charcoal/75">{account.email}</td>
                       <td className="px-5 py-4">
                         <RoleBadge role={account.role} />
+                        {account.is_super_admin && (
+                          <span className="ml-2 inline-flex rounded-full bg-[#F5E9C9] px-2.5 py-1 text-[0.7rem] font-semibold text-[#735500]">
+                            Super admin
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <StatusBadge account={account} />
                       </td>
                       <td className="px-5 py-4 text-right">
                           <div className="flex flex-wrap items-center justify-end gap-2">
+                            <Link
+                              to={`/admin/security?userId=${encodeURIComponent(account.id)}`}
+                              className="inline-flex min-h-[38px] items-center rounded-[8px] border border-charcoal/15 bg-white px-4 py-1.5 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-charcoal no-underline hover:border-brand-green hover:bg-mint"
+                            >
+                              Security
+                            </Link>
                             {account.role === 'manager' ? (
                               // The form offers the four real roles only; a
                               // legacy row has to go through the migration.
@@ -398,7 +419,11 @@ export default function AdminStaff() {
                 Role
                 <select
                   value={editRole}
-                  onChange={(event) => setEditRole(event.target.value as StaffRole)}
+                  onChange={(event) => {
+                    const nextRole = event.target.value as StaffRole;
+                    setEditRole(nextRole);
+                    if (nextRole !== 'admin') setEditIsSuperAdmin(false);
+                  }}
                   disabled={isSelf(editing)}
                   className={`${inputClass} disabled:bg-cream/60 disabled:text-charcoal/55`}
                 >
@@ -408,6 +433,21 @@ export default function AdminStaff() {
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="flex items-start gap-3 rounded-[10px] border border-charcoal/10 bg-cream/40 p-3 text-sm text-charcoal">
+                <input
+                  type="checkbox"
+                  checked={editIsSuperAdmin && editRole === 'admin'}
+                  disabled={editRole !== 'admin'}
+                  onChange={(event) => setEditIsSuperAdmin(event.target.checked)}
+                  className="mt-0.5 accent-deep-green"
+                />
+                <span>
+                  <span className="block font-semibold">Super administrator</span>
+                  <span className="mt-0.5 block text-xs text-charcoal/60">
+                    Can manage staff, access requests and retention settings. The last active super administrator cannot be removed.
+                  </span>
+                </span>
               </label>
             </div>
 

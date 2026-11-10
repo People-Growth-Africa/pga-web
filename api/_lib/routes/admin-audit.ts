@@ -11,6 +11,9 @@ import { csvRows } from '../csv.js';
 import { endpoint, sendJson } from '../http.js';
 import { requirePermission, requireSuperAdmin } from '../staff.js';
 import { auditLogQuerySchema, parseInput } from '../validation.js';
+import { createBestEffortNotification } from '../notifications.js';
+import { SECURITY_ALERT_EVENTS, SECURITY_ALERT_THRESHOLDS } from '../security-alert-config.js';
+import { scheduleBestEffort } from '../best-effort.js';
 
 function str(value: string | string[] | undefined): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -94,6 +97,17 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
         rowCount: rows.length,
       },
     });
+    if (rows.length > SECURITY_ALERT_THRESHOLDS.largeExportRows) {
+      scheduleBestEffort(
+        () => createBestEffortNotification({
+          event: SECURITY_ALERT_EVENTS.export,
+          dataset: 'audit_logs',
+          rowCount: rows.length,
+          sensitive: false,
+        }),
+        'security-alert',
+      );
+    }
     sendCsv(res, rows);
     return;
   }

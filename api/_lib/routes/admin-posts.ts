@@ -9,7 +9,7 @@ import {
   sendJson,
 } from '../http.js';
 import { hasEffectivePermission } from '../access.js';
-import { requireAnyPermission, requirePermission } from '../staff.js';
+import { requireAnyPermission, requirePermission, requireSuperAdmin } from '../staff.js';
 import { auditActorForUser, prepareAuditWrite, recordAuthEvent } from '../audit.js';
 import {
   parseInput,
@@ -17,16 +17,19 @@ import {
   postCreateSchema,
   postListQuerySchema,
   postStatusSchema,
+  postRestoreSchema,
   postUpdateSchema,
 } from '../validation.js';
 import {
   deletePost,
+  permanentlyDeletePost,
   findPostById,
   insertPost,
   isUniqueViolation,
   listCategories,
   listPostsForAdmin,
   recordPostSlugRedirect,
+  restorePost,
   updatePost,
   type Role,
 } from '../db.js';
@@ -34,6 +37,8 @@ import { enforceRateLimit } from '../ratelimit.js';
 import { markContentChanged } from '../content/version.js';
 import { deleteCoverBlobs } from '../cover-blobs.js';
 import { announcePostChange } from '../indexnow.js';
+import { scheduleBestEffort } from '../best-effort.js';
+import { reportRecordDeletion } from '../security-alerts.js';
 
 /**
  * POST /api/admin/posts        - list, with optional status/category/search filters
@@ -89,6 +94,7 @@ export function makePostsHandler(
     if (req.method === 'GET') return listHandler(req, res);
     if (path.endsWith('/post')) {
       if (req.method === 'DELETE') return deleteHandler(req, res, manager);
+      if (req.method === 'POST') return restoreHandler(req, res, manager);
       return updateHandler(req, res, manager);
     }
     if (path.endsWith('/post-status')) return statusHandler(req, res, manager);
@@ -119,12 +125,18 @@ export default makePostsHandler({
 
 async function listHandler(req: VercelRequest, res: VercelResponse): Promise<void> {
   const query = req.query ?? {};
-  const filter = parseInput(postListQuerySchema, {
+  const parsedFilter = parseInput(postListQuerySchema, {
     ...(typeof query.type === 'string' ? { type: query.type } : {}),
     ...(typeof query.status === 'string' ? { status: query.status } : {}),
     ...(typeof query.categoryId === 'string' ? { categoryId: query.categoryId } : {}),
     ...(typeof query.search === 'string' ? { search: query.search } : {}),
+    ...(typeof query.deleted === 'string' ? { deleted: query.deleted } : {}),
   });
+
+  const filter = {
+    ...parsedFilter,
+    deletedOnly: parsedFilter.deleted === 'true',
+  };
 
   const [posts, categories] = await Promise.all([
     listPostsForAdmin(filter),
@@ -160,7 +172,8 @@ function postColumnsFrom(data: {
   registrationIntro?: string | null;
   registrationButtonLabel?: string | null;
   registrationForm?: unknown;
-  status: 'draft' | 'published';
+  status: 'draft' | 'published' | 'scheduled';
+  publishAt?: string | null;
 }) {
   return {
     type: data.type,
@@ -182,6 +195,7 @@ function postColumnsFrom(data: {
     registrationButtonLabel: data.registrationButtonLabel ?? null,
     registrationForm: data.registrationForm ?? null,
     status: data.status,
+    publishAt: data.status === 'scheduled' ? data.publishAt ?? null : null,
   };
 }
 
@@ -199,9 +213,15 @@ async function createHandler(req: VercelRequest, res: VercelResponse, manager: P
     const audit = prepareAuditWrite({
       req,
       actor: await auditActorForUser(userId),
-      action: 'content.create',
+      action: status === 'scheduled' ? 'content.scheduled' : 'content.create',
       entity: { type: data.type === 'event' ? 'event' : 'post', label: data.title },
-      after: { type: data.type, slug: data.slug, title: data.title, status },
+      after: {
+        type: data.type,
+        slug: data.slug,
+        title: data.title,
+        status,
+        ...(status === 'scheduled' ? { publish_at: data.publishAt } : {}),
+      },
     });
     const id = await insertPost({
       ...postColumnsFrom({ ...data, status }),
@@ -236,7 +256,7 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, manager: P
     : 'draft';
 
   const existing = await findPostById(data.id);
-  if (!existing) throw new ApiError(404, 'not_found', 'That post could not be found.');
+  if (!existing || existing.deleted_at) throw new ApiError(404, 'not_found', 'That post could not be found.');
 
   await assertCategoryExists(data.categoryId ?? null);
 
@@ -246,17 +266,24 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, manager: P
       slug: data.slug,
       title: data.title,
       status,
+      publish_at: status === 'scheduled' ? data.publishAt ?? null : null,
     };
     const previous = {
       type: existing.type,
       slug: existing.slug,
       title: existing.title,
       status: existing.status,
+      publish_at: existing.publish_at,
     };
+    const auditAction = status === 'scheduled'
+      ? existing.status === 'scheduled' ? 'content.rescheduled' : 'content.scheduled'
+      : existing.status === 'scheduled' && status === 'draft'
+        ? 'content.unscheduled'
+        : 'content.edit';
     const audit = prepareAuditWrite({
       req,
       actor: await auditActorForUser(userId),
-      action: 'content.edit',
+      action: auditAction,
       entity: {
         type: existing.type === 'event' ? 'event' : 'post',
         id: existing.id,
@@ -322,14 +349,22 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, manager: P
   const audit = prepareAuditWrite({
     req,
     actor: await auditActorForUser(userId),
-    action: status === 'published' ? 'content.publish' : 'content.unpublish',
+    action: existing.status === 'scheduled' && status === 'draft'
+      ? 'content.unscheduled'
+      : status === 'published' ? 'content.publish' : 'content.unpublish',
     entity: {
       type: existing.type === 'event' ? 'event' : 'post',
       id: existing.id,
       label: existing.title,
     },
     before: { type: existing.type, slug: existing.slug, title: existing.title, status: existing.status },
-    after: { type: existing.type, slug: existing.slug, title: existing.title, status },
+    after: {
+      type: existing.type,
+      slug: existing.slug,
+      title: existing.title,
+      status,
+      ...(existing.status === 'scheduled' ? { publish_at: null } : {}),
+    },
   });
   const updated = await updatePost({
     id,
@@ -352,6 +387,7 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, manager: P
     registrationButtonLabel: existing.registration_button_label,
     registrationForm: existing.registration_form,
     status,
+    publishAt: null,
     audit,
   });
   if (!updated) throw new ApiError(500, 'not_saved', 'That change could not be saved. Try again.');
@@ -381,18 +417,22 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, manager: P
   const existing = await findPostById(id);
   if (!existing) throw new ApiError(404, 'not_found', 'That post could not be found.');
 
+  const permanent = req.query?.purge === 'true';
+  if (permanent) await requireSuperAdmin(req, res);
   const audit = prepareAuditWrite({
     req,
     actor: await auditActorForUser(userId),
-    action: 'content.delete',
+    action: permanent ? 'content.purge' : 'content.delete',
     entity: { type: existing.type === 'event' ? 'event' : 'post', id: existing.id, label: existing.title },
     before: { type: existing.type, slug: existing.slug, title: existing.title, status: existing.status },
   });
-  const deleted = await deletePost(id, audit);
+  const deleted = permanent
+    ? await permanentlyDeletePost(id, audit)
+    : await deletePost(id, audit);
   if (!deleted) throw new ApiError(404, 'not_found', 'That post could not be found.');
+  scheduleBestEffort(() => reportRecordDeletion(userId), 'security-alert');
 
-  // Deleting the row is the point; the cover files go with it.
-  await deleteCoverBlobs([existing.cover_image_url, existing.cover_image_thumb_url]);
+  if (permanent) await deleteCoverBlobs([existing.cover_image_url, existing.cover_image_thumb_url]);
   await recordAuthEvent('admin_post_delete', { userId, ip: clientIp(req) });
   // A published URL is about to 404. IndexNow has no delete verb: submitting the
   // URL is how an engine is told to recrawl and drop it. A draft never had a
@@ -406,6 +446,24 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, manager: P
 
   markContentChanged();
   sendJson(res, 200, { ok: true, deleted: { id, slug: existing.slug, title: existing.title } });
+}
+
+async function restoreHandler(req: VercelRequest, res: VercelResponse, manager: PostActor): Promise<void> {
+  const { userId } = manager;
+  const { id } = parseInput(postRestoreSchema, parseJsonBody(req));
+  const existing = await findPostById(id);
+  if (!existing) throw new ApiError(404, 'not_found', 'That post could not be found.');
+  const audit = prepareAuditWrite({
+    req,
+    actor: await auditActorForUser(userId),
+    action: 'content.restore',
+    entity: { type: existing.type === 'event' ? 'event' : 'post', id, label: existing.title },
+    before: { type: existing.type, slug: existing.slug, title: existing.title, status: existing.status },
+    after: { type: existing.type, slug: existing.slug, title: existing.title, status: existing.status },
+  });
+  if (!(await restorePost(id, audit))) throw new ApiError(404, 'not_found', 'That post could not be restored.');
+  markContentChanged();
+  sendJson(res, 200, { ok: true, id });
 }
 
 /**

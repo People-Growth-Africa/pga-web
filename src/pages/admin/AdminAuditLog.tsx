@@ -26,13 +26,6 @@ const EMPTY_FILTERS: Filters = { from: '', to: '', actor: '', role: '', action: 
 const inputClass = 'min-h-[42px] w-full rounded-[9px] border border-charcoal/15 bg-white px-3 py-2 text-sm text-charcoal focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20';
 const labelClass = 'flex flex-col gap-1 text-xs font-medium text-charcoal/65';
 
-function isSuperAdmin(email: string | undefined): boolean {
-  const configured = (import.meta.env.VITE_SUPER_ADMIN_EMAIL ?? 'admin@peoplegrowthafrica.com')
-    .trim()
-    .toLowerCase();
-  return Boolean(email && email.trim().toLowerCase() === configured);
-}
-
 function formatDiff(value: Record<string, unknown> | null): string {
   if (!value) return '—';
   return Object.entries(value)
@@ -43,7 +36,7 @@ function formatDiff(value: Record<string, unknown> | null): string {
 export default function AdminAuditLog() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const canExport = isSuperAdmin(user?.email);
+  const canExport = user?.isSuperAdmin === true;
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
@@ -68,7 +61,7 @@ export default function AdminAuditLog() {
 
   useEffect(() => {
     let active = true;
-    void authRequest<AuditPage>(`/api/admin/audit-log?${queryString}`).then((result) => {
+    void authRequest<AuditPage>(`/api/admin/audit-log?${queryString}`, { method: 'GET' }).then((result) => {
       if (!active) return;
       setLoading(false);
       if (!result.ok) {

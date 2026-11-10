@@ -19,11 +19,15 @@ export interface RouteComponents {
   AdminContent: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminContent').default>>;
   AdminData: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminData').default>>;
   AdminAuditLog: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminAuditLog').default>>;
+  AdminTrafficBotRules: RouteComponent<ComponentProps<typeof import('./pages/admin/TrafficBotRules').default>>;
   AdminAccess: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminAccess').default>>;
   AdminMyAccess: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminMyAccess').default>>;
+  AdminNotifications: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminNotifications').default>>;
+  AdminRetention: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminRetention').default>>;
   AdminOversight: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminOversight').default>>;
   AdminSetPassword: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminSetPassword').default>>;
   AdminStaff: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminStaff').default>>;
+  AdminSecurity: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminSecurity').default>>;
   AdminStats: RouteComponent<ComponentProps<typeof import('./pages/admin/AdminStats').default>>;
   AdminEmailTemplates: RouteComponent<
     ComponentProps<typeof import('./pages/admin/AdminEmailTemplates').default>

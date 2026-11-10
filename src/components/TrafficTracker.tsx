@@ -7,14 +7,14 @@ import { isStaffRole } from '../lib/authClient';
 /**
  * Sends one page view on first load and on every client-side route change.
  *
- * No cookie, no identifier in the browser: the server derives a daily hash from
- * the request and forgets it after two days. Staff pages and Do Not Track are
- * excluded here; the server additionally drops known bots and unknown paths.
+ * The server assigns a short-lived hit ID so this beacon can enrich the
+ * server-side page hit instead of counting the same navigation twice. Staff
+ * pages are excluded here and again by routing middleware.
  */
 export default function TrafficTracker() {
   const location = useLocation();
   const { user, status } = useAuth();
-  const firstLoad = useRef(true);
+  const lastTrackedLocation = useRef<string | null>(null);
 
   useEffect(() => {
     // Wait for the session check, otherwise a staff member's first page view
@@ -35,19 +35,20 @@ export default function TrafficTracker() {
       return;
     }
 
-    const dnt =
-      navigator.doNotTrack === '1' ||
-      (window as unknown as { doNotTrack?: string }).doNotTrack === '1';
-    if (dnt) return;
+    const route = `${location.pathname}${location.search}`;
+    if (lastTrackedLocation.current === route) return;
+    const isInitialView = lastTrackedLocation.current === null;
+    lastTrackedLocation.current = route;
 
     // Only the first view can have an external referrer. A client-side route
     // change came from this site, so attributing it to the arrival source would
     // over-count that source.
-    const referrer = firstLoad.current ? document.referrer : '';
-    firstLoad.current = false;
+    const referrer = isInitialView ? document.referrer : '';
+    const hitId = isInitialView ? readTrafficHitId() ?? window.crypto.randomUUID() : window.crypto.randomUUID();
 
     const body = JSON.stringify({
-      path: `${path}${location.search}`,
+      hitId,
+      path: route,
       referrer: referrer || undefined,
       utmSource: new URLSearchParams(location.search).get('utm_source') ?? undefined,
     });
@@ -69,4 +70,12 @@ export default function TrafficTracker() {
   }, [location.pathname, location.search, user?.role, status]);
 
   return null;
+}
+
+function readTrafficHitId(): string | null {
+  const entry = document.cookie
+    .split('; ')
+    .find((cookie) => cookie.startsWith('pga_traffic_hit='));
+  const value = entry?.slice('pga_traffic_hit='.length);
+  return value && /^[0-9a-f-]{36}$/i.test(value) ? value : null;
 }

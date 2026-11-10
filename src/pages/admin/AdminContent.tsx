@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
+import { useAuth } from '../../hooks/useAuth';
 import { onSessionEnded } from '../../lib/authClient';
 import { livePostPath } from '../../lib/published';
 import CategoriesDialog from './CategoriesDialog';
@@ -10,10 +11,12 @@ import PostEditor from './PostEditor';
 import {
   createPost,
   deletePost,
+  purgePost,
   listContent,
   pingSession,
   setPostStatus,
   updatePost,
+  restorePost,
   uploadCover,
   type AdminCategory,
   type AdminPost,
@@ -39,6 +42,7 @@ const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
   { value: 'draft', label: 'Drafts' },
   { value: 'published', label: 'Published' },
+  { value: 'scheduled', label: 'Scheduled' },
 ] as const;
 
 const TYPE_OPTIONS = [
@@ -48,6 +52,7 @@ const TYPE_OPTIONS = [
 ] as const;
 
 export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) {
+  const { user } = useAuth();
   const [posts, setPosts] = useState<AdminPost[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +61,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [type, setType] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const [view, setView] = useState<View>('list');
   const [editing, setEditing] = useState<AdminPost | null>(null);
@@ -83,7 +89,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
   useEffect(() => onSessionEnded(() => endSession()), [endSession]);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
-    const result = await listContent({ signal });
+    const result = await listContent({ signal, deletedOnly: showDeleted });
     if (!result.ok) {
       setLoadError(result.failure.error);
       setLoading(false);
@@ -94,7 +100,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
     setCategories(result.data.categories);
     setLoadError(null);
     setLoading(false);
-  }, []);
+  }, [showDeleted]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -110,12 +116,13 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
           search: searchRef.current || undefined,
           status: status || undefined,
           type: type || undefined,
+          deletedOnly: showDeleted,
         });
         if (result.ok) setPosts(result.data.posts);
       })();
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [search, status, type]);
+  }, [search, status, type, showDeleted]);
 
   // Writing an article for an hour sends no requests, and a staff session ends
   // after thirty minutes without one. Real interaction is what says otherwise.
@@ -164,8 +171,9 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
     setEditing(null);
     setNotice({
       kind: 'success',
-      text:
-        draft.status === 'published'
+      text: draft.status === 'scheduled'
+        ? `“${draft.title}” is scheduled.`
+        : draft.status === 'published'
           ? `“${draft.title}” is published.`
           : `Draft “${draft.title}” saved.`,
     });
@@ -202,6 +210,26 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
     await refresh();
     setPendingDelete(null);
     setNotice({ kind: 'success', text: `“${pendingDelete.title}” was deleted.` });
+  }
+
+  async function restore(post: AdminPost) {
+    const result = await restorePost(post.id);
+    if (!result.ok) {
+      setNotice({ kind: 'error', text: result.failure.error });
+      return;
+    }
+    await refresh();
+    setNotice({ kind: 'success', text: `“${post.title}” was restored.` });
+  }
+
+  async function purge(post: AdminPost) {
+    const result = await purgePost(post.id);
+    if (!result.ok) {
+      setNotice({ kind: 'error', text: result.failure.error });
+      return;
+    }
+    await refresh();
+    setNotice({ kind: 'success', text: `“${post.title}” was permanently purged.` });
   }
 
   async function handleAddCategory(): Promise<string | null> {
@@ -292,6 +320,15 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
         ) : (
           <>
             <div className="mb-5 rounded-[16px] border border-charcoal/10 bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:p-5">
+              <div className="mb-4 flex gap-2">
+                {[false, true].map((deleted) => (
+                  <button key={String(deleted)} type="button" aria-pressed={showDeleted === deleted}
+                    onClick={() => setShowDeleted(deleted)}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold ${showDeleted === deleted ? 'bg-deep-green text-white' : 'bg-cream text-charcoal/70'}`}>
+                    {deleted ? 'Deleted' : 'Active'}
+                  </button>
+                ))}
+              </div>
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(200px,0.7fr)_auto]">
                 <div>
                   <label htmlFor="admin-search" className="sr-only">
@@ -415,8 +452,8 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
                       <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
                         <div className="min-w-0 flex-1">
                           <div className="mb-2 flex flex-wrap items-center gap-2.5">
-                            <Badge tone={published ? 'published' : 'draft'}>
-                              {published ? 'Published' : 'Draft'}
+                            <Badge tone={published ? 'published' : post.status === 'scheduled' ? 'event' : 'draft'}>
+                              {published ? 'Published' : post.status === 'scheduled' ? 'Scheduled' : 'Draft'}
                             </Badge>
                             <Badge tone={post.type === 'event' ? 'event' : 'blog'}>
                               {post.type === 'event' ? 'Event' : 'Blog'}
@@ -425,7 +462,9 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
                             <span className="font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
                               {published
                                 ? formatDate(post.published_at ?? post.updated_at)
-                                : 'Not published'}
+                                : post.status === 'scheduled'
+                                  ? `Scheduled for ${post.publish_at ? formatDate(post.publish_at) : 'later'}`
+                                  : 'Not published'}
                             </span>
                           </div>
                           <h2 className="break-words font-[family-name:var(--font-heading)] text-[1.25rem] font-semibold leading-snug text-charcoal sm:text-[1.35rem]">
@@ -455,14 +494,19 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
                           >
                             {published ? 'Unpublish' : 'Publish'}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setPendingDelete(post)}
-                            className={smallDanger}
-                          >
-                            Delete
-                          </button>
-                          {published && (
+                          {showDeleted ? (
+                            <>
+                              <button type="button" onClick={() => void restore(post)} className={smallOutline}>Restore</button>
+                              {user?.isSuperAdmin && (
+                                <button type="button" onClick={() => {
+                                  if (window.confirm(`Permanently purge “${post.title}”? This cannot be undone.`)) void purge(post);
+                                }} className={smallDanger}>Purge</button>
+                              )}
+                            </>
+                          ) : (
+                            <button type="button" onClick={() => setPendingDelete(post)} className={smallDanger}>Delete</button>
+                          )}
+                          {!showDeleted && published && (
                             <Link
                               to={livePostPath(post)}
                               className="inline-flex min-h-[38px] items-center rounded-full px-3 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-deep-green underline decoration-brand-green/40 underline-offset-2 hover:bg-mint"
@@ -508,8 +552,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
               Delete this post?
             </h2>
             <p className="mb-6 font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal/65">
-              “{pendingDelete.title}” will be removed from the site and the sitemap. This cannot be
-              undone.
+              “{pendingDelete.title}” will be hidden from the site and sitemap. It can be restored from the Deleted tab.
             </p>
             <div className="flex gap-3">
               <button

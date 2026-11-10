@@ -149,32 +149,8 @@ export async function requireAdmin(
 }
 
 /**
- * The one account that may invite, disable and edit other staff accounts.
- *
- * Deliberately an email rather than another role: the role column, the session
- * audiences and every portal guard already understand "admin", and a second
- * administrator role would have to be threaded through all of them for a
- * single account. `SUPER_ADMIN_EMAIL` lets the title move without a deploy;
- * unset, it is the address the seed script is documented with.
- *
- * Every other administrator keeps the read-only staff list. The check runs on
- * the server for each write, so hiding a button is a courtesy, not the rule.
- */
-export const DEFAULT_SUPER_ADMIN_EMAIL = 'admin@peoplegrowthafrica.com';
-
-export function superAdminEmail(): string {
-  const configured = (process.env.SUPER_ADMIN_EMAIL ?? '').trim().toLowerCase();
-  return configured || DEFAULT_SUPER_ADMIN_EMAIL;
-}
-
-export function isSuperAdminEmail(email: string | null | undefined): boolean {
-  return typeof email === 'string' && email.trim().toLowerCase() === superAdminEmail();
-}
-
-/**
- * The administrator role *and* the one email, re-read from the account row.
- * `requireStaff` has already checked the account is enabled and still holds
- * the administrator role; this adds the identity the write endpoints need.
+ * The database-backed super-administrator flag, re-read from the account row.
+ * `requireStaff` has already verified the live role and account state.
  */
 export async function requireSuperAdmin(
   req: VercelRequest,
@@ -182,7 +158,7 @@ export async function requireSuperAdmin(
 ): Promise<{ session: SessionClaims; user: SessionUserRow }> {
   const session = await requirePermission(req, res, 'admin.staff.manage');
   const user = await findSessionUserById(session.userId);
-  if (!user || !isSuperAdminEmail(user.email)) {
+  if (!user || !user.is_super_admin || user.disabled_at !== null || user.role !== 'admin') {
     throw new ApiError(
       403,
       'super_admin_only',

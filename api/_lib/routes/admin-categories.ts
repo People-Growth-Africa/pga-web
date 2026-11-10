@@ -20,6 +20,8 @@ import {
 } from '../db.js';
 import { enforceRateLimit } from '../ratelimit.js';
 import { markContentChanged } from '../content/version.js';
+import { reportRecordDeletion } from '../security-alerts.js';
+import { scheduleBestEffort } from '../best-effort.js';
 
 /**
  * GET    /api/admin/categories        - list, each carrying its post count
@@ -168,6 +170,7 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, userId: st
   }
 
   if (!deleted) throw new ApiError(404, 'not_found', 'That category could not be found.');
+  scheduleBestEffort(() => reportRecordDeletion(userId), 'security-alert');
 
   sendJson(res, 200, { ok: true, deleted: { id: existing.id, name: existing.name }, movedPosts: 0 });
 }

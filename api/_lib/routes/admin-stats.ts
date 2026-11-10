@@ -4,6 +4,7 @@ import { parseInput, statsQuerySchema } from '../validation.js';
 import {
   dailyCounts,
   getDashboardCounts,
+  getConsultationPipelineCounts,
   registrationCountsByEvent,
   type CategoryStats,
 } from '../db.js';
@@ -45,6 +46,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
       dailyCounts('users', from, "role = 'employer'"),
       registrationCountsByEvent(from),
     ]);
+  const consultationPipeline = await getConsultationPipelineCounts();
 
   const days = new Map<
     string,
@@ -94,6 +96,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
       talent: withChange(counts.talent),
       employers: withChange(counts.employers),
     },
+    consultationPipeline,
     series,
     events,
   });

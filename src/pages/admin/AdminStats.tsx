@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
 import { authRequest, onSessionEnded } from '../../lib/authClient';
+import TrafficBotRules from './TrafficBotRules';
 
 /**
  * /admin/stats - the staff dashboard.
@@ -33,18 +34,27 @@ type Stats = {
     talent: CategoryCount;
     employers: CategoryCount;
   };
+  consultationPipeline: {
+    new: number;
+    contacted: number;
+    scheduled: number;
+    done: number;
+    newOlderThan48Hours: number;
+  };
   series: SeriesRow[];
   events: { event_slug: string; total: number }[];
 };
-type TopRow = { label: string; views: number };
+type TopRow = { label: string; views: number; humanViews?: number; suspectedBotViews?: number };
+type CountryRow = TopRow & { humanViews: number; suspectedBotViews: number };
 type Traffic = {
   totals: { views: number; uniques: number };
   previous: { views: number; uniques: number } | null;
   daily: { day: string; views: number; uniques: number }[];
   pages: TopRow[];
   referrers: TopRow[];
-  countries: TopRow[];
+  countries: CountryRow[];
   devices: TopRow[];
+  suspectedBots: { hits: number; reasons: { reason: string; hits: number }[] };
 };
 type RangeKey = '7' | '30' | '90' | 'all';
 
@@ -147,6 +157,7 @@ function LineChart({
 
 export default function AdminStats() {
   const [range, setRange] = useState<RangeKey>('30');
+  const [hideBots, setHideBots] = useState(true);
   const [stats, setStats] = useState<Stats | null>(null);
   const [traffic, setTraffic] = useState<Traffic | null>(null);
   const [loading, setLoading] = useState(true);
@@ -170,7 +181,10 @@ export default function AdminStats() {
     async (signal?: AbortSignal) => {
       const [statsResult, trafficResult] = await Promise.all([
         authRequest<Stats>(`/api/admin/stats?range=${range}`, { method: 'GET' }),
-        authRequest<Traffic>(`/api/admin/traffic?range=${range}`, { method: 'GET' }),
+        authRequest<Traffic>(
+          `/api/admin/traffic?range=${range}&hideBots=${hideBots}`,
+          { method: 'GET' },
+        ),
       ]);
       if (signal?.aborted) return;
       if (!statsResult.ok) {
@@ -188,7 +202,7 @@ export default function AdminStats() {
       setError(null);
       setLoading(false);
     },
-    [range],
+    [hideBots, range],
   );
 
   useEffect(() => {
@@ -268,6 +282,24 @@ export default function AdminStats() {
                 })}
               </div>
 
+              <section className="mb-6 rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
+                <h2 className="mb-4 font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Consultation pipeline</h2>
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                  {[
+                    ['New', stats.consultationPipeline.new],
+                    ['Contacted', stats.consultationPipeline.contacted],
+                    ['Scheduled', stats.consultationPipeline.scheduled],
+                    ['Done', stats.consultationPipeline.done],
+                    ['New over 48 hours', stats.consultationPipeline.newOlderThan48Hours],
+                  ].map(([label, total]) => (
+                    <div key={label} className="rounded-xl bg-cream/60 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-charcoal/55">{label}</p>
+                      <p className="mt-2 text-2xl font-bold text-charcoal">{total}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
               <div className="mb-6 rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Activity per day</h2>
@@ -322,17 +354,37 @@ export default function AdminStats() {
                 </div>
 
                 <div className="rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
-                  <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Website traffic</h2>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Website traffic</h2>
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-charcoal/75">
+                      <input
+                        type="checkbox"
+                        checked={hideBots}
+                        onChange={(event) => setHideBots(event.target.checked)}
+                        className="h-4 w-4 accent-deep-green"
+                      />
+                      Hide suspected bots
+                    </label>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
                     <div className="rounded-xl bg-cream/60 p-3">
-                      <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/50">Page views</p>
+                      <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/50">
+                        {hideBots ? 'Estimated human page views' : 'All page views'}
+                      </p>
                       <p className="mt-1 text-2xl font-bold text-charcoal">{traffic.totals.views}</p>
                       {trafficChange && <p className="text-[0.7rem] text-charcoal/55">{changeLabel(trafficChange.views, 'previous period')}</p>}
                     </div>
                     <div className="rounded-xl bg-cream/60 p-3">
-                      <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/50">Unique visitors</p>
+                      <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/50">
+                        {hideBots ? 'Estimated human visitors' : 'All visitor-days'}
+                      </p>
                       <p className="mt-1 text-2xl font-bold text-charcoal">{traffic.totals.uniques}</p>
                       {trafficChange && <p className="text-[0.7rem] text-charcoal/55">{changeLabel(trafficChange.uniques, 'previous period')}</p>}
+                    </div>
+                    <div className="col-span-2 rounded-xl bg-terracotta/10 p-3 lg:col-span-1">
+                      <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-terracotta">Suspected bot hits</p>
+                      <p className="mt-1 text-2xl font-bold text-charcoal">{traffic.suspectedBots.hits}</p>
+                      <p className="text-[0.7rem] text-charcoal/55">Scored from multiple signals</p>
                     </div>
                   </div>
                   <div className="mt-4">
@@ -345,8 +397,20 @@ export default function AdminStats() {
                     />
                   </div>
                   <p className="mt-3 text-[0.7rem] text-charcoal/45">
-                    Counted without cookies. Staff pages and known bots are excluded.
+                    Traffic figures are estimates. Country and referrer lists use the same filter.
                   </p>
+                  {traffic.suspectedBots.reasons.length > 0 && (
+                    <div className="mt-4 border-t border-charcoal/10 pt-3">
+                      <h3 className="text-xs font-bold text-charcoal">Why hits were flagged</h3>
+                      <ul className="mt-2 flex flex-wrap gap-2">
+                        {traffic.suspectedBots.reasons.map((item) => (
+                          <li key={item.reason} className="rounded-full bg-cream px-2.5 py-1 text-[0.68rem] text-charcoal/70">
+                            {item.reason.replace(/_/g, ' ')} <strong className="ml-1 text-charcoal">{item.hits}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -368,7 +432,14 @@ export default function AdminStats() {
                             <span className="truncate text-charcoal/75" title={row.label}>
                               {block.title === 'Top countries' ? countryName(row.label) : row.label}
                             </span>
-                            <span className="shrink-0 font-semibold text-charcoal">{row.views}</span>
+                            <span className="shrink-0 text-right">
+                              <span className="block font-semibold text-charcoal">{row.views}</span>
+                              {block.title === 'Top countries' && (
+                                <span className="block text-[0.62rem] text-charcoal/45">
+                                  human {row.humanViews ?? 0} · bots {row.suspectedBotViews ?? 0}
+                                </span>
+                              )}
+                            </span>
                           </li>
                         ))}
                       </ol>
@@ -376,6 +447,7 @@ export default function AdminStats() {
                   </div>
                 ))}
               </div>
+              <TrafficBotRules />
             </>
           )}
       </AdminShell>

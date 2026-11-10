@@ -14,6 +14,9 @@ import {
   type RegistrationFilter,
   type RegistrationRow,
 } from '../db.js';
+import { createBestEffortNotification } from '../notifications.js';
+import { SECURITY_ALERT_EVENTS, SECURITY_ALERT_THRESHOLDS } from '../security-alert-config.js';
+import { scheduleBestEffort } from '../best-effort.js';
 
 /**
  * GET /api/admin/registrations        - paginated list, filter and search
@@ -100,6 +103,17 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
         rowCount: rows.length,
       },
     });
+    if (rows.length > SECURITY_ALERT_THRESHOLDS.largeExportRows) {
+      scheduleBestEffort(
+        () => createBestEffortNotification({
+          event: SECURITY_ALERT_EVENTS.export,
+          dataset: 'registrations',
+          rowCount: rows.length,
+          sensitive: false,
+        }),
+        'security-alert',
+      );
+    }
     sendCsv(res, rows, filter.eventSlug);
     return;
   }

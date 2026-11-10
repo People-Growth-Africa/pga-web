@@ -1,57 +1,18 @@
-import { createHash } from 'node:crypto';
-import type { VercelRequest } from '@vercel/node';
-
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { clientIp, endpoint, headerValue, parseJsonBody } from '../http.js';
 import { parseInput, trackSchema } from '../validation.js';
-import { enforceRateLimit } from '../ratelimit.js';
-import { recordPageView } from '../db.js';
+import { recordTrafficHit, type TrafficHitInput } from '../db.js';
 
-/**
- * POST /api/track
- *
- * One page view. Deliberately cheap: nothing is returned, no cookie is set, and
- * a path that is not a known public route is dropped. The IP and user agent are
- * used to count a daily unique visitor and are then discarded; only a salted
- * hash is kept, and that is deleted after two days by the cron job.
- */
-
-const PUBLIC_EXACT = new Set([
-  '/',
-  '/events',
-  '/blog',
-  '/consultation',
-  '/book',
-  '/auth',
-  '/auth/verify',
-  '/forgot-password',
-  '/newsletter/confirm',
-  '/privacy',
-  '/terms',
-]);
-const PUBLIC_PREFIXES = ['/events/', '/blog/'];
-
-const BOT_PATTERN =
-  /bot|crawl|spider|slurp|bingpreview|facebookexternalhit|headless|curl\/|wget\/|python-requests|go-http-client|scrapy|monitor|uptime/i;
-
-function publicPath(raw: string): { path: string; utmSource: string } | null {
+function normalizedPath(raw: string): string {
   let url: URL;
   try {
     url = new URL(raw, 'https://www.peoplegrowthafrica.com');
   } catch {
-    return null;
+    return '/';
   }
-  if (url.origin !== 'https://www.peoplegrowthafrica.com') return null;
   let path = url.pathname.replace(/\/{2,}/g, '/');
   if (path.length > 1) path = path.replace(/\/+$/, '');
-  if (path.startsWith('/admin') || path.startsWith('/content') || path.startsWith('/api')) return null;
-  if (!PUBLIC_EXACT.has(path) && !PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix))) {
-    return null;
-  }
-  const utmSource = (url.searchParams.get('utm_source') ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '')
-    .slice(0, 80);
-  return { path: path.slice(0, 300), utmSource };
+  return path.slice(0, 300) || '/';
 }
 
 function referrerHost(raw: string | undefined): string {
@@ -68,58 +29,74 @@ function referrerHost(raw: string | undefined): string {
   }
 }
 
-function deviceOf(userAgent: string): 'mobile' | 'tablet' | 'desktop' {
+function deviceOf(userAgent: string): string {
   if (/ipad|tablet|kindle|silk/i.test(userAgent)) return 'tablet';
   if (/mobi|android|iphone|ipod/i.test(userAgent)) return 'mobile';
   return 'desktop';
 }
 
-function countryOf(req: VercelRequest): string {
-  const raw = headerValue(req.headers['x-vercel-ip-country'])?.toUpperCase() ?? '';
+function countryOf(value: string | undefined): string {
+  const raw = value?.toUpperCase() ?? '';
   return /^[A-Z]{2}$/.test(raw) ? raw : 'ZZ';
 }
 
-export default endpoint({ methods: ['POST'] }, async (req, res) => {
-  const userAgent = headerValue(req.headers['user-agent']) ?? '';
-  const doNotTrack =
-    headerValue(req.headers.dnt) === '1' || headerValue(req.headers['sec-gpc']) === '1';
-  if (doNotTrack || !userAgent || BOT_PATTERN.test(userAgent)) {
-    res.status(204).end();
-    return;
-  }
+function utmSourceOf(value: string | undefined): string {
+  return (value ?? '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 80);
+}
 
-  // A request with no salt cannot produce uniques that are safe to store. It is
-  // dropped with the same empty answer rather than writing a guessable hash.
-  const salt = process.env.TRAFFIC_HASH_SALT ?? process.env.JWT_SECRET;
-  if (!salt) {
-    res.status(204).end();
-    return;
-  }
-
-  const data = parseInput(trackSchema, parseJsonBody(req));
-  const target = publicPath(data.path);
-  if (!target) {
-    res.status(204).end();
-    return;
-  }
-
-  const ip = clientIp(req);
-  await enforceRateLimit({ name: 'track-ip', identifier: ip, limit: 120, windowSeconds: 3600 });
-
+function hashes(ip: string, userAgent: string): { ipHash: string | null; visitorHash: string | null } {
+  const salt = process.env.TRAFFIC_HASH_SALT ?? process.env.AUDIT_HASH_SECRET ?? process.env.JWT_SECRET;
+  if (!salt) return { ipHash: null, visitorHash: null };
   const date = new Date().toISOString().slice(0, 10);
-  const visitorHash = createHash('sha256')
-    .update([ip, userAgent, salt, date].join('|'))
-    .digest('hex');
+  return {
+    ipHash: createHmac('sha256', salt).update(ip || 'unknown').digest('hex').slice(0, 32),
+    visitorHash: createHash('sha256')
+      .update([ip || 'unknown', userAgent, salt, date].join('|'))
+      .digest('hex'),
+  };
+}
 
-  await recordPageView({
-    date,
-    path: target.path,
-    referrerHost: referrerHost(data.referrer),
-    utmSource: target.utmSource || (data.utmSource ?? '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 80),
-    country: countryOf(req),
-    device: deviceOf(userAgent),
+export function trafficHitInput(input: {
+  hitId: string;
+  path: string;
+  referrer?: string;
+  utmSource?: string;
+  ip: string;
+  userAgent: string;
+  country?: string;
+  javascriptExecuted: boolean;
+}): TrafficHitInput {
+  const { ipHash, visitorHash } = hashes(input.ip, input.userAgent);
+  return {
+    hitId: input.hitId,
+    path: normalizedPath(input.path),
+    referrerHost: referrerHost(input.referrer),
+    utmSource: utmSourceOf(input.utmSource),
+    country: countryOf(input.country),
+    device: deviceOf(input.userAgent),
+    ipHash,
     visitorHash,
-  });
+    userAgent: input.userAgent.slice(0, 500),
+    javascriptExecuted: input.javascriptExecuted,
+  };
+}
 
+export default endpoint({ methods: ['POST'] }, async (req, res) => {
+  const data = parseInput(trackSchema, parseJsonBody(req));
+  const userAgent = headerValue(req.headers['user-agent']) ?? '';
+  const hitId = data.hitId ?? randomUUID();
+
+  await recordTrafficHit(
+    trafficHitInput({
+      hitId,
+      path: data.path,
+      referrer: data.referrer,
+      utmSource: data.utmSource,
+      ip: clientIp(req),
+      userAgent,
+      country: headerValue(req.headers['x-vercel-ip-country']),
+      javascriptExecuted: true,
+    }),
+  );
   res.status(204).end();
 });

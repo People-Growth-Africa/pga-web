@@ -42,6 +42,7 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/auth/logout': gatedAuth(async () => (await import('./auth/logout.js')).default),
   '/auth/logout-all': gatedAuth(async () => (await import('./auth/logout-all.js')).default),
   '/auth/me': gatedAuth(async () => (await import('./auth/me.js')).default),
+  '/auth/security': gatedAuth(async () => (await import('./auth/security.js')).default),
   '/auth/resend-verification': gatedAuth(async () => (await import('./auth/resend-verification.js')).default),
   '/auth/reset-password': gatedAuth(async () => (await import('./auth/reset-password.js')).default),
   '/auth/set-password': gatedAuth(async () => (await import('./auth/set-password.js')).default),
@@ -89,9 +90,14 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/admin/data': gatedAuth(async () => (await import('./admin-data.js')).default),
   '/admin/data-export': gatedAuth(async () => (await import('./admin-data.js')).default),
   '/admin/traffic': gatedAuth(async () => (await import('./admin-traffic.js')).default),
+  '/admin/traffic-rules': gatedAuth(async () => (await import('./admin-traffic-rules.js')).default),
   '/admin/staff': gatedAuth(async () => (await import('./admin-staff.js')).default),
+  '/admin/security': gatedAuth(async () => (await import('./admin-security.js')).default),
   '/admin/email-templates': gatedAuth(async () => (await import('./admin-email-templates.js')).default),
   '/admin/access': gatedAuth(async () => (await import('./admin-access.js')).default),
+  '/admin/notifications': gatedAuth(async () => (await import('./admin-notifications.js')).default),
+  '/admin/notifications-count': gatedAuth(async () => (await import('./admin-notification-count.js')).default),
+  '/admin/retention': gatedAuth(async () => (await import('./admin-retention.js')).default),
   '/admin/audit-log': gatedAuth(async () => (await import('./admin-audit.js')).default),
   '/admin/audit-log-export': gatedAuth(async () => (await import('./admin-audit.js')).default),
   //     Writing one account's name, email or role. Same module, its own path,
@@ -146,8 +152,10 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/registrations': requiresDatabase(async () => (await import('./registrations.js')).default),
   '/newsletter/confirm': requiresDatabase(async () => (await import('./newsletter/confirm.js')).default),
   '/newsletter/subscribe': requiresDatabase(async () => (await import('./newsletter/subscribe.js')).default),
-  //     First-party traffic: one public write-only beacon and one daily cron.
+  //     First-party traffic: public beacons, server-side page captures and a
+  //     daily cleanup pass.
   '/track': requiresDatabase(async () => (await import('./track.js')).default),
+  '/traffic-hit': requiresDatabase(async () => (await import('./traffic-hit.js')).default),
   '/cron/traffic-cleanup': requiresDatabase(async () => (await import('./cron-traffic.js')).default),
 };
 

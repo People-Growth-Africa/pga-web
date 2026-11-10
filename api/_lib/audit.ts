@@ -2,6 +2,7 @@ import {
   auditedMutation as runAuditedMutation,
   findSessionUserById,
   insertAuditLogRow,
+  insertLoginEvent,
   logAuthEvent,
   type AuditWrite,
 } from './db.js';
@@ -18,18 +19,38 @@ const AUDIT_FIELDS: Record<string, readonly string[]> = {
   'content.edit': ['type', 'slug', 'title', 'status'],
   'content.publish': ['type', 'slug', 'title', 'status'],
   'content.unpublish': ['type', 'slug', 'title', 'status'],
+  'content.scheduled': ['type', 'slug', 'title', 'status', 'publish_at'],
+  'content.rescheduled': ['type', 'slug', 'title', 'status', 'publish_at'],
+  'content.unscheduled': ['type', 'slug', 'title', 'status', 'publish_at'],
+  'content.auto_published': ['type', 'slug', 'title', 'status', 'publish_at'],
   'content.delete': ['type', 'slug', 'title', 'status'],
+  'content.restore': ['type', 'slug', 'title', 'status'],
+  'content.purge': ['type', 'slug', 'title', 'status'],
   'staff.create': ['role'],
-  'staff.role_change': ['role'],
-  'staff.account_update': ['role'],
+  'staff.role_change': ['role', 'is_super_admin'],
+  'staff.account_update': ['role', 'is_super_admin'],
   'staff.disable': ['disabled'],
   'staff.enable': ['disabled'],
+  'staff.super_admin_change': ['role', 'is_super_admin'],
   'staff.password_reset': [],
   'staff.password_change': [],
   'data.export': ['dataset', 'filters', 'rowCount'],
+  'registration.delete': ['id', 'name', 'event', 'deleted'],
+  'registration.restore': ['id', 'deleted'],
+  'registration.purge': ['id', 'deleted'],
+  'subscription.delete': ['id', 'deleted'],
+  'subscription.restore': ['id', 'deleted'],
+  'subscription.purge': ['id', 'deleted'],
+  'consultation.delete': ['id', 'name', 'deleted'],
+  'consultation.restore': ['id', 'deleted'],
+  'consultation.purge': ['id', 'deleted'],
+  'consultation.status_change': ['status'],
+  'consultation.assignment': ['assigned_to'],
+  'consultation.note_edit': ['internal_notes_changed'],
   'auth.login': [],
   'auth.login_failed': [],
   'auth.logout': [],
+  'auth.forced_sign_out': [],
   'audit_log.export': ['dataset', 'filters', 'rowCount'],
   'access.request_created': ['permission', 'status'],
   'access.request_approved': ['permission', 'status', 'expires_at'],
@@ -37,6 +58,14 @@ const AUDIT_FIELDS: Record<string, readonly string[]> = {
   'access.request_cancelled': ['permission', 'status'],
   'access.grant_revoked': ['permission', 'status', 'expires_at', 'revoked_at'],
   'access.grant_expired': ['permission', 'status', 'expires_at', 'expiration_audited_at'],
+  'traffic.bot_rule.create': ['rule_type', 'pattern', 'classification'],
+  'traffic.bot_rule.delete': ['rule_type', 'pattern', 'classification'],
+  'retention.dry_run': ['dataset', 'rowCount'],
+  'retention.purge': ['dataset', 'rowCount'],
+  'retention.settings_update': ['enabled'],
+  'retention.raw_traffic_period_change': ['days'],
+  'retention.legal_hold': ['dataset', 'enabled'],
+  'retention.personal_data_delete': ['counts', 'rowCount'],
 };
 
 export type MutationAuditField =
@@ -44,7 +73,9 @@ export type MutationAuditField =
   | 'status'
   | 'expires_at'
   | 'revoked_at'
-  | 'expiration_audited_at';
+  | 'expiration_audited_at'
+  | 'counts'
+  | 'rowCount';
 
 function requestMetadata(req: VercelRequest) {
   const forwarded = req.headers['x-forwarded-for'];
@@ -153,5 +184,28 @@ export async function recordAuthEvent(
     // should be visible in the logs. Do not attach the raw error: a driver
     // message can contain the row values, including an email address.
     console.error('[auth] audit write failed', event);
+  }
+}
+
+export async function recordLoginEvent(
+  req: VercelRequest,
+  input: {
+    userId: string | null;
+    emailAttempted: string;
+    success: boolean;
+  },
+): Promise<void> {
+  const forwarded = req.headers['x-forwarded-for'];
+  const ipHeader = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const userAgent = req.headers['user-agent'];
+  try {
+    await insertLoginEvent({
+      ...input,
+      emailAttempted: input.emailAttempted.trim().slice(0, 320),
+      ip: typeof ipHeader === 'string' ? ipHeader.split(',')[0]?.trim().slice(0, 100) ?? null : null,
+      userAgent: (Array.isArray(userAgent) ? userAgent[0] : userAgent)?.slice(0, 500) ?? null,
+    });
+  } catch {
+    console.error('[auth] login history write failed');
   }
 }

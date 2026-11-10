@@ -27,7 +27,7 @@ const REQUEST_TIMEOUT_MS = 5000;
 const DEFAULT_DEDUPE_MS = 10 * 60 * 1000;
 const MAX_PER_MINUTE = 30;
 
-export type PostStatus = 'draft' | 'published';
+export type PostStatus = 'draft' | 'published' | 'scheduled';
 
 /** What changed, as the admin handlers know it. */
 export type PostChange = {

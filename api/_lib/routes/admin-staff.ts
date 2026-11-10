@@ -13,12 +13,16 @@ import {
   findUserByEmail,
   isUniqueViolation,
   listStaffAccounts,
+  isLastActiveSuperAdminViolation,
   setStaffDisabled,
   updateStaffAccount,
 } from '../db.js';
 import { hashPassword, hashToken, newToken } from '../security.js';
 import { sendStaffInviteEmail } from '../email.js';
 import { auditActorForUser, prepareAuditWrite } from '../audit.js';
+import { createBestEffortNotification } from '../notifications.js';
+import { SECURITY_ALERT_EVENTS } from '../security-alert-config.js';
+import { scheduleBestEffort } from '../best-effort.js';
 
 /**
  * GET   /api/admin/staff         - staff accounts, and whether this viewer may
@@ -28,10 +32,8 @@ import { auditActorForUser, prepareAuditWrite } from '../audit.js';
  * PATCH /api/admin/staff         - disable or re-enable one
  * PATCH /api/admin/staff-detail  - rewrite one's name, email or role
  *
- * Only the configured super administrator - `SUPER_ADMIN_EMAIL`, defaulting
- * to the seeded `admin@peoplegrowthafrica.com` - may read the list or write
- * staff changes. Authorization runs before the list query, so no other admin
- * receives account data from this endpoint.
+ * Only active database-backed super administrators may read the list or write
+ * staff changes. Authorization runs before the list query.
  */
 
 export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async (req, res) => {
@@ -107,6 +109,11 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
     const isSelf = data.id === user.id;
     const emailChanged = data.email.trim().toLowerCase() !== target.email.trim().toLowerCase();
     const roleChanged = data.role !== target.role;
+    const isSuperAdmin = data.role === 'admin' && (data.isSuperAdmin ?? target.is_super_admin);
+    if (data.isSuperAdmin === true && data.role !== 'admin') {
+      throw new ApiError(400, 'super_admin_requires_admin', 'A super administrator must have the administrator role.');
+    }
+    const superAdminChanged = isSuperAdmin !== target.is_super_admin;
 
     // A super administrator may correct their own name, but not hand away or
     // rewrite the account that is allowed to do this: the title is the address,
@@ -119,24 +126,33 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       );
     }
 
+    const action = roleChanged
+      ? 'staff.role_change'
+      : superAdminChanged
+        ? 'staff.super_admin_change'
+        : 'staff.account_update';
     const audit = prepareAuditWrite({
       req,
       actor: await auditActorForUser(session.userId),
-      action: roleChanged ? 'staff.role_change' : 'staff.account_update',
+      action,
       entity: { type: 'staff_account', id: target.id, label: target.email },
-      before: { role: target.role },
-      after: { role: data.role },
+      before: { role: target.role, is_super_admin: target.is_super_admin },
+      after: { role: data.role, is_super_admin: isSuperAdmin },
     });
     const saved = await updateStaffAccount({
       id: data.id,
       name: data.name ? data.name : null,
       email: data.email,
       role: data.role,
+      isSuperAdmin,
       // A new address has to be proved, and the set-password link is how this
       // panel already does that: the flag forces the screen, the invite opens it.
       resetPassword: emailChanged,
       audit,
     }).catch((error: unknown) => {
+      if (isLastActiveSuperAdminViolation(error)) {
+        throw new ApiError(409, 'last_super_admin', 'The last active super administrator cannot be demoted or removed.');
+      }
       if (isUniqueViolation(error)) {
         throw new ApiError(409, 'email_in_use', 'Another account already uses that email.', {
           email: 'Another account already uses that email.',
@@ -147,6 +163,17 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
 
     if (!saved) {
       throw new ApiError(404, 'staff_not_found', 'That staff account no longer exists.');
+    }
+
+    if (roleChanged) {
+      scheduleBestEffort(
+        () => createBestEffortNotification({
+          event: SECURITY_ALERT_EVENTS.roleChange,
+          previousRole: target.role,
+          nextRole: data.role,
+        }),
+        'security-alert',
+      );
     }
 
     let emailSent = false;
@@ -183,9 +210,22 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
     before: { disabled: target.disabled_at !== null },
     after: { disabled: data.disabled },
   });
-  const changed = await setStaffDisabled(data.id, data.disabled, audit);
+  const changed = await setStaffDisabled(data.id, data.disabled, audit).catch((error: unknown) => {
+    if (isLastActiveSuperAdminViolation(error)) {
+      throw new ApiError(409, 'last_super_admin', 'The last active super administrator cannot be disabled.');
+    }
+    throw error;
+  });
   if (!changed) {
     throw new ApiError(404, 'staff_not_found', 'That staff account no longer exists.');
+  }
+  if (data.disabled && target.disabled_at === null) {
+    scheduleBestEffort(
+      () => createBestEffortNotification({
+        event: SECURITY_ALERT_EVENTS.accountDisable,
+      }),
+      'security-alert',
+    );
   }
   sendJson(res, 200, { ok: true });
 });

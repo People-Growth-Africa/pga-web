@@ -6,6 +6,7 @@
  * retained because the database rejects deletion.
  */
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { register, registerHooks } from 'node:module';
 
@@ -36,6 +37,15 @@ process.env.DATABASE_URL = databaseUrl ?? 'postgresql://audit-test:audit-test@lo
 
 const { logAudit, auditedMutation, prepareAuditWrite } = await import('../api/_lib/audit.ts');
 const { hasPermission } = await import('../api/_lib/permissions.ts');
+const auditPageSource = await readFile(
+  new URL('../src/pages/admin/AdminAuditLog.tsx', import.meta.url),
+  'utf8',
+);
+assert.match(
+  auditPageSource,
+  /authRequest<AuditPage>\(`\/api\/admin\/audit-log\?\$\{queryString\}`, \{ method: 'GET' \}\)/,
+  'audit log pagination must use GET, which is the method accepted by the API endpoint',
+);
 
 assert.equal(hasPermission('admin', 'audit_log.view'), true);
 assert.equal(hasPermission('project_manager', 'audit_log.view'), false);

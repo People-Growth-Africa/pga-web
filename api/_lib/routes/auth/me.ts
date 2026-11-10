@@ -20,6 +20,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
       name: user.name ?? null,
       email: user.email,
       role: user.role,
+      isSuperAdmin: user.is_super_admin,
       emailVerified: user.email_verified,
       mustChangePassword: user.must_change_password,
       profile,

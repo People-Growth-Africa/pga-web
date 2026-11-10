@@ -63,6 +63,7 @@ type UploadCover = typeof uploadCoverFn;
 const ACTION_PHRASES = {
   draft: 'Save Draft',
   publish: 'Publish',
+  schedule: 'Schedule',
 } as const;
 
 export type EditorMode = 'create' | 'edit';
@@ -134,7 +135,8 @@ export default function PostEditor({
   // How many answers this event has already collected. A change to a live form
   // is allowed, but the editor is told it only affects new responses.
   const [responseCount, setResponseCount] = useState<number | null>(null);
-  const [status, setStatus] = useState<'draft' | 'published'>(initial.status);
+  const [status, setStatus] = useState<'draft' | 'published' | 'scheduled'>(initial.status);
+  const [publishAt, setPublishAt] = useState(initial.publishAt ?? '');
   const [previewing, setPreviewing] = useState(false);
   // Fields whose required-value message may be shown. Visiting one (or changing
   // it) opts it in, so an untouched form stays quiet.
@@ -154,7 +156,7 @@ export default function PostEditor({
    * claiming a publish that never happened.
    */
   const savedStatus = post?.status ?? 'draft';
-  const shownStatus: 'draft' | 'published' = error ? savedStatus : status;
+  const shownStatus: 'draft' | 'published' | 'scheduled' = error ? savedStatus : status;
 
   const chosenCategory = categories.find((category) => category.id === categoryId);
 
@@ -249,7 +251,7 @@ export default function PostEditor({
     return null;
   }, [type, cleanedForm]);
 
-  function buildDraft(nextStatus: 'draft' | 'published'): PostDraft {
+  function buildDraft(nextStatus: 'draft' | 'published' | 'scheduled'): PostDraft {
     const isEvent = type === 'event';
     return {
       type,
@@ -271,6 +273,7 @@ export default function PostEditor({
       registrationButtonLabel: isEvent ? registrationButtonLabel.trim() || null : null,
       registrationForm: isEvent ? cleanedForm : null,
       status: nextStatus,
+      publishAt: nextStatus === 'scheduled' ? lagosInputToIso(publishAt) : null,
     };
   }
 
@@ -298,7 +301,8 @@ export default function PostEditor({
     !eventEndInvalid &&
     !locationMissing &&
     !categoryMissing &&
-    registrationFormIssue === null;
+    registrationFormIssue === null &&
+    (status !== 'scheduled' || Boolean(lagosInputToIso(publishAt) && Date.parse(lagosInputToIso(publishAt)!) > Date.now()));
 
   const slugTaken = BUILT_IN_SLUGS.has(`${section}/${slugify(slug)}`);
 
@@ -795,10 +799,10 @@ export default function PostEditor({
             <span className="font-[family-name:var(--font-body)] text-sm text-charcoal/55">Status:</span>
             <span
               className={`inline-flex px-3 py-1 rounded-full font-[family-name:var(--font-body)] text-[0.72rem] font-semibold uppercase tracking-wider ${
-                shownStatus === 'published' ? 'bg-deep-green text-white' : 'bg-cream text-charcoal/60'
+                shownStatus === 'published' ? 'bg-deep-green text-white' : shownStatus === 'scheduled' ? 'bg-[#F8E6D6] text-[#A3571F]' : 'bg-cream text-charcoal/60'
               }`}
             >
-              {shownStatus === 'published' ? 'Published' : 'Draft'}
+              {shownStatus === 'published' ? 'Published' : shownStatus === 'scheduled' ? 'Scheduled' : 'Draft'}
             </span>
           </div>
           {!canSubmit && (title.trim() !== '' || slug.trim() !== '') && (
@@ -815,6 +819,20 @@ export default function PostEditor({
         </div>
 
         <div className="flex flex-wrap gap-3">
+          {canPublish && (
+            <label className="flex min-w-[220px] flex-col gap-1 text-xs font-medium text-charcoal/60">
+              <span>Schedule time (Lagos)</span>
+              <input
+                type="datetime-local"
+                value={publishAt}
+                onChange={(event) => {
+                  setPublishAt(event.target.value);
+                  if (event.target.value) setStatus('scheduled');
+                }}
+                className={inputClass}
+              />
+            </label>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -841,6 +859,19 @@ export default function PostEditor({
               className="px-7 py-3 bg-deep-green text-white rounded-full font-[family-name:var(--font-body)] text-sm font-semibold hover:bg-terracotta transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'Saving…' : shownStatus === 'published' ? 'Save changes' : ACTION_PHRASES.publish}
+            </button>
+          )}
+          {canPublish && (
+            <button
+              type="button"
+              onClick={() => {
+                setStatus('scheduled');
+                onSubmit(buildDraft('scheduled'));
+              }}
+              disabled={!canSubmit || !publishAt || saving}
+              className="px-6 py-3 bg-[#F8E6D6] text-[#A3571F] rounded-full font-[family-name:var(--font-body)] text-sm font-semibold hover:bg-[#F3D5B6] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Saving…' : ACTION_PHRASES.schedule}
             </button>
           )}
         </div>
@@ -958,6 +989,7 @@ function toDraft(post: AdminPost | null, initialType: LivePostType = 'blog'): Po
       registrationButtonLabel: null,
       registrationForm: null,
       status: 'draft',
+      publishAt: null,
     };
   }
 
@@ -981,5 +1013,6 @@ function toDraft(post: AdminPost | null, initialType: LivePostType = 'blog'): Po
     registrationButtonLabel: post.registration_button_label,
     registrationForm: coerceRegistrationForm(post.registration_form),
     status: post.status,
+    publishAt: post.publish_at ? isoToLagosInput(post.publish_at) : null,
   };
 }

@@ -99,6 +99,7 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     userId: created.id,
     role: created.role,
     tokenVersion: 0,
+    req,
   });
   setOnlySessionCookie(req, res, sessionToken, sessionTtlSeconds(created.role), 'public');
   await recordAuthEvent('signup', { userId: created.id, ip });

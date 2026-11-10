@@ -338,7 +338,7 @@ const linkLabel = z
   .nullable()
   .optional();
 
-const POST_STATUS = ['draft', 'published'] as const;
+const POST_STATUS = ['draft', 'published', 'scheduled'] as const;
 const POST_TYPES = ['blog', 'event'] as const;
 
 export type PostTypeInput = (typeof POST_TYPES)[number];
@@ -396,10 +396,13 @@ const postFields = {
   registrationButtonLabel: optionalLine(60, 'Button label'),
   registrationForm: registrationFormSaveSchema.nullable().optional(),
   status: z.enum(POST_STATUS),
+  publishAt: eventInstant,
 };
 
 type PostValues = {
   type: PostTypeInput;
+  status: (typeof POST_STATUS)[number];
+  publishAt?: string | null;
   categoryId?: string | null;
   eventStart?: string | null;
   eventEnd?: string | null;
@@ -416,6 +419,15 @@ type PostValues = {
  * The database enforces the same rules as a backstop.
  */
 function checkPostType(value: PostValues, ctx: z.RefinementCtx): void {
+  if (value.status === 'scheduled' && !value.publishAt) {
+    ctx.addIssue({ code: 'custom', path: ['publishAt'], message: 'Choose when this should publish.' });
+  }
+  if (value.status === 'scheduled' && value.publishAt && Date.parse(value.publishAt) <= Date.now()) {
+    ctx.addIssue({ code: 'custom', path: ['publishAt'], message: 'Choose a time in the future.' });
+  }
+  if (value.status !== 'scheduled' && value.publishAt) {
+    ctx.addIssue({ code: 'custom', path: ['publishAt'], message: 'Only scheduled content can have a publish time.' });
+  }
   if (value.type === 'event') {
     if (!value.eventStart) {
       ctx.addIssue({ code: 'custom', path: ['eventStart'], message: 'Enter when the event starts.' });
@@ -474,6 +486,7 @@ export const postUpdateSchema = z
   .transform(normalisePost);
 
 export const postByIdSchema = z.strictObject({ id });
+export const postRestoreSchema = z.strictObject({ action: z.literal('restore'), id });
 
 /** The query string of the admin list. Everything optional, all values capped. */
 export const postListQuerySchema = z.strictObject({
@@ -481,6 +494,7 @@ export const postListQuerySchema = z.strictObject({
   status: z.enum(POST_STATUS).optional(),
   categoryId: id.optional(),
   search: z.string().trim().max(120).optional(),
+  deleted: z.enum(['true', 'false']).optional(),
 });
 
 export const categoryCreateSchema = z.strictObject({
@@ -509,9 +523,20 @@ export const categoryDeleteSchema = z
     path: ['moveTo'],
   });
 
+export const notificationListQuerySchema = z.strictObject({
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  unreadOnly: z.enum(['true', 'false']).optional().transform((value) => value === 'true'),
+});
+
+export const notificationMutationSchema = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('read'), id: z.string().uuid() }),
+  z.strictObject({ action: z.literal('all') }),
+]);
+
 export const postStatusSchema = z.strictObject({
   id,
-  status: z.enum(POST_STATUS),
+  status: z.enum(['draft', 'published']),
 });
 
 /**
@@ -653,6 +678,7 @@ export const staffEditSchema = z.strictObject({
     .default(''),
   email,
   role: z.enum(STAFF_ROLE_VALUES),
+  isSuperAdmin: z.boolean().optional(),
 });
 
 export const staffInviteAcceptSchema = z.strictObject({
@@ -685,7 +711,33 @@ export const dataQuerySchema = z.strictObject({
   event: eventSlug.optional(),
   // Only the account directory has a role column to filter on.
   role: z.enum(['talent', 'employer']).optional(),
+  deleted: z.enum(['true', 'false']).optional(),
+  status: z.enum(['new', 'contacted', 'scheduled', 'done']).optional(),
+  owner: z.union([z.literal('unassigned'), z.string().uuid()]).optional(),
 });
+
+export const dataMutationSchema = z.discriminatedUnion('action', [
+  z.strictObject({
+    action: z.enum(['delete', 'restore', 'purge']),
+    type: z.enum(['registrations', 'subscriptions', 'consultations']),
+    id: z.string().uuid(),
+  }),
+  z.strictObject({
+    action: z.literal('consultation_status'),
+    id: z.string().uuid(),
+    status: z.enum(['new', 'contacted', 'scheduled', 'done']),
+  }),
+  z.strictObject({
+    action: z.literal('consultation_assign'),
+    id: z.string().uuid(),
+    assignedTo: z.string().uuid().nullable(),
+  }),
+  z.strictObject({
+    action: z.literal('consultation_note'),
+    id: z.string().uuid(),
+    internalNotes: z.string().max(2000),
+  }),
+]);
 
 export const auditLogQuerySchema = z.strictObject({
   from: DATE_VALUE.optional(),
@@ -738,10 +790,72 @@ export const accessRequestMutationSchema = z.discriminatedUnion('action', [
 ]);
 
 export const trackSchema = z.strictObject({
+  hitId: z.string().uuid().optional(),
   path: z.string().trim().min(1).max(300),
   referrer: z.string().trim().max(300).optional(),
   utmSource: z.string().trim().max(80).optional(),
 });
+
+export const trafficHitSchema = z.strictObject({
+  hitId: z.string().uuid(),
+  signature: z.string().regex(/^[0-9a-f]{64}$/i),
+  path: z.string().trim().min(1).max(300),
+  referrer: z.string().trim().max(300).optional(),
+  utmSource: z.string().trim().max(80).optional(),
+  ip: z.string().max(100).optional(),
+  userAgent: z.string().max(500).optional(),
+  country: z.string().length(2).optional(),
+});
+
+export const trafficQuerySchema = z.strictObject({
+  range: z.enum(['7', '30', '90', 'all']).default('30'),
+  hideBots: z.enum(['true', 'false']).default('true'),
+});
+
+export const trafficBotRuleSchema = z.discriminatedUnion('action', [
+  z.strictObject({
+    action: z.literal('create'),
+    ruleType: z.enum(['user_agent', 'path']),
+    pattern: z.string().trim().min(2).max(120),
+    classification: z.enum(['bot', 'human']),
+  }),
+  z.strictObject({
+    action: z.literal('delete'),
+    id: z.string().uuid(),
+  }),
+]);
+
+export const retentionActionSchema = z.discriminatedUnion('action', [
+  z.strictObject({
+    action: z.literal('set_raw_traffic_days'),
+    days: z.number().int().min(1).max(730),
+  }),
+  z.strictObject({
+    action: z.literal('set_purge'),
+    enabled: z.boolean(),
+    confirmDefaults: z.boolean(),
+  }),
+  z.strictObject({ action: z.literal('dry_run') }),
+  z.strictObject({
+    action: z.literal('delete_person'),
+    email: z.string().trim().email().max(254),
+  }),
+  z.strictObject({
+    action: z.literal('set_legal_hold'),
+    dataset: z.enum([
+      'registrations',
+      'event_registrations',
+      'newsletter_subscribers',
+      'consultation_bookings',
+      'posts',
+      'events',
+      'users',
+      'enquiries',
+    ]),
+    id: z.string().uuid(),
+    enabled: z.boolean(),
+  }),
+]);
 
 export type StaffCreateInput = z.infer<typeof staffCreateSchema>;
 export type DataQuery = z.infer<typeof dataQuerySchema>;

@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import type { MutationAuditField } from './audit.js';
 import type { Permission } from './permissions.js';
+import { trafficClassificationCtes } from './traffic-bots.js';
 
 /**
  * Every statement in the app lives in this module. User input is only ever sent
@@ -74,6 +75,132 @@ export type Role =
   | 'content_manager'
   | 'data_admin';
 
+export type AuthPortal = 'public' | 'admin' | 'content';
+
+export type ServerSessionRow = {
+  id: string;
+  user_id: string;
+  portal: AuthPortal;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  ip: string | null;
+  user_agent: string | null;
+  revoked_at: string | null;
+};
+
+export async function createServerSession(input: {
+  id: string;
+  userId: string;
+  portal: AuthPortal;
+  expiresAt: string;
+  ip: string | null;
+  userAgent: string | null;
+}): Promise<void> {
+  await query(
+    `INSERT INTO sessions (id, user_id, portal, expires_at, ip, user_agent)
+     VALUES ($1, $2, $3, $4::timestamptz, $5, $6)`,
+    [input.id, input.userId, input.portal, input.expiresAt, input.ip, input.userAgent],
+  );
+}
+
+export async function touchServerSession(input: {
+  id: string;
+  userId: string;
+  portal: AuthPortal;
+}): Promise<boolean> {
+  const rows = await query<{ id: string }>(
+    `UPDATE sessions SET last_seen_at = now()
+      WHERE id = $1 AND user_id = $2 AND portal = $3
+        AND revoked_at IS NULL AND expires_at > now()
+      RETURNING id`,
+    [input.id, input.userId, input.portal],
+  );
+  return rows.length > 0;
+}
+
+export async function extendServerSession(input: {
+  id: string;
+  userId: string;
+  portal: AuthPortal;
+  expiresAt: string;
+}): Promise<boolean> {
+  const rows = await query<{ id: string }>(
+    `UPDATE sessions SET last_seen_at = now(), expires_at = $4::timestamptz
+      WHERE id = $1 AND user_id = $2 AND portal = $3
+        AND revoked_at IS NULL AND expires_at > now()
+      RETURNING id`,
+    [input.id, input.userId, input.portal, input.expiresAt],
+  );
+  return rows.length > 0;
+}
+
+export async function listServerSessions(userId: string): Promise<ServerSessionRow[]> {
+  return query<ServerSessionRow>(
+    `SELECT id, user_id, portal,
+            ${isoTimestamp('sessions', 'created_at')} AS created_at,
+            ${isoTimestamp('sessions', 'last_seen_at')} AS last_seen_at,
+            ${isoTimestamp('sessions', 'expires_at')} AS expires_at,
+            ip, user_agent,
+            ${isoTimestamp('sessions', 'revoked_at')} AS revoked_at
+       FROM sessions WHERE user_id = $1
+      ORDER BY last_seen_at DESC LIMIT 100`,
+    [userId],
+  );
+}
+
+export async function revokeServerSession(userId: string, sessionId: string): Promise<boolean> {
+  const rows = await query<{ id: string }>(
+    `UPDATE sessions SET revoked_at = now()
+      WHERE id = $2 AND user_id = $1 AND revoked_at IS NULL
+      RETURNING id`,
+    [userId, sessionId],
+  );
+  return rows.length > 0;
+}
+
+export async function revokeUserServerSessions(userId: string, exceptId?: string): Promise<number> {
+  const rows = await query<{ id: string }>(
+    `UPDATE sessions SET revoked_at = now()
+      WHERE user_id = $1 AND revoked_at IS NULL
+        AND ($2::uuid IS NULL OR id <> $2)
+      RETURNING id`,
+    [userId, exceptId ?? null],
+  );
+  return rows.length;
+}
+
+export async function listLoginEvents(userId: string): Promise<{
+  id: string;
+  email_attempted: string;
+  success: boolean;
+  ip: string | null;
+  user_agent: string | null;
+  created_at: string;
+}[]> {
+  return query(
+    `SELECT id, email_attempted, success, ip, user_agent,
+            ${isoTimestamp('login_events', 'created_at')} AS created_at
+       FROM login_events WHERE user_id = $1
+      ORDER BY created_at DESC LIMIT 100`,
+    [userId],
+  );
+}
+
+export async function insertLoginEvent(input: {
+  userId: string | null;
+  emailAttempted: string;
+  success: boolean;
+  ip: string | null;
+  userAgent: string | null;
+}): Promise<void> {
+  await query(
+    `INSERT INTO login_events (user_id, email_attempted, success, ip, user_agent)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [input.userId, input.emailAttempted, input.success, input.ip, input.userAgent],
+  );
+}
+
 export type StaffRole =
   | 'admin'
   | 'project_manager'
@@ -128,6 +255,7 @@ export type UserRow = {
   token_version: number;
   must_change_password: boolean;
   disabled_at: string | null;
+  is_super_admin: boolean;
 };
 
 async function auditedAccessMutation<T>(input: {
@@ -148,6 +276,7 @@ export async function createAccessRequest(input: {
   audit: AuditWrite;
 }): Promise<{
   id: string;
+  requester_id: string;
   permission: Permission;
   status: string;
   requester_name: string | null;
@@ -162,7 +291,7 @@ export async function createAccessRequest(input: {
                     DO NOTHING
                     RETURNING id, requester_id, permission, status
                   )
-                  SELECT created.id, created.permission, created.status,
+                  SELECT created.id, created.requester_id, created.permission, created.status,
                          users.name AS requester_name, users.email AS requester_email
                     FROM created
                     JOIN users ON users.id = created.requester_id`,
@@ -204,6 +333,7 @@ export async function approveAccessRequest(input: {
   status: string;
   expires_at: string | null;
   grant_id: string;
+  requester_id: string;
   requester_name: string | null;
   requester_email: string;
 } | null> {
@@ -226,7 +356,7 @@ export async function approveAccessRequest(input: {
                       FROM approved
                     RETURNING id, request_id, expires_at
                   )
-                  SELECT approved.id, approved.permission, approved.status,
+                  SELECT approved.id, approved.requester_id, approved.permission, approved.status,
                          new_grant.expires_at::text AS expires_at, new_grant.id AS grant_id,
                          users.name AS requester_name, users.email AS requester_email
                     FROM approved
@@ -247,6 +377,7 @@ export async function declineAccessRequest(input: {
   id: string;
   permission: Permission;
   status: string;
+  requester_id: string;
   requester_name: string | null;
   requester_email: string;
 } | null> {
@@ -258,7 +389,7 @@ export async function declineAccessRequest(input: {
                      WHERE id = $1 AND status = 'pending'
                      RETURNING id, requester_id, permission, status
                   )
-                  SELECT declined.id, declined.permission, declined.status,
+                  SELECT declined.id, declined.requester_id, declined.permission, declined.status,
                          users.name AS requester_name, users.email AS requester_email
                     FROM declined
                     JOIN users ON users.id = declined.requester_id`,
@@ -327,9 +458,9 @@ export async function auditExpiredPermissionGrants(): Promise<number> {
 export type SessionUserRow = Omit<UserRow, 'password_hash'>;
 
 const USER_COLUMNS =
-  'id, name, email, role, password_hash, email_verified, token_version, must_change_password, disabled_at';
+  'id, name, email, role, password_hash, email_verified, token_version, must_change_password, disabled_at, is_super_admin';
 const SESSION_USER_COLUMNS =
-  'id, name, email, role, email_verified, token_version, must_change_password, disabled_at';
+  'id, name, email, role, email_verified, token_version, must_change_password, disabled_at, is_super_admin';
 
 export async function createTalentUser(input: {
   email: string;
@@ -476,6 +607,164 @@ export async function listActivePermissionGrants(): Promise<
         AND (g.expires_at IS NULL OR g.expires_at > now())
       ORDER BY g.granted_at DESC, g.id DESC`,
   );
+}
+
+export type NotificationRow = {
+  id: string;
+  type: string;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  body: string;
+  href: string | null;
+  read_at: string | null;
+  created_at: string;
+};
+
+export async function listNotificationRecipientIds(
+  audience: 'super_admin' | 'admin_portal' | 'consultation_update',
+): Promise<string[]> {
+  const rows = audience === 'super_admin'
+    ? await query<{ id: string }>(
+      `SELECT id FROM users
+        WHERE is_super_admin AND role = 'admin' AND disabled_at IS NULL`,
+    )
+    : audience === 'admin_portal'
+      ? await query<{ id: string }>(
+      `SELECT id FROM users
+        WHERE role IN ('admin', 'project_manager', 'hr_manager', 'data_admin')
+          AND disabled_at IS NULL`,
+      )
+      : await query<{ id: string }>(
+        `SELECT DISTINCT u.id
+           FROM users u
+          WHERE u.disabled_at IS NULL
+            AND u.role IN ('admin', 'project_manager', 'hr_manager', 'data_admin')
+            AND EXISTS (
+              SELECT 1 FROM permission_grants g
+               WHERE g.user_id = u.id
+                 AND g.permission = 'consultation.update'
+                 AND g.revoked_at IS NULL
+                 AND (g.expires_at IS NULL OR g.expires_at > now())
+            )`,
+      );
+  return rows.map(({ id }) => id);
+}
+
+export async function createNotification(input: {
+  userId: string;
+  type: string;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  body: string;
+  href: string | null;
+  dedupeSeconds?: number;
+  dedupeKey?: string;
+}): Promise<boolean> {
+  let row: { id: string } | null;
+  if (input.dedupeSeconds) {
+    row = await queryOne<{ id: string }>(
+      `INSERT INTO notifications
+         (user_id, type, severity, title, body, href, dedupe_key, dedupe_until)
+       VALUES ($1, $2, $3, $4, $5, $6, $2, now() + make_interval(secs => $7::integer))
+       ON CONFLICT (user_id, type, dedupe_key) WHERE dedupe_key IS NOT NULL
+       DO UPDATE SET severity = EXCLUDED.severity, title = EXCLUDED.title, body = EXCLUDED.body, href = EXCLUDED.href,
+                     read_at = NULL, created_at = now(), dedupe_until = EXCLUDED.dedupe_until
+         WHERE notifications.dedupe_until <= now()
+       RETURNING id`,
+      [input.userId, input.type, input.severity, input.title, input.body, input.href, input.dedupeSeconds],
+    );
+  } else if (input.dedupeKey) {
+    row = await queryOne<{ id: string }>(
+       `INSERT INTO notifications (user_id, type, severity, title, body, href, dedupe_key)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (user_id, type, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
+        RETURNING id`,
+       [input.userId, input.type, input.severity, input.title, input.body, input.href, input.dedupeKey],
+    );
+  } else {
+    row = await queryOne<{ id: string }>(
+       `INSERT INTO notifications (user_id, type, severity, title, body, href)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id`,
+       [input.userId, input.type, input.severity, input.title, input.body, input.href],
+    );
+  }
+  return row !== null;
+}
+
+export async function markStaleConsultationsNotified(): Promise<string[]> {
+  const rows = await query<{ id: string }>(
+    `UPDATE consultation_bookings
+        SET stale_notified_at = now()
+      WHERE status = 'new'
+        AND created_at <= now() - interval '48 hours'
+        AND stale_notified_at IS NULL
+      RETURNING id`,
+  );
+  return rows.map(({ id }) => id);
+}
+
+export async function countUnreadNotifications(userId: string): Promise<number> {
+  const row = await queryOne<{ count: string }>(
+    `SELECT count(*)::text AS count FROM notifications
+      WHERE user_id = $1 AND read_at IS NULL AND deleted_at IS NULL`,
+    [userId],
+  );
+  return Number(row?.count ?? 0);
+}
+
+export async function countNotifications(
+  userId: string,
+  unreadOnly: boolean,
+): Promise<number> {
+  const row = await queryOne<{ count: string }>(
+    `SELECT count(*)::text AS count FROM notifications
+      WHERE user_id = $1 AND deleted_at IS NULL
+        AND ($2::boolean = false OR read_at IS NULL)`,
+    [userId, unreadOnly],
+  );
+  return Number(row?.count ?? 0);
+}
+
+export async function listNotifications(input: {
+  userId: string;
+  limit: number;
+  offset: number;
+  unreadOnly: boolean;
+}): Promise<NotificationRow[]> {
+  return query<NotificationRow>(
+    `SELECT id, type, severity, title, body, href, read_at::text AS read_at,
+            created_at::text AS created_at
+       FROM notifications
+      WHERE user_id = $1 AND deleted_at IS NULL
+        AND ($2::boolean = false OR read_at IS NULL)
+      ORDER BY created_at DESC, id DESC
+      LIMIT $3 OFFSET $4`,
+    [input.userId, input.unreadOnly, input.limit, input.offset],
+  );
+}
+
+export async function markNotificationRead(
+  userId: string,
+  notificationId: string,
+): Promise<boolean> {
+  const row = await queryOne<{ id: string }>(
+    `UPDATE notifications SET read_at = now()
+      WHERE user_id = $1 AND id = $2 AND read_at IS NULL AND deleted_at IS NULL
+      RETURNING id`,
+    [userId, notificationId],
+  );
+  return row !== null;
+}
+
+export async function markAllNotificationsRead(userId: string): Promise<number> {
+  const rows = await query<{ id: string }>(
+    `UPDATE notifications SET read_at = now()
+      WHERE user_id = $1 AND read_at IS NULL AND deleted_at IS NULL
+      RETURNING id`,
+    [userId],
+  );
+  return rows.length;
 }
 
 /**
@@ -882,7 +1171,7 @@ export async function confirmNewsletterSubscriber(tokenHash: string): Promise<st
 const isoTimestamp = (table: string, column: string): string =>
   `to_char(${table}.${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 
-export type PostStatus = 'draft' | 'published';
+export type PostStatus = 'draft' | 'published' | 'scheduled';
 
 export type PostType = 'blog' | 'event';
 
@@ -920,9 +1209,12 @@ export type PostRow = {
   registration_form: unknown | null;
   status: PostStatus;
   published_at: string | null;
+  publish_at: string | null;
   created_at: string;
   updated_at: string;
   author_id: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
 };
 
 const POST_COLUMNS = `p.id, p.type, p.slug, p.title, p.excerpt, p.body, p.category_id,
@@ -933,9 +1225,10 @@ const POST_COLUMNS = `p.id, p.type, p.slug, p.title, p.excerpt, p.body, p.catego
          p.location_text, p.is_online, p.registration_url,
          p.registration_intro, p.registration_button_label, p.registration_form, p.status,
          ${isoTimestamp('p', 'published_at')} AS published_at,
+         ${isoTimestamp('p', 'publish_at')} AS publish_at,
          ${isoTimestamp('p', 'created_at')} AS created_at,
          ${isoTimestamp('p', 'updated_at')} AS updated_at,
-         p.author_id`;
+         p.author_id, ${isoTimestamp('p', 'deleted_at')} AS deleted_at, p.deleted_by`;
 
 // LEFT JOIN, not JOIN: an event carries no category, and an inner join would
 // quietly drop every event from every list.
@@ -944,7 +1237,7 @@ const POST_FROM = `FROM posts p LEFT JOIN categories c ON c.id = p.category_id`;
 export async function listCategories(): Promise<CategoryRow[]> {
   return query<CategoryRow>(
     `SELECT c.id, c.name, c.slug, ${isoTimestamp('c', 'created_at')} AS created_at,
-            (SELECT count(*) FROM posts p WHERE p.category_id = c.id)::int AS post_count
+            (SELECT count(*) FROM posts p WHERE p.category_id = c.id AND p.deleted_at IS NULL)::int AS post_count
        FROM categories c
       ORDER BY c.name`,
   );
@@ -957,7 +1250,7 @@ export async function findCategoryBySlug(slug: string): Promise<{ id: string } |
 export async function findCategoryById(id: string): Promise<CategoryRow | null> {
   return queryOne<CategoryRow>(
     `SELECT c.id, c.name, c.slug, ${isoTimestamp('c', 'created_at')} AS created_at,
-            (SELECT count(*) FROM posts p WHERE p.category_id = c.id)::int AS post_count
+            (SELECT count(*) FROM posts p WHERE p.category_id = c.id AND p.deleted_at IS NULL)::int AS post_count
        FROM categories c WHERE c.id = $1`,
     [id],
   );
@@ -993,7 +1286,7 @@ export async function updateCategory(input: {
  */
 export async function movePostsToCategory(fromId: string, toId: string): Promise<number> {
   const rows = await query<{ id: string }>(
-    'UPDATE posts SET category_id = $2, updated_at = now() WHERE category_id = $1 RETURNING id',
+    'UPDATE posts SET category_id = $2, updated_at = now() WHERE category_id = $1 AND deleted_at IS NULL RETURNING id',
     [fromId, toId],
   );
   return rows.length;
@@ -1009,6 +1302,7 @@ export type PostListFilter = {
   status?: PostStatus;
   categoryId?: string;
   search?: string;
+  deletedOnly?: boolean;
 };
 
 /**
@@ -1035,6 +1329,7 @@ export async function listPostsForAdmin(filter: PostListFilter = {}): Promise<Po
     params.push(`%${filter.search}%`);
     where.push(`(p.title ILIKE $${params.length} OR p.excerpt ILIKE $${params.length})`);
   }
+  where.push(filter.deletedOnly ? 'p.deleted_at IS NOT NULL' : 'p.deleted_at IS NULL');
 
   return query<PostRow>(
     `SELECT ${POST_COLUMNS} ${POST_FROM}
@@ -1052,9 +1347,10 @@ export async function listPostsForAdmin(filter: PostListFilter = {}): Promise<Po
 export async function listPublishedPosts(type?: PostType): Promise<PostRow[]> {
   return query<PostRow>(
     `SELECT ${POST_COLUMNS} ${POST_FROM}
-      WHERE p.status = 'published'
+      WHERE p.deleted_at IS NULL
+        AND (p.status = 'published' OR (p.status = 'scheduled' AND p.publish_at <= now()))
       ${type ? 'AND p.type = $1' : ''}
-      ORDER BY p.published_at DESC`,
+      ORDER BY coalesce(p.published_at, p.publish_at) DESC`,
     type ? [type] : [],
   );
 }
@@ -1062,7 +1358,8 @@ export async function listPublishedPosts(type?: PostType): Promise<PostRow[]> {
 export async function findPublishedPostBySlug(slug: string): Promise<PostRow | null> {
   return queryOne<PostRow>(
     `SELECT ${POST_COLUMNS} ${POST_FROM}
-      WHERE p.slug = $1 AND p.status = 'published'`,
+      WHERE p.slug = $1 AND p.deleted_at IS NULL
+        AND (p.status = 'published' OR (p.status = 'scheduled' AND p.publish_at <= now()))`,
     [slug],
   );
 }
@@ -1070,7 +1367,8 @@ export async function findPublishedPostBySlug(slug: string): Promise<PostRow | n
 /** A public registration may only name an event that is actually live. */
 export async function isPublishedEventSlug(slug: string): Promise<boolean> {
   const row = await queryOne<{ id: string }>(
-    `SELECT id FROM posts WHERE slug = $1 AND type = 'event' AND status = 'published' LIMIT 1`,
+    `SELECT id FROM posts WHERE slug = $1 AND type = 'event' AND deleted_at IS NULL
+      AND (status = 'published' OR (status = 'scheduled' AND publish_at <= now())) LIMIT 1`,
     [slug],
   );
   return Boolean(row);
@@ -1100,17 +1398,18 @@ export async function insertPost(input: {
   registrationButtonLabel: string | null;
   registrationForm: unknown | null;
   status: PostStatus;
+  publishAt: string | null;
   authorId: string;
   audit?: AuditWrite;
 }): Promise<string | null> {
   const mutationSql = `INSERT INTO posts
        (type, slug, title, excerpt, body, category_id, cover_image_url, cover_image_thumb_url,
         link_label, link_url, event_start, event_end, location_text, is_online, registration_url,
-        registration_intro, registration_button_label, registration_form, status, published_at,
+        registration_intro, registration_button_label, registration_form, status, publish_at, published_at,
         author_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-             $16, $17, $18::jsonb, $19,
-             CASE WHEN $19 = 'published' THEN now() ELSE NULL END, $20)
+             $16, $17, $18::jsonb, $19, $20,
+             CASE WHEN $19 = 'published' THEN now() ELSE NULL END, $21)
      RETURNING id, type, slug, title, status`;
   const params = [
       input.type,
@@ -1132,6 +1431,7 @@ export async function insertPost(input: {
       input.registrationButtonLabel,
       input.registrationForm === null ? null : JSON.stringify(input.registrationForm),
       input.status,
+      input.publishAt,
       input.authorId,
   ];
   if (input.audit) {
@@ -1172,6 +1472,7 @@ export async function updatePost(input: {
   registrationButtonLabel: string | null;
   registrationForm: unknown | null;
   status: PostStatus;
+  publishAt: string | null;
   audit?: AuditWrite;
 }): Promise<{ id: string } | null> {
   const mutationSql = `UPDATE posts
@@ -1194,11 +1495,12 @@ export async function updatePost(input: {
             registration_button_label = $18,
             registration_form = $19::jsonb,
             status = $20,
+            publish_at = $21,
             published_at = CASE
               WHEN $20 = 'published' THEN coalesce(published_at, now())
               ELSE NULL END,
             updated_at = now()
-      WHERE id = $1
+      WHERE id = $1 AND deleted_at IS NULL
       RETURNING id, type, slug, title, status`;
   const params = [
       input.id,
@@ -1221,6 +1523,7 @@ export async function updatePost(input: {
       input.registrationButtonLabel,
       input.registrationForm === null ? null : JSON.stringify(input.registrationForm),
       input.status,
+      input.publishAt,
   ];
   if (input.audit) {
     const [row] = await auditedMutation<{ id: string }>({
@@ -1234,13 +1537,34 @@ export async function updatePost(input: {
 }
 
 export async function deletePost(id: string, audit?: AuditWrite): Promise<boolean> {
-  const mutationSql = 'DELETE FROM posts WHERE id = $1 RETURNING id, type, slug, title, status';
+  const mutationSql = `UPDATE posts SET deleted_at = now(), deleted_by = $2
+    WHERE id = $1 AND deleted_at IS NULL
+    RETURNING id, type, slug, title, status`;
   const rows = audit
     ? await auditedMutation<{ id: string }>({
       mutationSql,
-      mutationParams: [id],
+      mutationParams: [id, audit.actor.id],
       audit,
     })
+    : await query<{ id: string }>(mutationSql, [id, null]);
+  return rows.length > 0;
+}
+
+export async function restorePost(id: string, audit?: AuditWrite): Promise<boolean> {
+  const mutationSql = `UPDATE posts SET deleted_at = NULL, deleted_by = NULL, updated_at = now()
+    WHERE id = $1 AND deleted_at IS NOT NULL
+    RETURNING id, type, slug, title, status`;
+  const rows = audit
+    ? await auditedMutation<{ id: string }>({ mutationSql, mutationParams: [id], audit })
+    : await query<{ id: string }>(mutationSql, [id]);
+  return rows.length > 0;
+}
+
+export async function permanentlyDeletePost(id: string, audit?: AuditWrite): Promise<boolean> {
+  const mutationSql = `DELETE FROM posts WHERE id = $1 AND deleted_at IS NOT NULL
+    RETURNING id, type, slug, title, status`;
+  const rows = audit
+    ? await auditedMutation<{ id: string }>({ mutationSql, mutationParams: [id], audit })
     : await query<{ id: string }>(mutationSql, [id]);
   return rows.length > 0;
 }
@@ -1260,7 +1584,9 @@ export async function listPublishedSlugs(): Promise<
 > {
   return query<{ slug: string; type: PostType; updated_at: string }>(
     `SELECT slug, type, ${isoTimestamp('posts', 'updated_at')} AS updated_at
-       FROM posts WHERE status = 'published' ORDER BY slug`,
+       FROM posts WHERE deleted_at IS NULL
+         AND (status = 'published' OR (status = 'scheduled' AND publish_at <= now()))
+       ORDER BY slug`,
   );
 }
 
@@ -1273,9 +1599,37 @@ export async function findPostSlugRedirect(
     `SELECT p.slug
        FROM post_slug_redirects r
        JOIN posts p ON p.id = r.post_id
-      WHERE r.type = $1 AND r.old_slug = $2 AND p.status = 'published'`,
+      WHERE r.type = $1 AND r.old_slug = $2 AND p.status = 'published' AND p.deleted_at IS NULL`,
     [type, oldSlug],
   );
+}
+
+export async function listDueScheduledPosts(): Promise<{
+  id: string;
+  type: PostType;
+  slug: string;
+  title: string;
+  publish_at: string;
+  author_id: string | null;
+}[]> {
+  return query(
+    `SELECT id, type, slug, title, ${isoTimestamp('posts', 'publish_at')} AS publish_at, author_id
+       FROM posts
+      WHERE status = 'scheduled' AND publish_at <= now() AND deleted_at IS NULL
+      ORDER BY publish_at, id`,
+  );
+}
+
+export async function publishScheduledPost(id: string, audit: AuditWrite): Promise<boolean> {
+  const rows = await auditedMutation<{ id: string }>({
+    mutationSql: `UPDATE posts
+       SET status = 'published', published_at = publish_at, publish_at = NULL, updated_at = now()
+       WHERE id = $1 AND status = 'scheduled' AND publish_at <= now() AND deleted_at IS NULL
+       RETURNING id, type, slug, title, status`,
+    mutationParams: [id],
+    audit,
+  });
+  return rows.length > 0;
 }
 
 /** Remember the old URL when a manager changes a published slug. */
@@ -1311,6 +1665,8 @@ export type RegistrationRow = {
   /** Answers to the event's form, each carrying the question it answered. */
   answers: unknown | null;
   created_at: string;
+  deleted_at: string | null;
+  deleted_by: string | null;
 };
 
 
@@ -1320,6 +1676,7 @@ export type RegistrationFilter = {
   search?: string;
   from?: string;
   to?: string;
+  deletedOnly?: boolean;
 };
 
 export async function insertRegistration(input: {
@@ -1354,7 +1711,7 @@ export async function insertRegistration(input: {
  * wrapped in wildcards here, never interpolated.
  */
 function registrationWhere(filter: RegistrationFilter): { where: string; params: unknown[] } {
-  const where: string[] = [];
+  const where: string[] = [filter.deletedOnly ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL'];
   const params: unknown[] = [];
 
   if (filter.eventSlug) {
@@ -1378,7 +1735,8 @@ function registrationWhere(filter: RegistrationFilter): { where: string; params:
 }
 
 const REGISTRATION_COLUMNS = `id, event_slug, name, email, phone, organization, notes, answers,
-         ${isoTimestamp('registrations', 'created_at')} AS created_at`;
+         ${isoTimestamp('registrations', 'created_at')} AS created_at,
+         ${isoTimestamp('registrations', 'deleted_at')} AS deleted_at, deleted_by`;
 
 export async function listRegistrations(
   filter: RegistrationFilter & { limit: number; offset: number },
@@ -1410,6 +1768,7 @@ export async function listRegistrationEventCounts(): Promise<
   return query<{ event_slug: string; total: number }>(
     `SELECT event_slug, count(*)::int AS total
        FROM registrations
+      WHERE deleted_at IS NULL
       GROUP BY event_slug
       ORDER BY event_slug`,
   );
@@ -1447,6 +1806,7 @@ export type StaffAccountRow = {
   name: string | null;
   email: string;
   role: Role;
+  is_super_admin: boolean;
   disabled_at: string | null;
   must_change_password: boolean;
   created_at: string;
@@ -1454,7 +1814,7 @@ export type StaffAccountRow = {
 
 export async function listStaffAccounts(): Promise<StaffAccountRow[]> {
   return query<StaffAccountRow>(
-    `SELECT id, name, email, role, disabled_at, must_change_password,
+    `SELECT id, name, email, role, is_super_admin, disabled_at, must_change_password,
             ${isoTimestamp('users', 'created_at')} AS created_at
        FROM users
       WHERE role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager', 'data_admin')
@@ -1537,7 +1897,11 @@ export async function createStaffAccount(input: {
 }
 
 export async function setStaffDisabled(id: string, disabled: boolean, audit?: AuditWrite): Promise<boolean> {
-  const mutationSql = `UPDATE users
+  const mutationSql = `WITH revoked_sessions AS (
+        UPDATE sessions SET revoked_at = now()
+         WHERE user_id = $1 AND revoked_at IS NULL AND ${disabled ? 'true' : 'false'}
+      )
+      UPDATE users
         SET disabled_at = ${disabled ? 'now()' : 'NULL'},
             token_version = token_version + 1
       WHERE id = $1
@@ -1563,7 +1927,7 @@ export async function setStaffRole(id: string, role: StaffRole): Promise<boolean
 /** One staff row by id, for the edit endpoint to compare against. */
 export async function findStaffAccount(id: string): Promise<StaffAccountRow | null> {
   return queryOne<StaffAccountRow>(
-    `SELECT id, name, email, role, disabled_at, must_change_password,
+    `SELECT id, name, email, role, is_super_admin, disabled_at, must_change_password,
             ${isoTimestamp('users', 'created_at')} AS created_at
        FROM users
       WHERE id = $1
@@ -1590,6 +1954,7 @@ export async function updateStaffAccount(input: {
   name: string | null;
   email: string;
   role: StaffRole;
+  isSuperAdmin: boolean;
   resetPassword: boolean;
   audit?: AuditWrite;
 }): Promise<boolean> {
@@ -1602,13 +1967,14 @@ export async function updateStaffAccount(input: {
                        SET name = $1,
                            email = $2,
                            role = $3,
+                           is_super_admin = $4,
                            token_version = token_version + 1,
-                           must_change_password = CASE WHEN $4 THEN true ELSE must_change_password END
-                     WHERE id = $5
+                           must_change_password = CASE WHEN $5 THEN true ELSE must_change_password END
+                     WHERE id = $6
                        AND role IN ('manager', 'admin', 'project_manager', 'hr_manager', 'content_manager', 'data_admin')
                        AND EXISTS (SELECT 1 FROM staff_write)
-                    RETURNING id, role`,
-      mutationParams: [input.name, input.email, input.role, input.resetPassword, input.id],
+                    RETURNING id, role, is_super_admin`,
+      mutationParams: [input.name, input.email, input.role, input.isSuperAdmin, input.resetPassword, input.id],
       audit: input.audit,
     });
     return rows.length > 0;
@@ -1619,6 +1985,7 @@ export async function updateStaffAccount(input: {
            SET name = ${input.name},
                email = ${input.email},
                role = ${input.role},
+               is_super_admin = ${input.isSuperAdmin},
                token_version = token_version + 1,
                must_change_password = CASE
                  WHEN ${input.resetPassword} THEN true
@@ -1629,6 +1996,21 @@ export async function updateStaffAccount(input: {
   ]);
   const rows = result[1] as { id: string }[] | undefined;
   return Boolean(rows?.[0]);
+}
+
+export async function listActiveSuperAdminEmails(): Promise<string[]> {
+  const rows = await query<{ email: string }>(
+    `SELECT email FROM users
+      WHERE is_super_admin AND role = 'admin' AND disabled_at IS NULL
+      ORDER BY lower(email), id`,
+  );
+  return rows.map(({ email }) => email);
+}
+
+export function isLastActiveSuperAdminViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null &&
+    'code' in error && error.code === '23514' &&
+    'constraint' in error && error.constraint === 'last_active_super_admin_guard';
 }
 
 export async function createStaffInvite(input: {
@@ -1769,6 +2151,8 @@ export async function auditedMutation<T>(input: {
     expires_at: 'expires_at',
     revoked_at: 'revoked_at',
     expiration_audited_at: 'expiration_audited_at',
+    counts: 'counts',
+    rowCount: 'row_count',
   };
   const dynamicAfter = input.afterFromMutation?.length
     ? `COALESCE(jsonb_build_object(${input.afterFromMutation
@@ -1891,13 +2275,87 @@ export type DataFilter = {
   from?: string;
   to?: string;
   eventSlug?: string;
+  deletedOnly?: boolean;
+  status?: 'new' | 'contacted' | 'scheduled' | 'done';
+  ownerId?: string | 'unassigned';
 };
+
+export type DeletableDataType = 'registrations' | 'subscriptions' | 'consultations';
+
+const DELETABLE_DATA_TABLES: Record<DeletableDataType, string> = {
+  registrations: 'registrations',
+  subscriptions: 'newsletter_subscribers',
+  consultations: 'consultation_bookings',
+};
+
+export async function setDataRecordDeleted(input: {
+  type: DeletableDataType;
+  id: string;
+  actorId: string;
+  deleted: boolean;
+  audit: AuditWrite;
+}): Promise<boolean> {
+  const table = DELETABLE_DATA_TABLES[input.type];
+  const existing = await queryOne<{ id: string; name: string | null; event_slug: string | null }>(
+    input.type === 'registrations'
+      ? 'SELECT id, name, event_slug FROM registrations WHERE id = $1 AND deleted_at IS NULL'
+      : input.type === 'consultations'
+        ? 'SELECT id, name, NULL::text AS event_slug FROM consultation_bookings WHERE id = $1 AND deleted_at IS NULL'
+        : 'SELECT id, NULL::text AS name, NULL::text AS event_slug FROM newsletter_subscribers WHERE id = $1 AND deleted_at IS NULL',
+    [input.id],
+  );
+  if (!input.deleted) {
+    const deletedRecord = await queryOne<{ id: string }>(
+      `SELECT id FROM ${table} WHERE id = $1 AND deleted_at IS NOT NULL`,
+      [input.id],
+    );
+    if (!deletedRecord) return false;
+  } else if (!existing) {
+    return false;
+  }
+  const before = input.deleted
+    ? {
+        id: input.id,
+        ...(existing?.name ? { name: existing.name } : {}),
+        ...(existing?.event_slug ? { event: existing.event_slug } : {}),
+      }
+    : { id: input.id, deleted: true };
+  const mutationSql = input.deleted
+    ? `UPDATE ${table} SET deleted_at = now(), deleted_by = $2
+       WHERE id = $1 AND deleted_at IS NULL RETURNING id`
+    : `UPDATE ${table} SET deleted_at = NULL, deleted_by = NULL
+       WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`;
+  const rows = await auditedMutation<{ id: string }>({
+    mutationSql,
+    mutationParams: input.deleted ? [input.id, input.actorId] : [input.id],
+    audit: {
+      ...input.audit,
+      before,
+      after: input.deleted ? { deleted: true } : { deleted: false },
+    },
+  });
+  return rows.length > 0;
+}
+
+export async function permanentlyDeleteDataRecord(input: {
+  type: DeletableDataType;
+  id: string;
+  audit: AuditWrite;
+}): Promise<boolean> {
+  const table = DELETABLE_DATA_TABLES[input.type];
+  const rows = await auditedMutation<{ id: string }>({
+    mutationSql: `DELETE FROM ${table} WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`,
+    mutationParams: [input.id],
+    audit: { ...input.audit, before: { id: input.id, deleted: true }, after: null },
+  });
+  return rows.length > 0;
+}
 
 function dataWhere(
   filter: DataFilter,
   searchColumns = 'name, email',
 ): { where: string; params: unknown[] } {
-  const clauses: string[] = [];
+  const clauses: string[] = [filter.deletedOnly ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL'];
   const params: unknown[] = [];
   if (filter.eventSlug) {
     params.push(filter.eventSlug);
@@ -1916,6 +2374,17 @@ function dataWhere(
     params.push(filter.to);
     clauses.push(`created_at < ($${params.length}::date + interval '1 day')`);
   }
+  if (filter.status) {
+    params.push(filter.status);
+    clauses.push(`status = $${params.length}`);
+  }
+  if (filter.ownerId) {
+    if (filter.ownerId === 'unassigned') clauses.push('assigned_to IS NULL');
+    else {
+      params.push(filter.ownerId);
+      clauses.push(`assigned_to = $${params.length}`);
+    }
+  }
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
 
@@ -1925,6 +2394,8 @@ export type SubscriptionRow = {
   status: string;
   source: string;
   created_at: string;
+  deleted_at: string | null;
+  deleted_by: string | null;
 };
 
 export async function listSubscriptions(
@@ -1932,7 +2403,8 @@ export async function listSubscriptions(
 ): Promise<SubscriptionRow[]> {
   const { where, params } = dataWhere(filter, 'email');
   return query<SubscriptionRow>(
-    `SELECT id, email, status, source, ${isoTimestamp('newsletter_subscribers', 'created_at')} AS created_at
+    `SELECT id, email, status, source, ${isoTimestamp('newsletter_subscribers', 'created_at')} AS created_at,
+            ${isoTimestamp('newsletter_subscribers', 'deleted_at')} AS deleted_at, deleted_by
        FROM newsletter_subscribers
        ${where}
       ORDER BY created_at DESC
@@ -1955,7 +2427,8 @@ export async function listSubscriptionsForExport(
 ): Promise<SubscriptionRow[]> {
   const { where, params } = dataWhere(filter, 'email');
   return query<SubscriptionRow>(
-    `SELECT id, email, status, source, ${isoTimestamp('newsletter_subscribers', 'created_at')} AS created_at
+    `SELECT id, email, status, source, ${isoTimestamp('newsletter_subscribers', 'created_at')} AS created_at,
+            ${isoTimestamp('newsletter_subscribers', 'deleted_at')} AS deleted_at, deleted_by
        FROM newsletter_subscribers ${where}
       ORDER BY created_at DESC LIMIT 10000`,
     params,
@@ -1975,11 +2448,19 @@ export type ConsultationRow = {
   notes: string | null;
   status: string;
   created_at: string;
+  deleted_at: string | null;
+  deleted_by: string | null;
+  assigned_to: string | null;
+  status_changed_at: string;
+  internal_notes: string;
 };
 
 const CONSULTATION_COLUMNS = `id, name, email, phone, organisation, service,
   meeting_format, preferred_date, preferred_slot, notes, status,
-  ${isoTimestamp('consultation_bookings', 'created_at')} AS created_at`;
+  ${isoTimestamp('consultation_bookings', 'created_at')} AS created_at,
+  ${isoTimestamp('consultation_bookings', 'deleted_at')} AS deleted_at, deleted_by,
+  assigned_to, ${isoTimestamp('consultation_bookings', 'status_changed_at')} AS status_changed_at,
+  internal_notes`;
 
 export async function listConsultations(
   filter: DataFilter & { limit: number; offset: number },
@@ -2013,6 +2494,61 @@ export async function listConsultationsForExport(
       ORDER BY created_at DESC LIMIT 10000`,
     params,
   );
+}
+
+export async function updateConsultationField(input: {
+  id: string;
+  actorId: string;
+  change:
+    | { type: 'status'; status: 'new' | 'contacted' | 'scheduled' | 'done' }
+    | { type: 'assignment'; assignedTo: string | null }
+    | { type: 'note'; internalNotes: string };
+  audit: AuditWrite;
+}): Promise<{ changed: boolean; previousAssignee: string | null; assignedTo: string | null }> {
+  const existing = await queryOne<{ status: string; assigned_to: string | null }>(
+    'SELECT status, assigned_to FROM consultation_bookings WHERE id = $1 AND deleted_at IS NULL',
+    [input.id],
+  );
+  if (!existing) return { changed: false, previousAssignee: null, assignedTo: null };
+  const mutation = input.change.type === 'status'
+    ? {
+        sql: `UPDATE consultation_bookings SET status = $2, status_changed_at = now()
+          WHERE id = $1 AND deleted_at IS NULL AND status IS DISTINCT FROM $2
+          RETURNING id, status`,
+        params: [input.id, input.change.status],
+        action: 'consultation.status_change',
+        before: { status: existing.status },
+        after: { status: input.change.status },
+      }
+    : input.change.type === 'assignment'
+      ? {
+          sql: `UPDATE consultation_bookings SET assigned_to = $2
+            WHERE id = $1 AND deleted_at IS NULL AND assigned_to IS DISTINCT FROM $2
+            RETURNING id, assigned_to`,
+          params: [input.id, input.change.assignedTo],
+          action: 'consultation.assignment',
+          before: { assigned_to: existing.assigned_to },
+          after: { assigned_to: input.change.assignedTo },
+        }
+      : {
+          sql: `UPDATE consultation_bookings SET internal_notes = $2
+            WHERE id = $1 AND deleted_at IS NULL AND internal_notes IS DISTINCT FROM $2
+            RETURNING id`,
+          params: [input.id, input.change.internalNotes],
+          action: 'consultation.note_edit',
+          before: { internal_notes_changed: false },
+          after: { internal_notes_changed: true },
+        };
+  const rows = await auditedMutation<{ id: string }>({
+    mutationSql: mutation.sql,
+    mutationParams: mutation.params,
+    audit: { ...input.audit, action: mutation.action, before: mutation.before, after: mutation.after },
+  });
+  return {
+    changed: rows.length > 0,
+    previousAssignee: existing.assigned_to,
+    assignedTo: input.change.type === 'assignment' ? input.change.assignedTo : existing.assigned_to,
+  };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -2136,7 +2672,9 @@ async function categoryCounts(
   table: 'registrations' | 'newsletter_subscribers' | 'consultation_bookings' | 'users',
   extraWhere = '',
 ): Promise<CategoryStats> {
-  const where = extraWhere ? `WHERE ${extraWhere}` : '';
+  const clauses = extraWhere ? [extraWhere] : [];
+  if (table !== 'users') clauses.push('deleted_at IS NULL');
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const row = await queryOne<CategoryStats>(
     `SELECT count(*)::int AS total,
             count(*) FILTER (WHERE created_at >= now() - interval '7 days')::int AS last7,
@@ -2164,16 +2702,48 @@ export async function getDashboardCounts(): Promise<{
   return { registrations, subscriptions, consultations, talent, employers };
 }
 
+export async function getConsultationPipelineCounts(): Promise<{
+  new: number;
+  contacted: number;
+  scheduled: number;
+  done: number;
+  newOlderThan48Hours: number;
+}> {
+  const row = await queryOne<{
+    new: number;
+    contacted: number;
+    scheduled: number;
+    done: number;
+    new_older_than_48_hours: number;
+  }>(`SELECT
+      count(*) FILTER (WHERE status = 'new')::int AS new,
+      count(*) FILTER (WHERE status = 'contacted')::int AS contacted,
+      count(*) FILTER (WHERE status = 'scheduled')::int AS scheduled,
+      count(*) FILTER (WHERE status = 'done')::int AS done,
+      count(*) FILTER (WHERE status = 'new' AND created_at < now() - interval '48 hours')::int
+        AS new_older_than_48_hours
+    FROM consultation_bookings WHERE deleted_at IS NULL`);
+  return {
+    new: row?.new ?? 0,
+    contacted: row?.contacted ?? 0,
+    scheduled: row?.scheduled ?? 0,
+    done: row?.done ?? 0,
+    newOlderThan48Hours: row?.new_older_than_48_hours ?? 0,
+  };
+}
+
 export async function dailyCounts(
   table: 'registrations' | 'newsletter_subscribers' | 'consultation_bookings' | 'users',
   from: string,
   extraWhere = '',
 ): Promise<{ day: string; total: number }[]> {
-  const extra = extraWhere ? `AND ${extraWhere}` : '';
+  const clauses = ['created_at >= $1::date'];
+  if (table !== 'users') clauses.push('deleted_at IS NULL');
+  if (extraWhere) clauses.push(extraWhere);
   return query<{ day: string; total: number }>(
     `SELECT to_char(created_at, 'YYYY-MM-DD') AS day, count(*)::int AS total
        FROM ${table}
-      WHERE created_at >= $1::date ${extra}
+      WHERE ${clauses.join(' AND ')}
       GROUP BY 1 ORDER BY 1`,
     [from],
   );
@@ -2185,7 +2755,7 @@ export async function registrationCountsByEvent(
   return query<{ event_slug: string; total: number }>(
     `SELECT event_slug, count(*)::int AS total
        FROM registrations
-      WHERE created_at >= $1::date
+      WHERE created_at >= $1::date AND deleted_at IS NULL
       GROUP BY event_slug ORDER BY total DESC`,
     [from],
   );
@@ -2225,6 +2795,70 @@ export async function recordPageView(input: {
       input.country,
       input.device,
       input.visitorHash,
+    ],
+  );
+}
+
+export type TrafficHitInput = {
+  hitId: string;
+  path: string;
+  referrerHost: string;
+  utmSource: string;
+  country: string;
+  device: string;
+  ipHash: string | null;
+  visitorHash: string | null;
+  userAgent: string;
+  javascriptExecuted: boolean;
+};
+
+export async function recordTrafficHit(input: TrafficHitInput): Promise<void> {
+  await query(
+    `WITH stored AS (
+       INSERT INTO traffic_hits (
+         hit_id, path, referrer_host, utm_source, country, device, ip_hash,
+         visitor_hash, user_agent, javascript_executed
+       )
+       VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (hit_id) DO UPDATE
+         SET javascript_executed =
+               traffic_hits.javascript_executed OR EXCLUDED.javascript_executed,
+             referrer_host = CASE WHEN EXCLUDED.javascript_executed
+                                  THEN EXCLUDED.referrer_host ELSE traffic_hits.referrer_host END,
+             utm_source = CASE WHEN EXCLUDED.javascript_executed
+                               THEN EXCLUDED.utm_source ELSE traffic_hits.utm_source END
+       RETURNING *, (xmax = 0) AS was_inserted
+     ),
+     page AS (
+       INSERT INTO page_views_daily
+         (date, path, referrer_host, utm_source, country, device, views)
+       SELECT created_at::date, path, referrer_host, utm_source, country, device, 1
+         FROM stored WHERE was_inserted
+       ON CONFLICT (date, path, referrer_host, utm_source, country, device)
+       DO UPDATE SET views = page_views_daily.views + 1
+     ),
+     visitor AS (
+       INSERT INTO visitor_hashes_daily (date, hash)
+       SELECT created_at::date, visitor_hash
+         FROM stored
+        WHERE was_inserted AND visitor_hash IS NOT NULL
+       ON CONFLICT DO NOTHING
+       RETURNING date
+     )
+     INSERT INTO traffic_uniques_daily (date, uniques)
+     SELECT date, 1 FROM visitor
+     ON CONFLICT (date) DO UPDATE SET uniques = traffic_uniques_daily.uniques + 1`,
+    [
+      input.hitId,
+      input.path,
+      input.referrerHost,
+      input.utmSource,
+      input.country,
+      input.device,
+      input.ipHash,
+      input.visitorHash,
+      input.userAgent,
+      input.javascriptExecuted,
     ],
   );
 }
@@ -2308,5 +2942,186 @@ export async function trafficTop(
       ORDER BY views DESC
       LIMIT $3`,
     [from, to, limit],
+  );
+}
+
+export type TrafficAnalytics = {
+  totals: { views: number; uniques: number };
+  daily: { day: string; views: number; uniques: number }[];
+  pages: { label: string; views: number }[];
+  referrers: { label: string; views: number }[];
+  countries: {
+    label: string;
+    views: number;
+    humanViews: number;
+    suspectedBotViews: number;
+  }[];
+  devices: { label: string; views: number }[];
+  suspectedBots: { hits: number; reasons: { reason: string; hits: number }[] };
+}
+
+/**
+ * Combines the historic daily aggregates with newly captured raw hits. New hits
+ * are also written to the old aggregates during rollout; subtracting the raw
+ * dimensions keeps them from being counted twice. The old rows remain the
+ * estimated-human baseline because the previous collector already discarded
+ * several bot classes.
+ */
+export async function trafficAnalytics(
+  from: string,
+  to: string,
+  hideBots: boolean,
+  chartFrom = from,
+): Promise<TrafficAnalytics> {
+  const row = await queryOne<{ analytics: TrafficAnalytics }>(
+    `WITH ${trafficClassificationCtes()},
+     raw_groups AS (
+       SELECT created_at::date AS date, path, referrer_host, utm_source, country, device,
+              count(*)::int AS all_hits,
+              count(*) FILTER (WHERE NOT is_suspected_bot)::int AS human_hits,
+              count(*) FILTER (WHERE is_suspected_bot)::int AS bot_hits
+         FROM classified_hits
+        GROUP BY created_at::date, path, referrer_host, utm_source, country, device
+     ),
+     legacy_groups AS (
+       SELECT old.date, old.path, old.referrer_host, old.utm_source, old.country, old.device,
+              greatest(old.views - coalesce(raw.all_hits, 0), 0)::int AS legacy_views
+         FROM page_views_daily old
+         LEFT JOIN raw_groups raw
+           ON raw.date = old.date
+          AND raw.path = old.path
+          AND raw.referrer_host = old.referrer_host
+          AND raw.utm_source = old.utm_source
+          AND raw.country = old.country
+          AND raw.device = old.device
+        WHERE old.date >= $1::date AND old.date <= $2::date
+     ),
+     raw_daily AS (
+       SELECT created_at::date AS date,
+              count(*)::int AS all_hits,
+              count(*) FILTER (WHERE NOT is_suspected_bot)::int AS human_hits,
+              count(*) FILTER (WHERE is_suspected_bot)::int AS bot_hits,
+              count(DISTINCT visitor_hash)::int AS all_uniques,
+              count(DISTINCT visitor_hash) FILTER (WHERE NOT is_suspected_bot)::int AS human_uniques
+         FROM classified_hits
+        GROUP BY created_at::date
+     ),
+     legacy_daily AS (
+       SELECT old.date,
+              coalesce(sum(legacy.legacy_views), 0)::int AS views,
+              greatest(old.uniques - coalesce(raw.all_uniques, 0), 0)::int AS uniques
+         FROM traffic_uniques_daily old
+         LEFT JOIN legacy_groups legacy ON legacy.date = old.date
+         LEFT JOIN raw_daily raw ON raw.date = old.date
+        WHERE old.date >= $1::date AND old.date <= $2::date
+        GROUP BY old.date, old.uniques, raw.all_uniques
+     ),
+     daily_metrics AS (
+       SELECT days.day,
+              (coalesce(legacy.views, 0) +
+                CASE WHEN $3::boolean THEN coalesce(raw.human_hits, 0)
+                     ELSE coalesce(raw.all_hits, 0) END)::int AS views,
+              (coalesce(legacy.uniques, 0) +
+                CASE WHEN $3::boolean THEN coalesce(raw.human_uniques, 0)
+                     ELSE coalesce(raw.all_uniques, 0) END)::int AS uniques
+         FROM generate_series($1::date, $2::date, interval '1 day') days(day)
+         LEFT JOIN legacy_daily legacy ON legacy.date = days.day
+         LEFT JOIN raw_daily raw ON raw.date = days.day
+     ),
+     dimensions AS (
+       SELECT 'path'::text AS kind, path AS label, legacy_views, 0::int AS human_hits,
+              0::int AS bot_hits, 0::int AS all_hits FROM legacy_groups
+       UNION ALL
+       SELECT 'path', path, 0, human_hits, bot_hits, all_hits FROM raw_groups
+       UNION ALL
+       SELECT 'referrer', referrer_host, legacy_views, 0, 0, 0 FROM legacy_groups
+       UNION ALL
+       SELECT 'referrer', referrer_host, 0, human_hits, bot_hits, all_hits FROM raw_groups
+       UNION ALL
+       SELECT 'country', country, legacy_views, 0, 0, 0 FROM legacy_groups
+       UNION ALL
+       SELECT 'country', country, 0, human_hits, bot_hits, all_hits FROM raw_groups
+       UNION ALL
+       SELECT 'device', device, legacy_views, 0, 0, 0 FROM legacy_groups
+       UNION ALL
+       SELECT 'device', device, 0, human_hits, bot_hits, all_hits FROM raw_groups
+     ),
+     dimension_totals AS (
+       SELECT kind, label, sum(legacy_views)::int AS legacy_views,
+              sum(human_hits)::int AS human_hits, sum(bot_hits)::int AS bot_hits,
+              sum(all_hits)::int AS all_hits
+         FROM dimensions
+        GROUP BY kind, label
+     ),
+     ranked_dimensions AS (
+       SELECT kind, label,
+              (legacy_views + CASE WHEN $3::boolean THEN human_hits ELSE all_hits END)::int AS views,
+              (legacy_views + human_hits)::int AS human_views,
+              bot_hits AS suspected_bot_views,
+              row_number() OVER (
+                PARTITION BY kind
+                ORDER BY legacy_views + CASE WHEN $3::boolean THEN human_hits ELSE all_hits END DESC,
+                         label
+              ) AS position
+         FROM dimension_totals
+     ),
+     reasons AS (
+       SELECT reason, count(*)::int AS hits
+         FROM classified_hits
+         CROSS JOIN LATERAL unnest(bot_reasons) AS r(reason)
+        WHERE is_suspected_bot
+        GROUP BY reason
+     )
+     SELECT jsonb_build_object(
+       'totals', (SELECT jsonb_build_object(
+         'views', coalesce(sum(views), 0)::int,
+         'uniques', coalesce(sum(uniques), 0)::int
+       ) FROM daily_metrics),
+       'daily', coalesce((SELECT jsonb_agg(jsonb_build_object(
+         'day', to_char(day, 'YYYY-MM-DD'), 'views', views, 'uniques', uniques
+       ) ORDER BY day) FROM daily_metrics WHERE day >= $4::date), '[]'::jsonb),
+       'pages', coalesce((SELECT jsonb_agg(jsonb_build_object('label', label, 'views', views) ORDER BY views DESC)
+         FROM ranked_dimensions WHERE kind = 'path' AND position <= 10), '[]'::jsonb),
+       'referrers', coalesce((SELECT jsonb_agg(jsonb_build_object('label', label, 'views', views) ORDER BY views DESC)
+         FROM ranked_dimensions WHERE kind = 'referrer' AND position <= 10), '[]'::jsonb),
+       'countries', coalesce((SELECT jsonb_agg(jsonb_build_object(
+         'label', label, 'views', views, 'humanViews', human_views,
+         'suspectedBotViews', suspected_bot_views
+       ) ORDER BY views DESC) FROM ranked_dimensions WHERE kind = 'country' AND position <= 10), '[]'::jsonb),
+       'devices', coalesce((SELECT jsonb_agg(jsonb_build_object('label', label, 'views', views) ORDER BY views DESC)
+         FROM ranked_dimensions WHERE kind = 'device' AND position <= 10), '[]'::jsonb),
+       'suspectedBots', jsonb_build_object(
+         'hits', coalesce((SELECT sum(bot_hits)::int FROM raw_daily), 0),
+         'reasons', coalesce((SELECT jsonb_agg(jsonb_build_object('reason', reason, 'hits', hits) ORDER BY hits DESC)
+           FROM reasons), '[]'::jsonb)
+       )
+     ) AS analytics`,
+    [from, to, hideBots, chartFrom],
+  );
+  if (!row) throw new Error('Traffic analytics query returned no result.');
+  return row.analytics;
+}
+
+export type TrafficBotRuleRow = {
+  id: string;
+  rule_type: 'user_agent' | 'path';
+  pattern: string;
+  classification: 'bot' | 'human';
+  created_at: string;
+};
+
+export async function listTrafficBotRules(): Promise<TrafficBotRuleRow[]> {
+  return query<TrafficBotRuleRow>(
+    `SELECT id, rule_type, pattern, classification, created_at::text AS created_at
+       FROM traffic_bot_rules
+      ORDER BY created_at DESC, id`,
+  );
+}
+
+export async function findTrafficBotRule(id: string): Promise<TrafficBotRuleRow | null> {
+  return queryOne<TrafficBotRuleRow>(
+    `SELECT id, rule_type, pattern, classification, created_at::text AS created_at
+       FROM traffic_bot_rules WHERE id = $1`,
+    [id],
   );
 }

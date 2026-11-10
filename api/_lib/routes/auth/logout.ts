@@ -1,6 +1,6 @@
 import { clientIp, endpoint, sendJson } from '../../http.js';
 import { clearAllSessionCookies, readAnySession } from '../../session.js';
-import { bumpTokenVersion, findSessionUserById, isAdminPortalRole, isContentManagerRole } from '../../db.js';
+import { bumpTokenVersion, findSessionUserById, isAdminPortalRole, isContentManagerRole, revokeUserServerSessions } from '../../db.js';
 import { auditedMutation, recordAuthEvent } from '../../audit.js';
 
 export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
@@ -20,12 +20,17 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
       actor: { id: user.id, email: user.email, role: user.role },
       action: 'auth.logout',
       entity: { type: 'staff_account', id: user.id, label: user.email },
-      mutationSql: 'UPDATE users SET token_version = token_version + 1 WHERE id = $1 RETURNING id',
+      mutationSql: `WITH revoked_sessions AS (
+                       UPDATE sessions SET revoked_at = now()
+                        WHERE user_id = $1 AND revoked_at IS NULL
+                     )
+                     UPDATE users SET token_version = token_version + 1 WHERE id = $1 RETURNING id`,
       mutationParams: [user.id],
     });
   } else if (claims) {
     try {
       await bumpTokenVersion(claims.userId);
+      await revokeUserServerSessions(claims.userId);
     } catch (error) {
       console.error('[auth] could not revoke the session on logout', error);
     }

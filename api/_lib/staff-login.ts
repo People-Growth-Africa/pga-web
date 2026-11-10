@@ -16,7 +16,9 @@ import {
   setOnlySessionCookie,
 } from './session.js';
 import { enforceRateLimit } from './ratelimit.js';
-import { logAudit, recordAuthEvent } from './audit.js';
+import { logAudit, recordAuthEvent, recordLoginEvent } from './audit.js';
+import { reportFailedLogin } from './security-alerts.js';
+import { scheduleBestEffort } from './best-effort.js';
 
 export type StaffPortal = 'admin' | 'content';
 
@@ -73,6 +75,8 @@ export async function handleStaffLogin(
   if (!user) {
     await spendPasswordTime(data.password);
     await recordAuthEvent(`${portal}_login_failed_unknown_email`, { ip });
+    await recordLoginEvent(req, { userId: null, emailAttempted: data.email, success: false });
+    scheduleBestEffort(() => reportFailedLogin(data.email, ip), 'security-alert');
     await logAudit({
       req,
       actor: { id: null, email: null, role: null },
@@ -84,6 +88,8 @@ export async function handleStaffLogin(
 
   if (!(await verifyPassword(data.password, user.password_hash))) {
     await recordAuthEvent(`${portal}_login_failed_bad_password`, { userId: user.id, ip });
+    await recordLoginEvent(req, { userId: user.id, emailAttempted: data.email, success: false });
+    scheduleBestEffort(() => reportFailedLogin(data.email, ip), 'security-alert');
     await logAudit({
       req,
       actor: { id: user.id, email: user.email, role: user.role },
@@ -95,6 +101,8 @@ export async function handleStaffLogin(
 
   if (user.disabled_at !== null) {
     await recordAuthEvent(`${portal}_login_failed_disabled`, { userId: user.id, ip });
+    await recordLoginEvent(req, { userId: user.id, emailAttempted: data.email, success: false });
+    scheduleBestEffort(() => reportFailedLogin(data.email, ip), 'security-alert');
     await logAudit({
       req,
       actor: { id: user.id, email: user.email, role: user.role },
@@ -106,6 +114,8 @@ export async function handleStaffLogin(
 
   if (!hasPermission(user.role, config.permission)) {
     await recordAuthEvent(`${portal}_login_failed_wrong_portal`, { userId: user.id, ip });
+    await recordLoginEvent(req, { userId: user.id, emailAttempted: data.email, success: false });
+    scheduleBestEffort(() => reportFailedLogin(data.email, ip), 'security-alert');
     await logAudit({
       req,
       actor: { id: user.id, email: user.email, role: user.role },
@@ -128,6 +138,7 @@ export async function handleStaffLogin(
     role: user.role,
     tokenVersion,
     portal,
+    req,
   });
   await logAudit({
     req,
@@ -137,6 +148,7 @@ export async function handleStaffLogin(
   });
   setOnlySessionCookie(req, res, sessionToken, sessionTtlSeconds(user.role), portal);
   await recordAuthEvent(`${portal}_login`, { userId: user.id, ip });
+  await recordLoginEvent(req, { userId: user.id, emailAttempted: data.email, success: true });
 
   sendJson(res, 200, {
     user: {
@@ -145,6 +157,7 @@ export async function handleStaffLogin(
       // away instead of waiting for the next session refresh.
       name: user.name ?? null,
       role: user.role,
+      isSuperAdmin: user.is_super_admin,
       email: user.email,
       emailVerified: user.email_verified,
       mustChangePassword: user.must_change_password,

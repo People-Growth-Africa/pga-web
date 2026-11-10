@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
+import { useAuth } from '../../hooks/useAuth';
 import { onSessionEnded } from '../../lib/authClient';
 import { livePostPath } from '../../lib/published';
 import PostEditor from './PostEditor';
@@ -21,11 +22,13 @@ import {
   createPost,
   deleteCategory,
   deletePost,
+  purgePost,
   listContent,
   pingSession,
   setPostStatus,
   updateCategory,
   updatePost,
+  restorePost,
   uploadCover,
   type AdminCategory,
   type AdminPost,
@@ -55,6 +58,7 @@ type View = 'list' | 'create' | 'edit';
  * controls which actions are offered.
  */
 export default function AdminOversight() {
+  const { user } = useAuth();
   const [posts, setPosts] = useState<AdminPost[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [access, setAccess] = useState<AccessOverview | null>(null);
@@ -62,6 +66,8 @@ export default function AdminOversight() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [view, setView] = useState<View>('list');
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [postStatus, setPostStatusFilter] = useState('');
   const [editing, setEditing] = useState<AdminPost | null>(null);
   const [createType, setCreateType] = useState<PostType>('blog');
   const [categoriesOpen, setCategoriesOpen] = useState(false);
@@ -98,7 +104,7 @@ export default function AdminOversight() {
       return;
     }
 
-    const result = await listContent({});
+    const result = await listContent({ deletedOnly: showDeleted, status: postStatus || undefined });
     if (!result.ok) {
       setError(result.failure.error);
       setLoading(false);
@@ -108,7 +114,7 @@ export default function AdminOversight() {
     setCategories(result.data.categories);
     setError(null);
     setLoading(false);
-  }, []);
+  }, [showDeleted, postStatus]);
 
   const canEdit = access?.effectivePermissions.includes('content.edit') ?? false;
   const canPublish = access?.effectivePermissions.includes('content.publish') ?? false;
@@ -177,7 +183,7 @@ export default function AdminOversight() {
     await refresh();
     setView('list');
     setEditing(null);
-    setNotice(draft.status === 'published' ? 'Published.' : 'Saved as a draft.');
+    setNotice(draft.status === 'scheduled' ? 'Scheduled.' : draft.status === 'published' ? 'Published.' : 'Saved as a draft.');
   }
 
   async function toggle(post: AdminPost) {
@@ -192,7 +198,7 @@ export default function AdminOversight() {
   }
 
   async function remove(post: AdminPost) {
-    if (!window.confirm(`Delete “${post.title}”? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete “${post.title}”? It will be moved to Deleted and can be restored.`)) return;
     const result = await deletePost(post.id);
     if (!result.ok) {
       setNotice(result.failure.error);
@@ -200,6 +206,26 @@ export default function AdminOversight() {
     }
     await refresh();
     setNotice('Deleted.');
+  }
+
+  async function restore(post: AdminPost) {
+    const result = await restorePost(post.id);
+    if (!result.ok) {
+      setNotice(result.failure.error);
+      return;
+    }
+    await refresh();
+    setNotice('Restored.');
+  }
+
+  async function purge(post: AdminPost) {
+    const result = await purgePost(post.id);
+    if (!result.ok) {
+      setNotice(result.failure.error);
+      return;
+    }
+    await refresh();
+    setNotice('Permanently purged.');
   }
 
   return (
@@ -356,11 +382,29 @@ export default function AdminOversight() {
           <p className="rounded-[16px] border border-charcoal/10 bg-white p-10 text-center text-sm text-charcoal/55">
             Content permissions could not be verified. Try refreshing the page.
           </p>
-        ) : posts.length === 0 ? (
-          <p className="rounded-[16px] border border-charcoal/10 bg-white p-10 text-center text-sm text-charcoal/50">
-            No posts or events yet.
-          </p>
         ) : (
+          <>
+            <div className="mb-4 flex gap-2">
+              {[false, true].map((deleted) => (
+                <button key={String(deleted)} type="button" aria-pressed={showDeleted === deleted}
+                  onClick={() => setShowDeleted(deleted)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold ${showDeleted === deleted ? 'bg-deep-green text-white' : 'bg-cream text-charcoal/70'}`}>
+                  {deleted ? 'Deleted' : 'Active'}
+                </button>
+              ))}
+              <select value={postStatus} onChange={(event) => setPostStatusFilter(event.target.value)} aria-label="Filter content status"
+                className="ml-auto min-h-10 rounded-full border border-charcoal/15 bg-white px-4 text-sm">
+                <option value="">All statuses</option>
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+                <option value="scheduled">Scheduled</option>
+              </select>
+            </div>
+            {posts.length === 0 ? (
+          <p className="rounded-[16px] border border-charcoal/10 bg-white p-10 text-center text-sm text-charcoal/50">
+            {showDeleted ? 'No deleted posts or events.' : 'No posts or events yet.'}
+          </p>
+            ) : (
           <ul className="space-y-3.5">
             {posts.map((post) => {
               const published = post.status === 'published';
@@ -375,7 +419,7 @@ export default function AdminOversight() {
                         <PublishBadge published={published} />
                         <TypeBadge type={post.type} />
                         <span className="font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
-                          {published ? 'Live on the site' : 'Not published'}
+                          {published ? 'Live on the site' : post.status === 'scheduled' ? `Scheduled for ${post.publish_at ? new Date(post.publish_at).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) : 'later'}` : 'Not published'}
                         </span>
                       </div>
                       <h2 className="break-words font-[family-name:var(--font-heading)] text-[1.25rem] font-semibold leading-snug text-charcoal sm:text-[1.35rem]">
@@ -387,7 +431,7 @@ export default function AdminOversight() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                      {canEdit && (
+                      {canEdit && !showDeleted && (
                         <button
                           type="button"
                           onClick={() => {
@@ -400,7 +444,7 @@ export default function AdminOversight() {
                           Edit
                         </button>
                       )}
-                      {canPublish && (
+                      {canPublish && !showDeleted && (
                         <button
                           type="button"
                           onClick={() => void toggle(post)}
@@ -409,12 +453,20 @@ export default function AdminOversight() {
                           {published ? 'Unpublish' : 'Publish'}
                         </button>
                       )}
-                      {canEdit && (
+                      {canEdit && !showDeleted && (
                         <button type="button" onClick={() => void remove(post)} className={smallDanger}>
                           Delete
                         </button>
                       )}
-                      {published && (
+                      {showDeleted && canEdit && (
+                        <button type="button" onClick={() => void restore(post)} className={smallOutline}>Restore</button>
+                      )}
+                      {showDeleted && user?.isSuperAdmin && (
+                        <button type="button" onClick={() => {
+                          if (window.confirm(`Permanently purge “${post.title}”? This cannot be undone.`)) void purge(post);
+                        }} className={smallDanger}>Purge</button>
+                      )}
+                      {!showDeleted && published && (
                         <a
                           href={livePostPath(post)}
                           target="_blank"
@@ -430,6 +482,8 @@ export default function AdminOversight() {
               );
             })}
           </ul>
+            )}
+          </>
         )}
       </AdminShell>
 

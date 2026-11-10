@@ -16,11 +16,15 @@ import EmployerDashboard from './pages/EmployerDashboard';
 import AdminContent from './pages/admin/AdminContent';
 import AdminData from './pages/admin/AdminData';
 import AdminAuditLog from './pages/admin/AdminAuditLog';
+import AdminTrafficBotRules from './pages/admin/TrafficBotRules';
 import AdminAccess from './pages/admin/AdminAccess';
 import AdminMyAccess from './pages/admin/AdminMyAccess';
+import AdminNotifications from './pages/admin/AdminNotifications';
+import AdminRetention from './pages/admin/AdminRetention';
 import AdminOversight from './pages/admin/AdminOversight';
 import AdminSetPassword from './pages/admin/AdminSetPassword';
 import AdminStaff from './pages/admin/AdminStaff';
+import AdminSecurity from './pages/admin/AdminSecurity';
 import AdminStats from './pages/admin/AdminStats';
 import AdminEmailTemplates from './pages/admin/AdminEmailTemplates';
 import ManagerLogin from './pages/admin/ManagerLogin';
@@ -46,11 +50,15 @@ const routeComponents: RouteComponents = {
   AdminContent,
   AdminData,
   AdminAuditLog,
+  AdminTrafficBotRules,
   AdminAccess,
   AdminMyAccess,
+  AdminNotifications,
+  AdminRetention,
   AdminOversight,
   AdminSetPassword,
   AdminStaff,
+  AdminSecurity,
   AdminStats,
   AdminEmailTemplates,
   ManagerLogin,

@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../../hooks/useAuth';
+import NotificationBell from './NotificationBell';
 import {
   ADMIN_PORTAL_ROLES,
   isAdminPortalRole,
@@ -9,12 +10,6 @@ import {
   roleLabel,
   type Role,
 } from '../../lib/authClient';
-
-const DEFAULT_SUPER_ADMIN_EMAIL = 'admin@peoplegrowthafrica.com';
-const configuredSuperAdminEmail = (import.meta.env.VITE_SUPER_ADMIN_EMAIL ?? DEFAULT_SUPER_ADMIN_EMAIL).trim().toLowerCase();
-function isSuperAdmin(email: string | undefined): boolean {
-  return Boolean(email && email.trim().toLowerCase() === configuredSuperAdminEmail);
-}
 
 type Portal = 'admin' | 'content';
 
@@ -33,6 +28,12 @@ function navItems(portal: Portal): NavItem[] {
         to: '/content',
         roles: ['content_manager'],
         match: (pathname) => pathname === '/content' || pathname.startsWith('/content/'),
+      },
+      {
+        label: 'My security',
+        to: '/content/my-security',
+        roles: ['content_manager'],
+        match: (pathname) => pathname.startsWith('/content/my-security'),
       },
     ];
   }
@@ -55,6 +56,18 @@ function navItems(portal: Portal): NavItem[] {
       to: '/admin/my-access',
       roles: ADMIN_PORTAL_ROLES,
       match: (pathname) => pathname.startsWith('/admin/my-access'),
+    },
+    {
+      label: 'My security',
+      to: '/admin/my-security',
+      roles: ADMIN_PORTAL_ROLES,
+      match: (pathname) => pathname.startsWith('/admin/my-security') || pathname.startsWith('/admin/security'),
+    },
+    {
+      label: 'Notifications',
+      to: '/admin/notifications',
+      roles: ADMIN_PORTAL_ROLES,
+      match: (pathname) => pathname.startsWith('/admin/notifications'),
     },
     {
       label: 'Audit Log',
@@ -86,6 +99,12 @@ function navItems(portal: Portal): NavItem[] {
       roles: ['admin'],
       match: (pathname) => pathname.startsWith('/admin/access'),
     },
+    {
+      label: 'Data retention',
+      to: '/admin/retention',
+      roles: ['admin'],
+      match: (pathname) => pathname.startsWith('/admin/retention'),
+    },
   ];
 }
 
@@ -110,8 +129,9 @@ export default function AdminShell({
 
   const items = navItems(portal).filter(
     (item) => user?.role !== undefined && item.roles.includes(user.role) &&
-      (item.to !== '/admin/staff' || isSuperAdmin(user.email)) &&
-      (item.to !== '/admin/access' || isSuperAdmin(user.email)),
+      (item.to !== '/admin/staff' || user.isSuperAdmin) &&
+      (item.to !== '/admin/access' || user.isSuperAdmin) &&
+      (item.to !== '/admin/retention' || user.isSuperAdmin),
   );
   const section = portal === 'content' ? 'Content desk' : 'Staff';
   // Only the accounts that carry a name are greeted by it: a seeded or legacy
@@ -250,7 +270,12 @@ export default function AdminShell({
                 </p>
               )}
             </div>
-            {actions && <div className="flex w-full shrink-0 flex-wrap items-center gap-2.5 xl:w-auto">{actions}</div>}
+            {(actions || portal === 'admin') && (
+              <div className="flex w-full shrink-0 flex-wrap items-center gap-2.5 xl:w-auto">
+                {portal === 'admin' && <NotificationBell />}
+                {actions}
+              </div>
+            )}
           </div>
           {children}
         </main>

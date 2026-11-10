@@ -8,6 +8,8 @@ import { insertConsultationBooking } from '../../db.js';
 import { sendLeadNotification } from '../../email.js';
 import { enforceRateLimit } from '../../ratelimit.js';
 import { recordAuthEvent } from '../../audit.js';
+import { createBestEffortNotification } from '../../notifications.js';
+import { scheduleBestEffort } from '../../best-effort.js';
 
 /**
  * A booking request. Nothing here checks the team's diary, so the visitor is
@@ -55,6 +57,11 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
       'We could not save your request. Try again in a moment.',
     );
   }
+
+  scheduleBestEffort(
+    () => createBestEffortNotification({ event: 'consultation.created' }),
+    'notifications',
+  );
 
   await sendLeadNotification({
     kind: 'Consultation request',

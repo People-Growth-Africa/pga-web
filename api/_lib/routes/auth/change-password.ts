@@ -58,6 +58,7 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
       role: updated.role,
       tokenVersion: updated.token_version,
       portal,
+      req,
     });
     setSessionCookie(req, res, token, sessionTtlSeconds(updated.role), portal);
   }

@@ -1,8 +1,8 @@
 import type { VercelResponse } from '@vercel/node';
 
-import { endpoint, sendJson } from '../http.js';
-import { requireAdminData, requireAllPermissions } from '../staff.js';
-import { parseInput, dataQuerySchema } from '../validation.js';
+import { ApiError, endpoint, MAX_ADMIN_BODY_BYTES, parseJsonBody, sendJson } from '../http.js';
+import { requireAdminData, requireAllPermissions, requirePermission, requireSuperAdmin } from '../staff.js';
+import { parseInput, dataMutationSchema, dataQuerySchema } from '../validation.js';
 import {
   countConsultations,
   countRegistrations,
@@ -17,13 +17,22 @@ import {
   listSubscriptionsForExport,
   listUserAccounts,
   listUserAccountsForExport,
+  permanentlyDeleteDataRecord,
+  setDataRecordDeleted,
+  updateConsultationField,
+  listStaffAccounts,
   type DataFilter,
+  type DeletableDataType,
   type UserAccountFilter,
 } from '../db.js';
-import { auditActorForUser, logAudit } from '../audit.js';
+import { auditActorForUser, logAudit, prepareAuditWrite } from '../audit.js';
 import { csvRows } from '../csv.js';
 import { formatAnswersForCsv } from '../registration-form.js';
 import { todayIso } from '../dates.js';
+import { createBestEffortNotification } from '../notifications.js';
+import { SECURITY_ALERT_EVENTS, SECURITY_ALERT_THRESHOLDS } from '../security-alert-config.js';
+import { scheduleBestEffort } from '../best-effort.js';
+import { hasEffectivePermission } from '../access.js';
 
 /**
  * GET /api/admin/data?type=registrations|subscriptions|consultations|users
@@ -50,10 +59,103 @@ function str(value: string | string[] | undefined): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
 }
 
-export default endpoint({ methods: ['GET'] }, async (req, res) => {
+export default endpoint({ methods: ['GET', 'POST'], csrf: true }, async (req, res) => {
   const query = req.query ?? {};
   const requested = `${req.url ?? ''} ${typeof query.path === 'string' ? query.path : ''}`;
   const exporting = requested.includes('data-export');
+  if (req.method === 'POST') {
+    if (exporting) throw new ApiError(405, 'method_not_allowed', 'This action is not available here.');
+    const body = parseInput(dataMutationSchema, parseJsonBody(req, MAX_ADMIN_BODY_BYTES));
+    if (
+      body.action === 'consultation_status' ||
+      body.action === 'consultation_assign' ||
+      body.action === 'consultation_note'
+    ) {
+      const session = await requirePermission(req, res, 'consultation.update');
+      let change:
+        | { type: 'status'; status: 'new' | 'contacted' | 'scheduled' | 'done' }
+        | { type: 'assignment'; assignedTo: string | null }
+        | { type: 'note'; internalNotes: string };
+      let action: 'consultation.status_change' | 'consultation.assignment' | 'consultation.note_edit';
+      if (body.action === 'consultation_status') {
+        change = { type: 'status', status: body.status };
+        action = 'consultation.status_change';
+      } else if (body.action === 'consultation_assign') {
+        if (body.assignedTo) {
+          const staff = (await listStaffAccounts()).find(
+            (account) => account.id === body.assignedTo && account.disabled_at === null,
+          );
+          if (!staff || !(await hasEffectivePermission(staff.id, staff.role, 'consultation.update'))) {
+            throw new ApiError(400, 'invalid_assignee', 'Choose an active staff member with consultation access.');
+          }
+        }
+        change = { type: 'assignment', assignedTo: body.assignedTo };
+        action = 'consultation.assignment';
+      } else {
+        change = { type: 'note', internalNotes: body.internalNotes };
+        action = 'consultation.note_edit';
+      }
+      const result = await updateConsultationField({
+        id: body.id,
+        actorId: session.userId,
+        change,
+        audit: prepareAuditWrite({
+          req,
+          actor: await auditActorForUser(session.userId),
+          action,
+          entity: { type: 'consultation', id: body.id },
+        }),
+      });
+      if (!result.changed) {
+        sendJson(res, 200, { ok: true, changed: false });
+        return;
+      }
+      if (
+        change.type === 'assignment' &&
+        change.assignedTo &&
+        change.assignedTo !== result.previousAssignee
+      ) {
+        scheduleBestEffort(
+          () => createBestEffortNotification({ event: 'consultation.assigned', assigneeId: change.assignedTo! }),
+          'notification',
+        );
+      }
+      sendJson(res, 200, { ok: true, changed: true });
+      return;
+    }
+    const session = body.action === 'purge'
+      ? (await requireSuperAdmin(req, res)).session
+      : await requirePermission(req, res, 'admin.data.manage');
+    const entityType = body.type === 'registrations'
+      ? 'registration'
+      : body.type === 'subscriptions'
+        ? 'subscription'
+        : 'consultation';
+    const action = `${entityType}.${body.action}` as
+      | 'registration.delete' | 'registration.restore' | 'registration.purge'
+      | 'subscription.delete' | 'subscription.restore' | 'subscription.purge'
+      | 'consultation.delete' | 'consultation.restore' | 'consultation.purge';
+    const audit = prepareAuditWrite({
+      req,
+      actor: await auditActorForUser(session.userId),
+      action,
+      entity: { type: entityType, id: body.id },
+      before: { id: body.id },
+      after: { id: body.id, deleted: body.action === 'delete' },
+    });
+    const result = body.action === 'purge'
+      ? await permanentlyDeleteDataRecord({ type: body.type as DeletableDataType, id: body.id, audit })
+      : await setDataRecordDeleted({
+          type: body.type as DeletableDataType,
+          id: body.id,
+          actorId: session.userId,
+          deleted: body.action === 'delete',
+          audit,
+        });
+    if (!result) throw new ApiError(404, 'not_found', 'That record could not be found in this list.');
+    sendJson(res, 200, { ok: true, action: body.action, id: body.id });
+    return;
+  }
   const session = exporting
     ? await requireAllPermissions(req, res, ['admin.data.read', 'export.data'])
     : await requireAdminData(req, res);
@@ -65,6 +167,9 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     ...(str(query.to) ? { to: str(query.to) } : {}),
     ...(str(query.event) ? { event: str(query.event) } : {}),
     ...(str(query.role) ? { role: str(query.role) } : {}),
+    ...(str(query.deleted) ? { deleted: str(query.deleted) } : {}),
+    ...(str(query.status) ? { status: str(query.status) } : {}),
+    ...(str(query.owner) ? { owner: str(query.owner) } : {}),
   });
 
   const filter: DataFilter = {
@@ -74,7 +179,25 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     // Only registrations have an event column; a stray event parameter on the
     // other tabs is ignored rather than sent to a table that lacks it.
     ...(parsed.type === 'registrations' && parsed.event ? { eventSlug: parsed.event } : {}),
+    ...(!exporting && parsed.type !== 'users' && parsed.deleted === 'true' ? { deletedOnly: true } : {}),
+    ...(parsed.type === 'consultations' && parsed.status ? { status: parsed.status } : {}),
+    ...(parsed.type === 'consultations' && parsed.owner
+      ? { ownerId: parsed.owner }
+      : {}),
   };
+  const assignableStaff = parsed.type === 'consultations' &&
+    await hasEffectivePermission(session.userId, session.role, 'consultation.update')
+    ? (await Promise.all(
+        (await listStaffAccounts())
+          .filter((account) => account.disabled_at === null)
+          .map(async (account) => ({
+            account,
+            allowed: await hasEffectivePermission(account.id, account.role, 'consultation.update'),
+          })),
+      ))
+        .filter(({ allowed }) => allowed)
+        .map(({ account }) => ({ id: account.id, name: account.name, email: account.email }))
+    : [];
   const userFilter: UserAccountFilter = {
     ...(parsed.search ? { search: parsed.search } : {}),
     ...(parsed.from ? { from: parsed.from } : {}),
@@ -95,10 +218,23 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
           to: parsed.to ?? null,
           search: parsed.search ? 'provided' : null,
           role: parsed.type === 'users' ? parsed.role ?? null : null,
+          status: parsed.type === 'consultations' ? parsed.status ?? null : null,
+          owner: parsed.type === 'consultations' ? parsed.owner ?? null : null,
         },
         rowCount,
       },
     });
+    if (rowCount > SECURITY_ALERT_THRESHOLDS.largeExportRows || parsed.type === 'users') {
+      scheduleBestEffort(
+        () => createBestEffortNotification({
+          event: SECURITY_ALERT_EVENTS.export,
+          dataset: parsed.type,
+          rowCount,
+          sensitive: parsed.type === 'users',
+        }),
+        'security-alert',
+      );
+    }
   };
 
   if (parsed.type === 'registrations') {
@@ -226,7 +362,14 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
       listUserAccounts({ ...userFilter, limit: PAGE_SIZE, offset: (parsed.page - 1) * PAGE_SIZE }),
       countUserAccounts(userFilter),
     ]);
-    sendJson(res, 200, { type: parsed.type, rows, total, page: parsed.page, pageSize: PAGE_SIZE });
+    sendJson(res, 200, {
+      type: parsed.type,
+      rows,
+      total,
+      page: parsed.page,
+      pageSize: PAGE_SIZE,
+      assignableStaff,
+    });
     return;
   }
 

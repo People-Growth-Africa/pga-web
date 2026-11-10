@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
+import { useAuth } from '../../hooks/useAuth';
 import { authRequest, NETWORK_FAILURE, onSessionEnded } from '../../lib/authClient';
 import AccessRequestDialog from './AccessRequestDialog';
 import {
@@ -35,6 +36,7 @@ type DataResponse = {
   page: number;
   pageSize: number;
   events?: { event_slug: string; total: number }[];
+  assignableStaff?: { id: string; name: string | null; email: string }[];
 };
 
 const TABS: { value: DataType; label: string; search: string }[] = [
@@ -62,6 +64,8 @@ const TABLE_COLUMNS: Record<Exclude<DataType, 'registrations'>, { key: string; l
     { key: 'preferred_slot', label: 'Slot' },
     { key: 'notes', label: 'Notes' },
     { key: 'status', label: 'Status' },
+    { key: 'assigned_to', label: 'Assigned to' },
+    { key: 'internal_notes', label: 'Internal notes' },
     { key: 'created_at', label: 'Booked' },
   ],
   users: [
@@ -235,7 +239,9 @@ function CopyIcon() {
 }
 
 export default function AdminData() {
+  const { user } = useAuth();
   const [type, setType] = useState<DataType>('registrations');
+  const [showDeleted, setShowDeleted] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [events, setEvents] = useState<{ event_slug: string; total: number }[]>([]);
   const [eventTitles, setEventTitles] = useState<Record<string, string>>({});
@@ -245,6 +251,9 @@ export default function AdminData() {
   const [search, setSearch] = useState('');
   const [eventSlug, setEventSlug] = useState('');
   const [accountRole, setAccountRole] = useState('');
+  const [consultationStatus, setConsultationStatus] = useState('');
+  const [consultationOwner, setConsultationOwner] = useState('');
+  const [assignableStaff, setAssignableStaff] = useState<{ id: string; name: string | null; email: string }[]>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [loading, setLoading] = useState(true);
@@ -334,8 +343,11 @@ export default function AdminData() {
     if (to) params.set('to', to);
     if (type === 'registrations' && eventSlug) params.set('event', eventSlug);
     if (type === 'users' && accountRole) params.set('role', accountRole);
+    if (type === 'consultations' && consultationStatus) params.set('status', consultationStatus);
+    if (type === 'consultations' && consultationOwner) params.set('owner', consultationOwner);
+    if (showDeleted) params.set('deleted', 'true');
     return params;
-  }, [type, page, search, from, to, eventSlug, accountRole]);
+  }, [type, page, search, from, to, eventSlug, accountRole, consultationStatus, consultationOwner, showDeleted]);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -351,11 +363,44 @@ export default function AdminData() {
       setRows(result.data.rows);
       setTotal(result.data.total);
       setEvents(result.data.events ?? []);
+      setAssignableStaff(result.data.assignableStaff ?? []);
       setError(null);
       setLoading(false);
     },
     [query],
   );
+
+  const mutateRecord = useCallback(async (row: Row, action: 'delete' | 'restore' | 'purge') => {
+    if (!row.id) return;
+    const result = await authRequest<{ ok: boolean }>('/api/admin/data', {
+      method: 'POST',
+      body: JSON.stringify({ action, type, id: row.id }),
+    });
+    if (!result.ok) {
+      setError(result.failure.error);
+      return;
+    }
+    setError(null);
+    await load();
+  }, [type, load]);
+
+  const mutateConsultation = useCallback(async (
+    row: Row,
+    change: { action: 'consultation_status'; status: string }
+      | { action: 'consultation_assign'; assignedTo: string | null }
+      | { action: 'consultation_note'; internalNotes: string },
+  ) => {
+    if (!row.id) return;
+    const result = await authRequest<{ ok: boolean }>('/api/admin/data', {
+      method: 'POST',
+      body: { id: row.id, ...change },
+    });
+    if (!result.ok) {
+      setError(result.failure.error);
+      return;
+    }
+    await load();
+  }, [load]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -525,6 +570,7 @@ export default function AdminData() {
                   onClick={() => {
                     setType(tab.value);
                     setPage(1);
+                    setShowDeleted(false);
                     setEventSlug('');
                     setAccountRole('');
                     setSearchParams((current) => {
@@ -545,6 +591,36 @@ export default function AdminData() {
             })}
           </div>
         </div>
+
+        {type !== 'users' && (
+          <div className="mb-5 flex gap-2" role="tablist" aria-label="Record status">
+            {[
+              { label: 'Active', deleted: false },
+              { label: 'Deleted', deleted: true },
+            ].map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                role="tab"
+                aria-selected={showDeleted === item.deleted}
+                onClick={() => {
+                  setShowDeleted(item.deleted);
+                  setPage(1);
+                  setSearchParams((current) => {
+                    const next = new URLSearchParams(current);
+                    next.delete('id');
+                    return next;
+                  });
+                }}
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                  showDeleted === item.deleted ? 'bg-deep-green text-white' : 'bg-cream text-charcoal/70'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* 48px tall, 16px text on phone so iOS does not zoom; stacked there. */}
         <div className={`mb-5 grid gap-3 ${type === 'registrations' || type === 'users' ? 'lg:grid-cols-[1.4fr_0.8fr_0.8fr_1.1fr]' : 'lg:grid-cols-[1.5fr_0.8fr_0.8fr]'}`}>
@@ -620,6 +696,34 @@ export default function AdminData() {
               </select>
             </label>
           )}
+          {type === 'consultations' && (
+            <>
+              <label className="mb-2 font-[family-name:var(--font-body)] text-[0.78rem] font-medium text-charcoal/60">
+                <span className="mb-1.5 block">Status</span>
+                <select value={consultationStatus} onChange={(event) => {
+                  setConsultationStatus(event.target.value);
+                  setPage(1);
+                }} className={inputClass}>
+                  <option value="">All statuses</option>
+                  <option value="new">New</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="done">Done</option>
+                </select>
+              </label>
+              <label className="mb-2 font-[family-name:var(--font-body)] text-[0.78rem] font-medium text-charcoal/60">
+                <span className="mb-1.5 block">Owner</span>
+                <select value={consultationOwner} onChange={(event) => {
+                  setConsultationOwner(event.target.value);
+                  setPage(1);
+                }} className={inputClass}>
+                  <option value="">All owners</option>
+                  <option value="unassigned">Unassigned</option>
+                  {assignableStaff.map((staff) => <option key={staff.id} value={staff.id}>{staff.name || staff.email}</option>)}
+                </select>
+              </label>
+            </>
+          )}
         </div>
 
         {error && (
@@ -669,7 +773,15 @@ export default function AdminData() {
               : `${total} ${total === 1 ? 'row' : 'rows'} match the current filters.`}
         </p>
 
-        {type === 'registrations' ? (
+        {showDeleted ? (
+          <DeletedRecordsPanel
+            rows={rows}
+            loading={loading}
+            isSuperAdmin={user?.isSuperAdmin === true}
+            onRestore={(row) => void mutateRecord(row, 'restore')}
+            onPurge={(row) => void mutateRecord(row, 'purge')}
+          />
+        ) : type === 'registrations' ? (
           <>
             <div className={`gap-6 lg:grid ${selected ? 'lg:grid-cols-[minmax(0,1fr)_400px]' : 'lg:grid-cols-[minmax(0,1fr)]'}`}>
               <RegistrationList
@@ -680,12 +792,21 @@ export default function AdminData() {
                 showEventTag={showEventTag}
                 rowRefs={rowRefs}
                 onOpen={openDetail}
+                onDelete={(row) => void mutateRecord(row, 'delete')}
               />
               {details}
             </div>
           </>
         ) : (
-          <WideTable type={type} rows={rows} loading={loading} />
+          <WideTable
+            type={type}
+            rows={rows}
+            loading={loading}
+            onDelete={type === 'users' ? undefined : (row) => void mutateRecord(row, 'delete')}
+            consultationStaff={assignableStaff}
+            canUpdateConsultations={access?.effectivePermissions.includes('consultation.update') ?? false}
+            onConsultationChange={(row, change) => void mutateConsultation(row, change)}
+          />
         )}
 
         <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-charcoal/10 pt-4 sm:flex-row">
@@ -741,6 +862,7 @@ function RegistrationList({
   showEventTag,
   rowRefs,
   onOpen,
+  onDelete,
 }: {
   rows: Row[];
   loading: boolean;
@@ -749,6 +871,7 @@ function RegistrationList({
   showEventTag: boolean;
   rowRefs: React.RefObject<Map<string, HTMLButtonElement>>;
   onOpen: (email: string) => void;
+  onDelete: (row: Row) => void;
 }) {
   if (loading) {
     return (
@@ -789,8 +912,8 @@ function RegistrationList({
         const isSelected = key !== '' && selectedId === key;
 
         return (
+          <div key={key} className="flex items-stretch border-b border-charcoal/[0.07] last:border-0">
           <button
-            key={key}
             type="button"
             ref={(element) => {
               if (element) rowRefs.current?.set(key, element);
@@ -799,7 +922,7 @@ function RegistrationList({
             onClick={() => onOpen(key)}
             aria-haspopup="dialog"
             aria-expanded={isSelected}
-            className={`block w-full cursor-pointer border-b border-charcoal/[0.07] text-left last:border-0 focus-visible:bg-mint/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-green ${
+            className={`block min-w-0 flex-1 cursor-pointer text-left focus-visible:bg-mint/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-green ${
               isSelected ? 'bg-mint/70' : 'bg-white hover:bg-cream/50'
             }`}
           >
@@ -862,6 +985,10 @@ function RegistrationList({
               <Chevron />
             </span>
           </button>
+          <button type="button" onClick={() => onDelete(row)} className="shrink-0 px-3 text-xs font-semibold text-terracotta hover:bg-terracotta/10">
+            Delete
+          </button>
+          </div>
         );
       })}
     </div>
@@ -1106,10 +1233,23 @@ function WideTable({
   type,
   rows,
   loading,
+  onDelete,
+  consultationStaff,
+  canUpdateConsultations,
+  onConsultationChange,
 }: {
   type: Exclude<DataType, 'registrations'>;
   rows: Row[];
   loading: boolean;
+  onDelete?: (row: Row) => void;
+  consultationStaff: { id: string; name: string | null; email: string }[];
+  canUpdateConsultations: boolean;
+  onConsultationChange: (
+    row: Row,
+    change: { action: 'consultation_status'; status: string }
+      | { action: 'consultation_assign'; assignedTo: string | null }
+      | { action: 'consultation_note'; internalNotes: string },
+  ) => void;
 }) {
   const columns = TABLE_COLUMNS[type];
   return (
@@ -1123,18 +1263,19 @@ function WideTable({
                   {column.label}
                 </th>
               ))}
+              {onDelete && <th className="px-4 py-3.5 font-semibold">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-charcoal/50">
+                <td colSpan={columns.length + Number(Boolean(onDelete))} className="px-4 py-10 text-center text-sm text-charcoal/50">
                   Loading…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-charcoal/50">
+                <td colSpan={columns.length + Number(Boolean(onDelete))} className="px-4 py-10 text-center text-sm text-charcoal/50">
                   Nothing matches these filters yet.
                 </td>
               </tr>
@@ -1161,6 +1302,7 @@ function WideTable({
                         </td>
                       );
                     }
+
                     if (column.key === 'created_at') {
                       const parts = formatDateParts(row[column.key]);
                       return (
@@ -1173,6 +1315,55 @@ function WideTable({
                           ) : (
                             '—'
                           )}
+                        </td>
+                      );
+                    }
+                    if (type === 'consultations' && column.key === 'status') {
+                      return (
+                        <td key={column.key} className="whitespace-nowrap px-4 py-4">
+                          <select aria-label={`Status for ${row.name ?? row.email ?? 'consultation'}`}
+                            value={row.status ?? 'new'} disabled={!canUpdateConsultations}
+                            onChange={(event) => onConsultationChange(row, {
+                              action: 'consultation_status',
+                              status: event.target.value,
+                            })}
+                            className="min-h-9 rounded-lg border border-charcoal/15 bg-white px-2 text-sm disabled:opacity-60">
+                            {['new', 'contacted', 'scheduled', 'done'].map((status) => <option key={status} value={status}>{status}</option>)}
+                          </select>
+                        </td>
+                      );
+                    }
+                    if (type === 'consultations' && column.key === 'assigned_to') {
+                      return (
+                        <td key={column.key} className="whitespace-nowrap px-4 py-4">
+                          <select aria-label={`Owner for ${row.name ?? row.email ?? 'consultation'}`}
+                            value={row.assigned_to ?? ''} disabled={!canUpdateConsultations}
+                            onChange={(event) => onConsultationChange(row, {
+                              action: 'consultation_assign',
+                              assignedTo: event.target.value || null,
+                            })}
+                            className="min-h-9 max-w-48 rounded-lg border border-charcoal/15 bg-white px-2 text-sm disabled:opacity-60">
+                            <option value="">Unassigned</option>
+                            {consultationStaff.map((staff) => <option key={staff.id} value={staff.id}>{staff.name || staff.email}</option>)}
+                          </select>
+                        </td>
+                      );
+                    }
+                    if (type === 'consultations' && column.key === 'internal_notes') {
+                      return (
+                        <td key={column.key} className="min-w-[220px] px-4 py-4">
+                          <input aria-label={`Internal note for ${row.name ?? row.email ?? 'consultation'}`}
+                            defaultValue={row.internal_notes ?? ''} disabled={!canUpdateConsultations}
+                            onBlur={(event) => {
+                              if (event.currentTarget.value !== (row.internal_notes ?? '')) {
+                                onConsultationChange(row, {
+                                  action: 'consultation_note',
+                                  internalNotes: event.currentTarget.value,
+                                });
+                              }
+                            }}
+                            className="w-full min-h-9 rounded-lg border border-charcoal/15 bg-white px-2 text-sm disabled:opacity-60"
+                            placeholder="Staff only" />
                         </td>
                       );
                     }
@@ -1189,12 +1380,70 @@ function WideTable({
                       </td>
                     );
                   })}
+                  {onDelete && (
+                    <td className="whitespace-nowrap px-4 py-4">
+                      <button type="button" onClick={() => onDelete(row)} className="rounded-full px-3 py-1 text-xs font-semibold text-terracotta hover:bg-terracotta/10">Delete</button>
+                    </td>
+                  )}
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function DeletedRecordsPanel({
+  rows,
+  loading,
+  isSuperAdmin,
+  onRestore,
+  onPurge,
+}: {
+  rows: Row[];
+  loading: boolean;
+  isSuperAdmin: boolean;
+  onRestore: (row: Row) => void;
+  onPurge: (row: Row) => void;
+}) {
+  if (loading) {
+    return <p className="rounded-[16px] border border-charcoal/10 bg-white px-5 py-14 text-center text-sm text-charcoal/50">Loading…</p>;
+  }
+  if (rows.length === 0) {
+    return <p className="rounded-[16px] border border-charcoal/10 bg-white px-5 py-14 text-center text-sm text-charcoal/50">No deleted records.</p>;
+  }
+  return (
+    <div className="overflow-hidden rounded-[16px] border border-charcoal/10 bg-white">
+      {rows.map((row) => (
+        <div key={row.id ?? row.email} className="flex flex-col gap-3 border-b border-charcoal/[0.07] p-4 last:border-0 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-charcoal">{row.name ?? row.email ?? 'Deleted record'}</p>
+            <p className="truncate text-sm text-charcoal/60">
+              {[row.event_slug, row.email, row.status].filter(Boolean).join(' · ')}
+            </p>
+            <p className="mt-1 text-xs text-charcoal/50">
+              Deleted {row.deleted_at ? new Date(row.deleted_at).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) : 'at unknown time'}
+              {row.deleted_by ? ` · by ${row.deleted_by}` : ''}
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button type="button" onClick={() => onRestore(row)} className="min-h-10 rounded-[9px] border border-deep-green px-4 text-sm font-semibold text-deep-green hover:bg-mint">Restore</button>
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Permanently delete this record? This cannot be undone.')) onPurge(row);
+                }}
+                className="min-h-10 rounded-[9px] border border-terracotta/40 px-4 text-sm font-semibold text-terracotta hover:bg-terracotta/10"
+              >
+                Purge
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

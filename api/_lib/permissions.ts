@@ -3,6 +3,7 @@ import type { Role } from './db.js';
 export type Permission =
   | 'admin.dashboard.read'
   | 'admin.data.read'
+  | 'admin.data.manage'
   | 'admin.content.write'
   | 'admin.staff.manage'
   | 'content.write'
@@ -21,6 +22,7 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   admin: [
     'admin.dashboard.read',
     'admin.data.read',
+    'admin.data.manage',
     'admin.content.write',
     'admin.staff.manage',
     'audit_log.view',
@@ -30,10 +32,10 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'email_template.edit',
     'export.data',
   ],
-  project_manager: ['admin.dashboard.read', 'admin.data.read', 'export.data'],
-  hr_manager: ['admin.dashboard.read', 'admin.data.read', 'export.data'],
+  project_manager: ['admin.dashboard.read', 'admin.data.read', 'admin.data.manage', 'export.data'],
+  hr_manager: ['admin.dashboard.read', 'admin.data.read', 'admin.data.manage', 'export.data'],
   content_manager: ['content.write', 'content.edit', 'content.publish'],
-  data_admin: ['admin.dashboard.read', 'admin.data.read', 'export.data'],
+  data_admin: ['admin.dashboard.read', 'admin.data.read', 'admin.data.manage', 'export.data'],
 };
 
 export function permissionsForRole(role: Role): readonly Permission[] {

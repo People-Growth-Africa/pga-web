@@ -91,12 +91,18 @@ export default function Privacy() {
         <h2>How long we keep it</h2>
         <ul>
           <li>Your account and profile are kept for as long as the account exists.</li>
-          <li>A signed in session lasts 7 days, or until you log out.</li>
+          <li>A signed-in session cookie lasts 7 days, or until you log out. When server-side expired or revoked session records are stored, they are kept for 30 days.</li>
           <li>Email confirmation links expire after 24 hours. Password reset links expire after 1 hour.</li>
           <li>Rate limit counters are discarded within an hour.</li>
+          <li>Failed login events are kept for 90 days.</li>
+          <li>Unsubscribed newsletter addresses are kept for 30 days after unsubscribe.</li>
+          <li>Event registrations are kept for 24 months after the event.</li>
+          <li>Completed consultation bookings are kept for 24 months after completion.</li>
+          <li>Soft-deleted records are permanently removed after 30 days unless a legal hold applies.</li>
+          <li>Read notifications are kept for 90 days; unread notifications for 12 months. Security alerts are kept for 12 months.</li>
           <li>
-            Audit rows are kept for security, but the link to your account is removed when the
-            account is deleted, so the remaining row no longer identifies you.
+            Audit rows are retained indefinitely (and in any case for at least 24 months). They are
+            append-only and are not included in routine deletion requests.
           </li>
         </ul>
       </div>
@@ -140,10 +146,13 @@ export default function Privacy() {
       <div>
         <h2>Website visits</h2>
         <p>
-          We count anonymous page visits so we can tell which pages are useful. The count uses no
-          tracking cookies and no advertising identifiers. Your IP address and browser name are used
-          only to avoid counting the same visitor twice in one day, then replaced with a salted hash
-          that is deleted after two days. Staff pages and known bots are not counted.
+          We record raw page hits so traffic-classification rules can be improved without losing
+          history, including the page, browser user-agent, referrer host and coarse country/device
+          information. A temporary first-party cookie lasting two minutes joins the server capture
+          to the browser beacon. The count uses no advertising identifiers. IP addresses are
+          replaced with a salted hash. Raw hit records, including their daily pseudonymous visitor
+          hashes, are retained for bot reclassification; no automatic deletion period has been
+          approved for those hits yet. Staff pages are excluded.
         </p>
       </div>
 

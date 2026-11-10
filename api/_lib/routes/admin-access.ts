@@ -16,8 +16,10 @@ import {
   revokePermissionGrant,
 } from '../db.js';
 import { ApiError, endpoint, parseJsonBody, sendJson } from '../http.js';
-import { isSuperAdminEmail, requireStaff, requireSuperAdmin } from '../staff.js';
+import { requireStaff, requireSuperAdmin } from '../staff.js';
 import { hasPermission } from '../permissions.js';
+import { createBestEffortNotification } from '../notifications.js';
+import { scheduleBestEffort } from '../best-effort.js';
 import {
   accessRequestCreateSchema,
   accessRequestMutationSchema,
@@ -49,7 +51,7 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       user &&
       user.disabled_at === null &&
       hasPermission(user.role, 'admin.staff.manage') &&
-      isSuperAdminEmail(user.email)
+      user.is_super_admin
     ) {
       const [pendingRequests, activeGrants] = await Promise.all([
         listPendingAccessRequests(),
@@ -89,9 +91,15 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       audit,
     });
     if (!request) throw conflict();
-    if (!(await sendAccessRequestNotification(request.requester_name, request.permission))) {
-      console.error('[access] request notification was not sent');
-    }
+    scheduleBestEffort(() => createBestEffortNotification({
+      event: 'access_request.created',
+      requesterName: request.requester_name,
+      permission: request.permission,
+    }), 'notifications');
+    scheduleBestEffort(
+      () => sendAccessRequestNotification(request.requester_name, request.permission),
+      'access',
+    );
     sendJson(res, 201, {
       request: { id: request.id, permission: request.permission, status: request.status },
     });
@@ -138,16 +146,21 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       audit,
     });
     if (!request) throw conflict();
-    if (
-      !(await sendAccessDecisionNotification(
+    scheduleBestEffort(() => createBestEffortNotification({
+      event: 'access_request.decided',
+      permission: request.permission,
+      status: 'approved',
+      recipientUserId: request.requester_id,
+    }), 'notifications');
+    scheduleBestEffort(
+      () => sendAccessDecisionNotification(
         request.requester_email,
         request.requester_name,
         request.permission,
         'approved',
-      ))
-    ) {
-      console.error('[access] approval notification was not sent');
-    }
+      ),
+      'access',
+    );
     sendJson(res, 200, {
       request: {
         id: request.id,
@@ -175,16 +188,21 @@ export default endpoint({ methods: ['GET', 'POST', 'PATCH'], csrf: true }, async
       audit,
     });
     if (!request) throw conflict();
-    if (
-      !(await sendAccessDecisionNotification(
+    scheduleBestEffort(() => createBestEffortNotification({
+      event: 'access_request.decided',
+      permission: request.permission,
+      status: 'declined',
+      recipientUserId: request.requester_id,
+    }), 'notifications');
+    scheduleBestEffort(
+      () => sendAccessDecisionNotification(
         request.requester_email,
         request.requester_name,
         request.permission,
         'declined',
-      ))
-    ) {
-      console.error('[access] decline notification was not sent');
-    }
+      ),
+      'access',
+    );
     sendJson(res, 200, {
       request: { id: request.id, permission: request.permission, status: request.status },
     });

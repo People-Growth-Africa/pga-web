@@ -139,3 +139,26 @@ export async function enforceRateLimit(options: RateLimitCheck): Promise<void> {
     throw error;
   }
 }
+
+/**
+ * Counts a security signal without ever refusing the triggering operation.
+ * The same shared Upstash limiter is preferred, while an instance-local
+ * fallback still records the signal if Redis is unavailable.
+ */
+export async function observeThreshold(options: RateLimitCheck): Promise<boolean> {
+  const identifier = counterKey(options.identifier);
+  const limiter = upstashLimiter(options.name, options.limit, options.windowSeconds);
+  if (limiter) {
+    try {
+      const result = await limiter.limit(identifier);
+      return !result.success;
+    } catch {
+      console.error('[security-alert] shared threshold counter unavailable; using local fallback');
+    }
+  }
+  return !memoryAllow(
+    `${options.name}:${identifier}`,
+    options.limit,
+    options.windowSeconds,
+  ).allowed;
+}

@@ -38,11 +38,14 @@ export type AdminPost = {
   registration_button_label: string | null;
   /** The saved registration form, or null while the event uses the built-in fields. */
   registration_form: unknown | null;
-  status: 'draft' | 'published';
+  status: 'draft' | 'published' | 'scheduled';
   published_at: string | null;
+  publish_at: string | null;
   created_at: string;
   updated_at: string;
   author_id: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
 };
 
 export type AdminCategory = {
@@ -73,7 +76,8 @@ export type PostDraft = {
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
   registrationForm: RegistrationForm | null;
-  status: 'draft' | 'published';
+  status: 'draft' | 'published' | 'scheduled';
+  publishAt: string | null;
 };
 
 export type Result<T> = { ok: true; data: T } | { ok: false; failure: ApiFailure };
@@ -82,12 +86,14 @@ export async function listContent(filters: {
   type?: string;
   status?: string;
   search?: string;
+  deletedOnly?: boolean;
   signal?: AbortSignal;
 }): Promise<Result<{ posts: AdminPost[]; categories: AdminCategory[] }>> {
   const query = new URLSearchParams();
   if (filters.type) query.set('type', filters.type);
   if (filters.status) query.set('status', filters.status);
   if (filters.search) query.set('search', filters.search);
+  if (filters.deletedOnly) query.set('deleted', 'true');
   const suffix = query.toString() ? `?${query.toString()}` : '';
 
   return authRequest(`/api/content/posts${suffix}`, { method: 'GET' });
@@ -125,6 +131,14 @@ export async function setPostStatus(
 
 export async function deletePost(id: string): Promise<Result<{ ok: boolean }>> {
   return authRequest(`/api/content/post?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function restorePost(id: string): Promise<Result<{ ok: boolean }>> {
+  return authRequest('/api/content/post', { method: 'POST', body: { action: 'restore', id } });
+}
+
+export async function purgePost(id: string): Promise<Result<{ ok: boolean }>> {
+  return authRequest(`/api/content/post?id=${encodeURIComponent(id)}&purge=true`, { method: 'DELETE' });
 }
 
 export async function createCategory(

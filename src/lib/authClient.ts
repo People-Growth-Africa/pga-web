@@ -88,6 +88,7 @@ export type AuthUser = {
   id: string;
   email: string;
   role: Role;
+  isSuperAdmin?: boolean;
   emailVerified: boolean;
   /**
    * The account's own name. Null on staff rows created before names were
