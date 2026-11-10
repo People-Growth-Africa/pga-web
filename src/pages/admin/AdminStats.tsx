@@ -254,6 +254,7 @@ export default function AdminStats() {
           </div>
         }
       >
+        <div className="min-w-full">
           {error && (
             <p role="alert" className="mb-5 rounded-[10px] border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta">
               {error}
@@ -453,6 +454,7 @@ export default function AdminStats() {
               <TrafficBotRules />
             </>
           )}
+        </div>
       </AdminShell>
     </>
   );
