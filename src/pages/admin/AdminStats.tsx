@@ -426,20 +426,23 @@ export default function AdminStats() {
                   { title: 'Devices', rows: traffic.devices },
                 ].map((block) => (
                   <div key={block.title} className="rounded-2xl border border-charcoal/10 bg-white p-4">
-                    <h3 className="text-sm font-bold text-charcoal">{block.title}</h3>
+                    <h3 className="mb-3 text-sm font-bold text-charcoal">{block.title}</h3>
                     {block.rows.length === 0 ? (
                       <p className="mt-4 text-xs text-charcoal/45">No data yet.</p>
                     ) : (
-                      <ol className="mt-3 space-y-2">
+                      <ol className="space-y-2.5">
                         {block.rows.map((row) => (
-                          <li key={row.label} className="flex items-start justify-between gap-2 text-xs">
-                            <span className="truncate text-charcoal/75" title={row.label}>
+                          <li key={row.label} className="flex flex-col gap-1 text-xs sm:flex-row sm:items-start sm:justify-between sm:gap-2">
+                            <span 
+                              className="break-words text-charcoal/75 sm:truncate" 
+                              title={block.title === 'Top countries' ? countryName(row.label) : row.label}
+                            >
                               {block.title === 'Top countries' ? countryName(row.label) : row.label}
                             </span>
-                            <span className="shrink-0 text-right">
-                              <span className="block font-semibold text-charcoal">{row.views}</span>
+                            <span className="flex items-center justify-between gap-2 sm:shrink-0 sm:flex-col sm:items-end sm:justify-start">
+                              <span className="font-semibold text-charcoal">{row.views}</span>
                               {block.title === 'Top countries' && (
-                                <span className="block text-[0.62rem] text-charcoal/45">
+                                <span className="text-[0.62rem] text-charcoal/45 sm:block">
                                   human {row.humanViews ?? 0} · bots {row.suspectedBotViews ?? 0}
                                 </span>
                               )}
