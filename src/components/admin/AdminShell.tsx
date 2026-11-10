@@ -208,7 +208,7 @@ export default function AdminShell({
   );
 
   return (
-    <div className="min-h-screen bg-[#F5F0E7]">
+    <div className="min-h-screen overflow-x-hidden bg-[#F5F0E7]">
       {/* Desktop sidebar */}
       <div className="fixed inset-y-0 left-0 z-30 hidden w-[240px] lg:block xl:w-[260px]">{sidebar}</div>
 
@@ -257,8 +257,8 @@ export default function AdminShell({
       )}
 
       {/* Main content */}
-      <div className="lg:pl-[240px] xl:pl-[260px]">
-        <main className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-12 xl:px-16 xl:py-14">
+      <div className="overflow-x-hidden lg:pl-[240px] xl:pl-[260px]">
+        <main className="mx-auto w-full max-w-[1280px] overflow-x-hidden px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-12 xl:px-16 xl:py-14">
           <div className="mb-6 flex flex-col gap-4 sm:mb-7 sm:gap-5 lg:mb-8 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               {firstName && (

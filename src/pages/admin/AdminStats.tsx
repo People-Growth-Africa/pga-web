@@ -254,7 +254,7 @@ export default function AdminStats() {
           </div>
         }
       >
-        <div className="min-w-full">
+        <div className="min-w-full overflow-x-hidden">
           {error && (
             <p role="alert" className="mb-5 rounded-[10px] border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta">
               {error}
