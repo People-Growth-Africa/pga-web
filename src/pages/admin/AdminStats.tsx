@@ -238,13 +238,13 @@ export default function AdminStats() {
         title="Dashboard"
         subtitle="Registrations, signups and website traffic in one place."
         actions={
-          <div className="inline-flex flex-wrap rounded-full border border-charcoal/15 bg-white p-1">
+          <div className="inline-flex w-full flex-wrap justify-center rounded-full border border-charcoal/15 bg-white p-1 sm:w-auto sm:justify-start">
             {RANGES.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => setRange(option.value)}
-                className={`min-h-[36px] cursor-pointer rounded-full border-0 px-3 py-1.5 font-[family-name:var(--font-body)] text-xs font-semibold transition-colors ${
+                className={`min-h-[36px] cursor-pointer rounded-full border-0 px-2.5 py-1.5 font-[family-name:var(--font-body)] text-[0.7rem] font-semibold transition-colors sm:px-3 sm:text-xs ${
                   range === option.value ? 'bg-deep-green text-white' : 'text-charcoal/70 hover:bg-cream'
                 }`}
               >
@@ -266,15 +266,15 @@ export default function AdminStats() {
             </p>
           ) : (
             <>
-              <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
-                {CATEGORY_META.map((meta, index) => {
+              <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                {CATEGORY_META.map((meta) => {
                   const count = stats.counts[meta.key];
                   return (
-                    <div key={meta.key} className={`rounded-2xl border border-charcoal/10 bg-white p-4 ${index === CATEGORY_META.length - 1 ? 'col-span-2 lg:col-span-1' : ''}`}>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-wider text-charcoal/50">{meta.label}</p>
-                      <p className="mt-2 font-[family-name:var(--font-heading)] text-3xl font-bold text-charcoal">{count.total}</p>
-                      <p className="mt-1 text-xs text-charcoal/60">{count.last7} in the last 7 days</p>
-                      <p className={`mt-1 text-xs font-semibold ${count.change >= 0 ? 'text-deep-green' : 'text-terracotta'}`}>
+                    <div key={meta.key} className="rounded-2xl border border-charcoal/10 bg-white p-4">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-wider text-charcoal/50 sm:text-[0.72rem]">{meta.label}</p>
+                      <p className="mt-2 font-[family-name:var(--font-heading)] text-2xl font-bold text-charcoal sm:text-3xl">{count.total}</p>
+                      <p className="mt-1 text-[0.7rem] text-charcoal/60 sm:text-xs">{count.last7} in the last 7 days</p>
+                      <p className={`mt-1 text-[0.7rem] font-semibold sm:text-xs ${count.change >= 0 ? 'text-deep-green' : 'text-terracotta'}`}>
                         {changeLabel(count.change)}
                       </p>
                     </div>
@@ -283,8 +283,8 @@ export default function AdminStats() {
               </div>
 
               <section className="mb-6 rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
-                <h2 className="mb-4 font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Consultation pipeline</h2>
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                <h2 className="mb-4 font-[family-name:var(--font-heading)] text-lg font-bold text-charcoal sm:text-xl">Consultation pipeline</h2>
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-3 lg:grid-cols-5">
                   {[
                     ['New', stats.consultationPipeline.new],
                     ['Contacted', stats.consultationPipeline.contacted],
@@ -292,45 +292,48 @@ export default function AdminStats() {
                     ['Done', stats.consultationPipeline.done],
                     ['New over 48 hours', stats.consultationPipeline.newOlderThan48Hours],
                   ].map(([label, total]) => (
-                    <div key={label} className="rounded-xl bg-cream/60 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-charcoal/55">{label}</p>
-                      <p className="mt-2 text-2xl font-bold text-charcoal">{total}</p>
+                    <div key={label} className="rounded-xl bg-cream/60 p-3 sm:p-4">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-wide text-charcoal/55 sm:text-xs">{label}</p>
+                      <p className="mt-1.5 text-xl font-bold text-charcoal sm:mt-2 sm:text-2xl">{total}</p>
                     </div>
                   ))}
                 </div>
               </section>
 
               <div className="mb-6 rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Activity per day</h2>
-                  <div className="w-full overflow-x-auto pb-1 lg:w-auto lg:overflow-visible">
-                    <div className="flex w-max gap-2">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h2 className="font-[family-name:var(--font-heading)] text-lg font-bold text-charcoal sm:text-xl">Activity per day</h2>
+                  <div className="w-full overflow-x-auto pb-1 sm:w-auto">
+                    <div className="flex w-max gap-1.5 sm:gap-2">
                       {CATEGORY_META.map((meta) => (
                         <button
                           key={meta.key}
                           type="button"
                           onClick={() => setVisible((current) => ({ ...current, [meta.key]: !current[meta.key] }))}
-                          className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${
+                          className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[0.7rem] ${
                             visible[meta.key] ? 'border-charcoal/20 text-charcoal' : 'border-charcoal/10 text-charcoal/35'
                           }`}
                         >
-                          <span className="h-2 w-2 rounded-full" style={{ background: visible[meta.key] ? meta.color : '#D1CCC2' }} />
-                          {meta.label}
+                          <span className="h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2" style={{ background: visible[meta.key] ? meta.color : '#D1CCC2' }} />
+                          <span className="hidden sm:inline">{meta.label}</span>
+                          <span className="sm:hidden">{meta.key === 'registrations' ? 'Reg' : meta.key === 'subscriptions' ? 'Sub' : meta.key === 'consultations' ? 'Con' : meta.key === 'talent' ? 'Tal' : 'Emp'}</span>
                         </button>
                       ))}
                     </div>
                   </div>
                 </div>
                 {labels.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-charcoal/45">No activity in this period yet.</p>
+                  <p className="py-8 text-center text-xs text-charcoal/45 sm:text-sm">No activity in this period yet.</p>
                 ) : (
-                  <LineChart labels={labels} series={chartSeries} />
+                  <div className="overflow-x-auto">
+                    <LineChart labels={labels} series={chartSeries} />
+                  </div>
                 )}
               </div>
 
               <div className="mb-6 grid gap-4 lg:grid-cols-2">
                 <div className="rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
-                  <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Registrations per event</h2>
+                  <h2 className="font-[family-name:var(--font-heading)] text-lg font-bold text-charcoal sm:text-xl">Registrations per event</h2>
                   {stats.events.length === 0 ? (
                     <p className="py-8 text-center text-sm text-charcoal/45">No registrations in this period.</p>
                   ) : (
@@ -354,9 +357,9 @@ export default function AdminStats() {
                 </div>
 
                 <div className="rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Website traffic</h2>
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-charcoal/75">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+                    <h2 className="font-[family-name:var(--font-heading)] text-lg font-bold text-charcoal sm:text-xl">Website traffic</h2>
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-[0.7rem] font-semibold text-charcoal/75 sm:text-xs">
                       <input
                         type="checkbox"
                         checked={hideBots}
@@ -366,7 +369,7 @@ export default function AdminStats() {
                       Hide suspected bots
                     </label>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div className="rounded-xl bg-cream/60 p-3">
                       <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/50">
                         {hideBots ? 'Estimated human page views' : 'All page views'}
@@ -414,7 +417,7 @@ export default function AdminStats() {
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {[
                   { title: 'Top pages', rows: traffic.pages },
                   { title: 'Top referrers', rows: traffic.referrers },
