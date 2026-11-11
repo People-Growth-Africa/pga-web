@@ -1,14 +1,20 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Footer from './Footer';
-import MonthGreetingPopover from './MonthGreetingPopover';
 import WhatsAppConcierge from './WhatsAppConcierge';
 import { ConsultationProvider } from '../context/ConsultationContext';
 import { finishFirstPaint } from '../lib/firstPaint';
 import { useConsultation } from '../hooks/useConsultation';
 
 const ConsultationModal = lazy(() => import('./ConsultationModal'));
+const MonthGreetingPopover = lazy(() => import('./MonthGreetingPopover'));
+
+/** The campaign's window, WAT. Kept here so the chunk is not requested at all
+ *  outside it: the card is a November greeting, not a permanent part of the
+ *  site. */
+const GREETING_FROM = Date.parse('2026-11-01T00:00:00+01:00');
+const GREETING_UNTIL = Date.parse('2026-11-03T12:00:00+01:00');
 
 function DeferredConsultationModal() {
   const { isOpen } = useConsultation();
@@ -27,6 +33,12 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const { pathname } = useLocation();
+  const [showGreeting, setShowGreeting] = useState(false);
+
+  useEffect(() => {
+    const now = Date.now();
+    if (now >= GREETING_FROM && now < GREETING_UNTIL) setShowGreeting(true);
+  }, []);
 
   // Scroll to top on route change
   useEffect(() => {
@@ -80,7 +92,11 @@ export default function Layout({ children }: LayoutProps) {
         <DeferredConsultationModal />
         {/* A dated greeting, not part of the site: it decides for itself whether
             its window is open, and never meets anyone in a staff workspace. */}
-        {!isStaffPath && <MonthGreetingPopover />}
+        {!isStaffPath && showGreeting && (
+          <Suspense fallback={null}>
+            <MonthGreetingPopover />
+          </Suspense>
+        )}
         {/* The floating concierge is an offer to talk about the website, not
             part of a staff workspace; it stays off every /admin and /content
             page, sign-in screens included. */}

@@ -25,6 +25,7 @@ export default function NotificationBell() {
 
   useEffect(() => {
     let intervalId: number | undefined;
+    let startId: number | undefined;
     let cancelled = false;
 
     const loadCount = async () => {
@@ -34,12 +35,24 @@ export default function NotificationBell() {
       }
     };
 
+    // The badge is useful, not urgent. It used to fire at the same moment as
+    // the dashboard's own requests (and every minute thereafter); starting it
+    // after the page has settled, and checking every two minutes, keeps the
+    // first screen's network free for the figures someone actually opened it
+    // for. Opening the panel still asks immediately.
     const updatePolling = () => {
       if (intervalId !== undefined) window.clearInterval(intervalId);
+      if (startId !== undefined) window.clearTimeout(startId);
       intervalId = undefined;
+      startId = undefined;
       if (document.visibilityState !== 'visible') return;
-      void loadCount();
-      intervalId = window.setInterval(() => void loadCount(), 60_000);
+      startId = window.setTimeout(() => {
+        if (cancelled || document.visibilityState !== 'visible') return;
+        void loadCount();
+        intervalId = window.setInterval(() => {
+          if (document.visibilityState === 'visible') void loadCount();
+        }, 120_000);
+      }, 1_200);
     };
 
     updatePolling();
@@ -47,6 +60,7 @@ export default function NotificationBell() {
     return () => {
       cancelled = true;
       if (intervalId !== undefined) window.clearInterval(intervalId);
+      if (startId !== undefined) window.clearTimeout(startId);
       document.removeEventListener('visibilitychange', updatePolling);
     };
   }, []);

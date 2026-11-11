@@ -93,3 +93,47 @@ body {
   background: var(--color-brand-green);
   color: white;
 }
+
+/* Page and panel entrances. CSS only: these replaced a motion library in the
+   initial download, and every one of them is a compositor-friendly transform
+   and opacity change. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes concierge-in {
+  from {
+    opacity: 0;
+    transform: translateY(15px) scale(0.94);
+  }
+}
+
+.page-enter {
+  animation: page-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mobile-menu-enter {
+  animation: menu-in 220ms ease-out both;
+}
+
+.concierge-enter {
+  animation: concierge-in 200ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .mobile-menu-enter,
+  .concierge-enter {
+    animation: none;
+  }
+}

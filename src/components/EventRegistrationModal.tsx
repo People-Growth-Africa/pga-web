@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useId, useMemo } from 'react';
-import { m as motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { EventItem } from '../data/events';
 import { leadFailureMessage, submitRegistration } from '../lib/leadClient';
 import { parseConfirmationMessage } from '../lib/confirmationMessage';

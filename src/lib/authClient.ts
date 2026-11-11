@@ -182,7 +182,7 @@ function missingEndpointMessage(status: number): string {
   return 'Something went wrong. Try again in a moment.';
 }
 
-export async function authRequest<T>(
+async function performAuthRequest<T>(
   path: string,
   init?: { method?: 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH'; body?: unknown },
 ): Promise<ApiResult<T>> {
@@ -242,4 +242,31 @@ export async function authRequest<T>(
   } catch {
     return { ok: false, failure: NETWORK_FAILURE };
   }
+}
+
+/**
+ * Concurrent reads of the same path share one request.
+ *
+ * The dashboard mounts several pieces at once (session, stats, traffic, the
+ * notification badge) and a component that re-renders can ask for the same
+ * thing again while the first answer is still in flight. Only GETs are merged:
+ * a POST is a write and must never be shared. The entry is removed as soon as
+ * the request settles, so the next call is a real fetch.
+ */
+const inFlightGets = new Map<string, Promise<ApiResult<unknown>>>();
+
+export function authRequest<T>(
+  path: string,
+  init?: { method?: 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH'; body?: unknown },
+): Promise<ApiResult<T>> {
+  if ((init?.method ?? 'POST') !== 'GET') return performAuthRequest<T>(path, init);
+
+  const existing = inFlightGets.get(path);
+  if (existing) return existing as Promise<ApiResult<T>>;
+
+  const request = performAuthRequest<T>(path, init).finally(() => {
+    inFlightGets.delete(path);
+  });
+  inFlightGets.set(path, request as Promise<ApiResult<unknown>>);
+  return request;
 }

@@ -1,16 +1,63 @@
-import { lazy, Suspense, useState, useEffect } from 'react';
+import { lazy, Suspense, useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import SEO from '../components/SEO';
 import { staticPageMeta } from '../lib/pageMeta';
-import EventsCarousel from '../components/EventsCarousel';
 import { eventsList, type EventItem } from '../data/events';
 import { servicesData, type ServiceDetail } from '../data/services';
 import { useConsultation } from '../hooks/useConsultation';
 
 const EventRegistrationModal = lazy(() => import('../components/EventRegistrationModal'));
 const ServiceDetailModal = lazy(() => import('../components/ServiceDetailModal'));
+const EventsCarousel = lazy(() => import('../components/EventsCarousel'));
+
+/**
+ * The carousel is interactive, auto-advancing and the heaviest thing on the
+ * home page, so its chunk and its timers wait until the section is close to the
+ * viewport. The reserved height keeps the page from jumping when it arrives.
+ */
+function DeferredEventsCarousel({
+  events,
+  onRegister,
+}: {
+  events: EventItem[];
+  onRegister: (event: EventItem) => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    const element = hostRef.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setShow(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        setShow(true);
+        observer.disconnect();
+      },
+      { rootMargin: '500px' },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={hostRef}>
+      {show ? (
+        <Suspense fallback={<div className="min-h-[420px] rounded-[20px] bg-cream/70" aria-hidden="true" />}>
+          <EventsCarousel events={events} onRegister={onRegister} />
+        </Suspense>
+      ) : (
+        <div className="min-h-[420px]" aria-hidden="true" />
+      )}
+    </div>
+  );
+}
 
 /* ── Data ────────────────────────────────────────────────────────── */
 
@@ -349,7 +396,7 @@ export default function Home() {
 
           {/* Interactive Card Carousel */}
           <AnimateOnScroll delay={0.15}>
-            <EventsCarousel
+            <DeferredEventsCarousel
               events={eventsList}
               onRegister={(ev) => setSelectedEvent(ev)}
             />

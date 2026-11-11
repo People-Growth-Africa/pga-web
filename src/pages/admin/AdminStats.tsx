@@ -260,12 +260,17 @@ export default function AdminStats() {
             </p>
           )}
 
-          {loading || !stats || !traffic ? (
+          {!stats || !traffic ? (
             <p className="rounded-2xl border border-charcoal/10 bg-white px-5 py-10 text-center text-sm text-charcoal/50">
               Loading dashboard…
             </p>
           ) : (
-            <>
+            <div aria-busy={loading}>
+              {loading && (
+                <p role="status" className="mb-3 text-right text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/40">
+                  Refreshing…
+                </p>
+              )}
               <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
                 {CATEGORY_META.map((meta, index) => {
                   const count = stats.counts[meta.key];
@@ -448,7 +453,7 @@ export default function AdminStats() {
                 ))}
               </div>
               <TrafficBotRules />
-            </>
+            </div>
           )}
       </AdminShell>
     </>

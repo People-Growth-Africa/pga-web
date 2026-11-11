@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { m as motion, AnimatePresence } from 'framer-motion';
 import { useConsultation } from '../hooks/useConsultation';
 import { useAuth } from '../hooks/useAuth';
 import { dashboardPath } from '../lib/authClient';
@@ -88,9 +87,25 @@ export default function Navbar() {
   ];
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40);
+    // This header is fixed over every page. Reading scrollY and setting state on
+    // every scroll event made the browser recalculate a blurred, full-width bar
+    // tens of times a second on a phone. One read per animation frame, and only
+    // when the 40px threshold actually changes, is all it needs.
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const next = window.scrollY > 40;
+      setScrolled((current) => (current === next ? current : next));
+    };
+    const onScroll = () => {
+      if (frame === 0) frame = window.requestAnimationFrame(update);
+    };
+    update();
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+    };
   }, []);
 
   /**
@@ -214,9 +229,9 @@ export default function Navbar() {
 
   return (
     <nav
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+      className={`fixed top-0 left-0 right-0 z-50 transition-colors duration-300 motion-reduce:transition-none ${
         scrolled
-          ? 'bg-deep-green/95 backdrop-blur-md shadow-lg py-3'
+          ? 'bg-deep-green shadow-lg py-3'
           : 'bg-gradient-to-b from-charcoal/60 via-charcoal/20 to-transparent py-5'
       }`}
     >
@@ -355,17 +370,12 @@ export default function Navbar() {
       </div>
 
       {/* Mobile Menu */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <motion.div
-            ref={menuRef}
-            id="mobile-menu"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="md:hidden bg-deep-green border-t border-white/10 overflow-hidden shadow-2xl"
-          >
+      {mobileOpen && (
+        <div
+          ref={menuRef}
+          id="mobile-menu"
+          className="mobile-menu-enter md:hidden bg-deep-green border-t border-white/10 overflow-hidden shadow-2xl"
+        >
             <div className="px-6 pb-6 pt-5 flex flex-col gap-4">
               {currentNavLinks.map((link) =>
                 link.to.startsWith('/#') ? (
@@ -446,9 +456,8 @@ export default function Navbar() {
                 Schedule Consultation
               </button>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
     </nav>
   );
 }
