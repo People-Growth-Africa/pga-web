@@ -2666,26 +2666,51 @@ export async function listUserAccountsForExport(
 
 /* ── Dashboard counts ───────────────────────────────────────────────────── */
 
-export type CategoryStats = { total: number; last7: number; prev7: number };
+export type CategoryStats = {
+  total: number;
+  /** Rows created inside the selected range. */
+  current: number;
+  /** Rows in the equally long window before it, or null when there is none. */
+  previous: number | null;
+  /** The oldest row this category has, so a comparison can say when tracking began. */
+  historyStart: string | null;
+};
+
+type CountWindow = { from: string; to: string };
 
 async function categoryCounts(
   table: 'registrations' | 'newsletter_subscribers' | 'consultation_bookings' | 'users',
+  current: CountWindow,
+  previous: CountWindow | null,
   extraWhere = '',
 ): Promise<CategoryStats> {
-  const clauses = extraWhere ? [extraWhere] : [];
+  const clauses: string[] = [];
   if (table !== 'users') clauses.push('deleted_at IS NULL');
+  if (extraWhere) clauses.push(extraWhere);
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const params: (string | number)[] = [current.from, current.to];
+  let previousSql = 'null::int';
+  if (previous) {
+    params.push(previous.from, previous.to);
+    previousSql = `count(*) FILTER (WHERE created_at >= $3::date
+                     AND created_at < $4::date + interval '1 day')::int`;
+  }
   const row = await queryOne<CategoryStats>(
     `SELECT count(*)::int AS total,
-            count(*) FILTER (WHERE created_at >= now() - interval '7 days')::int AS last7,
-            count(*) FILTER (WHERE created_at >= now() - interval '14 days'
-                               AND created_at < now() - interval '7 days')::int AS prev7
+            count(*) FILTER (WHERE created_at >= $1::date
+                               AND created_at < $2::date + interval '1 day')::int AS current,
+            ${previousSql} AS previous,
+            min(created_at)::date::text AS "historyStart"
        FROM ${table} ${where}`,
+    params,
   );
-  return row ?? { total: 0, last7: 0, prev7: 0 };
+  return row ?? { total: 0, current: 0, previous: null, historyStart: null };
 }
 
-export async function getDashboardCounts(): Promise<{
+export async function getDashboardCounts(
+  current: CountWindow,
+  previous: CountWindow | null,
+): Promise<{
   registrations: CategoryStats;
   subscriptions: CategoryStats;
   consultations: CategoryStats;
@@ -2693,11 +2718,11 @@ export async function getDashboardCounts(): Promise<{
   employers: CategoryStats;
 }> {
   const [registrations, subscriptions, consultations, talent, employers] = await Promise.all([
-    categoryCounts('registrations'),
-    categoryCounts('newsletter_subscribers', "status <> 'unsubscribed'"),
-    categoryCounts('consultation_bookings'),
-    categoryCounts('users', "role = 'talent'"),
-    categoryCounts('users', "role = 'employer'"),
+    categoryCounts('registrations', current, previous),
+    categoryCounts('newsletter_subscribers', current, previous, "status <> 'unsubscribed'"),
+    categoryCounts('consultation_bookings', current, previous),
+    categoryCounts('users', current, previous, "role = 'talent'"),
+    categoryCounts('users', current, previous, "role = 'employer'"),
   ]);
   return { registrations, subscriptions, consultations, talent, employers };
 }
@@ -2814,7 +2839,18 @@ export type TrafficHitInput = {
 
 export async function recordTrafficHit(input: TrafficHitInput): Promise<void> {
   await query(
-    `WITH stored AS (
+    `WITH recent AS (
+       -- The same visitor on the same path within half an hour is one view:
+       -- a reload, a back button or a shared link opened twice must not inflate
+       -- the count. The current hit is excluded so its own upsert still works.
+       SELECT 1 FROM traffic_hits
+        WHERE visitor_hash = $8
+          AND path = $2
+          AND hit_id <> $1::uuid
+          AND created_at > now() - interval '30 minutes'
+        LIMIT 1
+     ),
+     stored AS (
        INSERT INTO traffic_hits (
          hit_id, path, referrer_host, utm_source, country, device, ip_hash,
          visitor_hash, user_agent, javascript_executed
@@ -2829,19 +2865,23 @@ export async function recordTrafficHit(input: TrafficHitInput): Promise<void> {
                                THEN EXCLUDED.utm_source ELSE traffic_hits.utm_source END
        RETURNING *, (xmax = 0) AS was_inserted
      ),
+     counted AS (
+       SELECT * FROM stored
+        WHERE was_inserted AND NOT EXISTS (SELECT 1 FROM recent)
+     ),
      page AS (
        INSERT INTO page_views_daily
          (date, path, referrer_host, utm_source, country, device, views)
        SELECT created_at::date, path, referrer_host, utm_source, country, device, 1
-         FROM stored WHERE was_inserted
+         FROM counted
        ON CONFLICT (date, path, referrer_host, utm_source, country, device)
        DO UPDATE SET views = page_views_daily.views + 1
      ),
      visitor AS (
        INSERT INTO visitor_hashes_daily (date, hash)
        SELECT created_at::date, visitor_hash
-         FROM stored
-        WHERE was_inserted AND visitor_hash IS NOT NULL
+         FROM counted
+        WHERE visitor_hash IS NOT NULL
        ON CONFLICT DO NOTHING
        RETURNING date
      )

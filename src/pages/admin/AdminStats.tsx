@@ -15,7 +15,12 @@ import TrafficBotRules from './TrafficBotRules';
  * again on the server by requireStaff.
  */
 
-type CategoryCount = { total: number; last7: number; prev7: number; change: number };
+type CategoryCount = {
+  total: number;
+  current: number;
+  previous: number | null;
+  change: number | null;
+};
 type SeriesRow = {
   day: string;
   registrations: number;
@@ -81,7 +86,8 @@ function percentChange(current: number, previous: number): number {
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
-function changeLabel(value: number, basis = 'previous 7 days'): string {
+function changeLabel(value: number | null, basis: string): string {
+  if (value === null) return 'Not enough history';
   if (value === 0) return 'no change';
   return `${value > 0 ? '+' : ''}${value}% vs ${basis}`;
 }
@@ -231,12 +237,15 @@ export default function AdminStats() {
     [stats, visible],
   );
 
-  const trafficChange = traffic?.previous
-    ? {
-        views: percentChange(traffic.totals.views, traffic.previous.views),
-        uniques: percentChange(traffic.totals.uniques, traffic.previous.uniques),
-      }
-    : null;
+  const trafficChange =
+    traffic?.previous && (traffic.previous.views > 0 || traffic.previous.uniques > 0)
+      ? {
+          views: percentChange(traffic.totals.views, traffic.previous.views),
+          uniques: percentChange(traffic.totals.uniques, traffic.previous.uniques),
+        }
+      : null;
+  const rangeCopy = range === 'all' ? 'all time' : `the last ${range} days`;
+  const rangeBasis = range === 'all' ? 'the previous period' : `previous ${range} days`;
 
   return (
     <>
@@ -285,10 +294,14 @@ export default function AdminStats() {
                     <div key={meta.key} className={`rounded-2xl border border-charcoal/10 bg-white p-4 ${index === CATEGORY_META.length - 1 ? 'col-span-2 lg:col-span-1' : ''}`}>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-wider text-charcoal/50">{meta.label}</p>
                       <p className="mt-2 font-[family-name:var(--font-heading)] text-3xl font-bold text-charcoal">{count.total}</p>
-                      <p className="mt-1 text-xs text-charcoal/60">{count.last7} in the last 7 days</p>
-                      <p className={`mt-1 text-xs font-semibold ${count.change >= 0 ? 'text-deep-green' : 'text-terracotta'}`}>
-                        {changeLabel(count.change)}
-                      </p>
+                      <p className="mt-1 text-xs text-charcoal/60">{count.current} in {rangeCopy}</p>
+                      {count.change !== null ? (
+                        <p className={`mt-1 text-xs font-semibold ${count.change >= 0 ? 'text-deep-green' : 'text-terracotta'}`}>
+                          {changeLabel(count.change, rangeBasis)}
+                        </p>
+                      ) : range === 'all' ? null : (
+                        <p className="mt-1 text-xs font-semibold text-charcoal/45">Not enough history</p>
+                      )}
                     </div>
                   );
                 })}
@@ -388,14 +401,22 @@ export default function AdminStats() {
                         {!isAdministrator || hideBots ? 'Estimated human page views' : 'All page views'}
                       </p>
                       <p className="mt-1 text-2xl font-bold text-charcoal">{traffic.totals.views}</p>
-                      {trafficChange && <p className="text-[0.7rem] text-charcoal/55">{changeLabel(trafficChange.views, 'previous period')}</p>}
+                      {trafficChange ? (
+                        <p className="text-[0.7rem] text-charcoal/55">{changeLabel(trafficChange.views, 'previous period')}</p>
+                      ) : range !== 'all' ? (
+                        <p className="text-[0.7rem] text-charcoal/55">Not enough history</p>
+                      ) : null}
                     </div>
                     <div className="rounded-xl bg-cream/60 p-3">
                       <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/50">
                         {!isAdministrator || hideBots ? 'Estimated human visitors' : 'All visitor-days'}
                       </p>
                       <p className="mt-1 text-2xl font-bold text-charcoal">{traffic.totals.uniques}</p>
-                      {trafficChange && <p className="text-[0.7rem] text-charcoal/55">{changeLabel(trafficChange.uniques, 'previous period')}</p>}
+                      {trafficChange ? (
+                        <p className="text-[0.7rem] text-charcoal/55">{changeLabel(trafficChange.uniques, 'previous period')}</p>
+                      ) : range !== 'all' ? (
+                        <p className="text-[0.7rem] text-charcoal/55">Not enough history</p>
+                      ) : null}
                     </div>
                     {isAdministrator && traffic.suspectedBots && (
                       <div className="col-span-2 rounded-xl bg-terracotta/10 p-3 lg:col-span-1">

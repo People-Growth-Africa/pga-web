@@ -10,7 +10,7 @@ import {
   type CategoryStats,
 } from '../db.js';
 import { filterStatsForViewer, type DashboardViewer } from '../dashboard-visibility.js';
-import { fillDays, rangeWindow } from '../dates.js';
+import { fillDays, previousWindow, rangeWindow } from '../dates.js';
 
 /**
  * GET /api/admin/stats?range=7|30|90|all
@@ -20,13 +20,22 @@ import { fillDays, rangeWindow } from '../dates.js';
  * `requireAdminData` allowlist only - admin, project manager and HR manager.
  */
 
-function withChange(stats: CategoryStats): CategoryStats & { change: number } {
-  const change =
-    stats.prev7 === 0
-      ? stats.last7 > 0
-        ? 100
-        : 0
-      : Math.round(((stats.last7 - stats.prev7) / stats.prev7) * 1000) / 10;
+function withChange(
+  stats: CategoryStats,
+  previousFrom: string | null,
+): CategoryStats & { change: number | null } {
+  // No comparison is a statement of its own. A previous period with no rows,
+  // or a dataset that only began after that period started, cannot produce a
+  // percentage: "+100%" against nothing reads as growth that never happened.
+  const hasCompletePrevious =
+    previousFrom !== null &&
+    stats.previous !== null &&
+    stats.previous > 0 &&
+    (stats.historyStart === null || stats.historyStart <= previousFrom);
+
+  const change = hasCompletePrevious
+    ? Math.round(((stats.current - (stats.previous ?? 0)) / (stats.previous ?? 1)) * 1000) / 10
+    : null;
   return { ...stats, change };
 }
 
@@ -37,10 +46,11 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
   // `path` in the query string, and a strict schema would reject it.
   const parsed = parseInput(statsQuerySchema, { range: req.query?.range });
   const { from, to } = rangeWindow(parsed.range);
+  const previous = parsed.range === 'all' ? null : previousWindow(from, to);
 
   const [counts, registrations, subscriptions, consultations, talent, employers, events] =
     await Promise.all([
-      getDashboardCounts(),
+      getDashboardCounts({ from, to }, previous),
       dailyCounts('registrations', from),
       dailyCounts('newsletter_subscribers', from, "status <> 'unsubscribed'"),
       dailyCounts('consultation_bookings', from),
@@ -102,11 +112,11 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
         from,
         to,
         counts: {
-          registrations: withChange(counts.registrations),
-          subscriptions: withChange(counts.subscriptions),
-          consultations: withChange(counts.consultations),
-          talent: withChange(counts.talent),
-          employers: withChange(counts.employers),
+          registrations: withChange(counts.registrations, previous?.from ?? null),
+          subscriptions: withChange(counts.subscriptions, previous?.from ?? null),
+          consultations: withChange(counts.consultations, previous?.from ?? null),
+          talent: withChange(counts.talent, previous?.from ?? null),
+          employers: withChange(counts.employers, previous?.from ?? null),
         },
         consultationPipeline,
         series,

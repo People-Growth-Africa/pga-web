@@ -3,6 +3,7 @@ import { requireAdminDashboard } from '../staff.js';
 import { parseInput, trafficQuerySchema } from '../validation.js';
 import { findSessionUserById, trafficAnalytics } from '../db.js';
 import { canViewBotAnalytics, filterTrafficForViewer } from '../dashboard-visibility.js';
+import { mergeReferrerRows } from '../referrers.js';
 import { previousWindow, rangeWindow } from '../dates.js';
 
 /**
@@ -49,6 +50,9 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
         to,
         hideBots,
         ...traffic,
+        // Aliases (m.facebook.com and facebook.com, for example) are one row,
+        // and the direct bucket is labelled rather than blank.
+        referrers: mergeReferrerRows(traffic.referrers),
         previous: previousTraffic?.totals ?? null,
       },
       viewer,

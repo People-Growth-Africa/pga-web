@@ -12,6 +12,9 @@ for (const userAgent of [
   'curl/8.4.0',
   'python-requests/2.31.0',
   'Go-http-client/1.1',
+  'Mozilla/5.0 (compatible; GPTBot/1.0)',
+  'Mozilla/5.0 Datacenter monitoring probe',
+  'Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0 Lighthouse/12.8',
 ]) {
   assert.equal(classify(userAgent).isSuspectedBot, true, `${userAgent} should be suspected bot traffic`);
 }

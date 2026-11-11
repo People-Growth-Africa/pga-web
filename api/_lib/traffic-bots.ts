@@ -1,6 +1,6 @@
 export const TRAFFIC_BOT_THRESHOLDS = {
   suspectedScore: 3,
-  requestsPerMinute: 60,
+  requestsPerMinute: 30,
   knownBotWeight: 3,
   crawlerWeight: 3,
   previewOrUptimeWeight: 3,
@@ -8,14 +8,21 @@ export const TRAFFIC_BOT_THRESHOLDS = {
   noJavaScriptWeight: 3,
   scannerPathWeight: 5,
   highRateWeight: 4,
+  datacenterWeight: 3,
   missingUserAgentWeight: 2,
 } as const;
 
 export const TRAFFIC_BOT_PATTERNS = {
-  knownBot: '(bot|crawler|spider|slurp)',
+  knownBot:
+    '(bot|crawler|spider|slurp|ahrefs|semrush|mj12|dotbot|petalbot|bytespider|dataforseo|screaming ?frog|sitebulb|seznam|qwantify|yeti|exabot|gptbot|ccbot|claudebot|amazonbot|applebot|googleother|google-inspectiontool)',
   crawler: '(crawl|spider|bingbot|googlebot|yandex|baiduspider|duckduckbot)',
   previewOrUptime: '(bingpreview|facebookexternalhit|twitterbot|slackbot|discordbot|uptime|monitor)',
-  headless: '(headlesschrome|phantomjs|puppeteer|playwright|selenium|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|httpx|aiohttp|node-fetch|axios|okhttp|java/|libwww-perl|mechanize|guzzlehttp|restsharp|powershell)',
+  headless:
+    '(headlesschrome|phantomjs|puppeteer|playwright|selenium|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|httpx|aiohttp|node-fetch|axios|okhttp|java/|libwww-perl|mechanize|guzzlehttp|restsharp|powershell|lighthouse|pagespeed|gtmetrix|pingdom|datadog|newrelic|zabbix|nagios|jsdom|happy-dom)',
+  /** Server and hosting user agents, which are not people even when they look
+   *  like a browser. The US numbers (32 human, 30 bots) were the tell. */
+  datacenter:
+    '(datacenter|data ?center|cloud server|vps|hosting|digitalocean|linode|hetzner|ovh|amazonaws|google cloud|azure|oracle cloud|alibaba cloud)',
   scannerPath: '(^|/)(wp-admin|wp-login\\.php|xmlrpc\\.php|\\.env|\\.git|phpmyadmin|administrator)(/|$)|^/admin(?:\\.php)?/?$|^/admin/(?:login\\.php|wp-admin|phpmyadmin)',
 } as const;
 
@@ -93,6 +100,9 @@ export function classifyTrafficHit(
   if (new RegExp(TRAFFIC_BOT_PATTERNS.headless, 'i').test(userAgent)) {
     add('headless_or_automation', TRAFFIC_BOT_THRESHOLDS.headlessWeight);
   }
+  if (new RegExp(TRAFFIC_BOT_PATTERNS.datacenter, 'i').test(userAgent)) {
+    add('datacenter_or_hosting', TRAFFIC_BOT_THRESHOLDS.datacenterWeight);
+  }
   if (!hit.javascriptExecuted) add('no_javascript_beacon', TRAFFIC_BOT_THRESHOLDS.noJavaScriptWeight);
   if (new RegExp(TRAFFIC_BOT_PATTERNS.scannerPath, 'i').test(hit.path)) {
     add('scanner_path', TRAFFIC_BOT_THRESHOLDS.scannerPathWeight);
@@ -127,6 +137,7 @@ export function trafficClassificationCtes(): string {
            (user_agent ~* '${p.crawler}') AS is_crawler,
            (user_agent ~* '${p.previewOrUptime}') AS is_preview_or_uptime,
            (user_agent ~* '${p.headless}') AS is_headless,
+           (user_agent ~* '${p.datacenter}') AS is_datacenter,
            (path ~* '${p.scannerPath}') AS is_scanner_path
       FROM hit_window hit
       LEFT JOIN LATERAL (
@@ -151,6 +162,7 @@ export function trafficClassificationCtes(): string {
                + CASE WHEN is_crawler THEN ${t.crawlerWeight} ELSE 0 END
                + CASE WHEN is_preview_or_uptime THEN ${t.previewOrUptimeWeight} ELSE 0 END
                + CASE WHEN is_headless THEN ${t.headlessWeight} ELSE 0 END
+               + CASE WHEN is_datacenter THEN ${t.datacenterWeight} ELSE 0 END
                + CASE WHEN NOT javascript_executed THEN ${t.noJavaScriptWeight} ELSE 0 END
                + CASE WHEN is_scanner_path THEN ${t.scannerPathWeight} ELSE 0 END
                + CASE WHEN requests_per_minute > ${t.requestsPerMinute} THEN ${t.highRateWeight} ELSE 0 END
@@ -164,6 +176,7 @@ export function trafficClassificationCtes(): string {
                CASE WHEN is_crawler THEN 'crawler'::text END,
                CASE WHEN is_preview_or_uptime THEN 'preview_or_uptime'::text END,
                CASE WHEN is_headless THEN 'headless_or_automation'::text END,
+               CASE WHEN is_datacenter THEN 'datacenter_or_hosting'::text END,
                CASE WHEN NOT javascript_executed THEN 'no_javascript_beacon'::text END,
                CASE WHEN is_scanner_path THEN 'scanner_path'::text END,
                CASE WHEN requests_per_minute > ${t.requestsPerMinute} THEN 'high_request_rate'::text END,

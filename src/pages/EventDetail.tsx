@@ -10,7 +10,7 @@ import SEO from '../components/SEO';
 import NotFound from './NotFound';
 import type { EventItem } from '../data/events';
 import { isSafeHttpUrl } from '../lib/content';
-import { findEvent, mergeEvents, splitEvents } from '../lib/contentMerge';
+import { findEvent, mergeBlogPosts, mergeEvents, splitEvents } from '../lib/contentMerge';
 import { useContent } from '../hooks/useContent';
 import { useLivePosts } from '../hooks/useLivePosts';
 import { eventMeta } from '../lib/pageMeta';
@@ -96,6 +96,7 @@ export default function EventDetail() {
     mergeEvents(entries, live.posts).filter((candidate) => candidate.slug !== event.slug),
   );
   const relatedEvents = [...related.upcoming, ...related.past].slice(0, 3);
+  const relatedPosts = mergeBlogPosts(entries, live.posts).slice(0, 3);
 
   const registerButton = registrationUrl ? (
     <a
@@ -188,6 +189,11 @@ export default function EventDetail() {
               {event.date} &bull; {event.time}
               {detail ? ` • ${detail}` : ''}
             </p>
+
+            {/* The aside sits below the body on a phone, which put the register
+                button off the first screen. This is the same button, above the
+                fold at 375px; the aside keeps it on desktop. */}
+            <div className="mx-auto mt-6 max-w-[320px] lg:hidden">{registerButton}</div>
           </AnimateOnScroll>
         </div>
       </section>
@@ -295,7 +301,7 @@ export default function EventDetail() {
               )}
             </dl>
 
-            <div className="mt-6">{registerButton}</div>
+            <div className="mt-6 hidden lg:block">{registerButton}</div>
             <div className="mt-3 flex justify-center">
               <EventShareButton slug={event.slug} title={event.title} labelled />
             </div>
@@ -329,6 +335,35 @@ export default function EventDetail() {
                     onRegister={(ev) => setRegistering(ev)}
                   />
                 </AnimateOnScroll>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {relatedPosts.length > 0 && (
+        <section className="bg-white py-14">
+          <div className="mx-auto max-w-[1100px] px-6">
+            <h2 className="mb-7 font-[family-name:var(--font-heading)] text-2xl font-semibold text-charcoal">
+              Related reading
+            </h2>
+            <div className="grid gap-4 md:grid-cols-3">
+              {relatedPosts.map((post) => (
+                <Link
+                  key={post.id}
+                  to={`/blog/${post.slug}`}
+                  className="block rounded-[16px] border border-charcoal/10 p-5 transition-colors hover:border-brand-green/40 hover:bg-cream/40"
+                >
+                  <p className="font-[family-name:var(--font-body)] text-[0.68rem] font-semibold uppercase tracking-wider text-charcoal/45">
+                    {post.category}
+                  </p>
+                  <h3 className="mt-2 font-[family-name:var(--font-heading)] text-lg font-semibold leading-snug text-charcoal">
+                    {post.title}
+                  </h3>
+                  <p className="mt-2 line-clamp-3 font-[family-name:var(--font-body)] text-sm leading-relaxed text-charcoal/60">
+                    {post.excerpt}
+                  </p>
+                </Link>
               ))}
             </div>
           </div>
