@@ -2947,7 +2947,7 @@ export async function trafficTop(
 
 export type TrafficAnalytics = {
   totals: { views: number; uniques: number };
-  daily: { day: string; views: number; uniques: number }[];
+  daily: { day: string; views: number; uniques: number; botViews: number }[];
   pages: { label: string; views: number }[];
   referrers: { label: string; views: number }[];
   countries: {
@@ -3023,7 +3023,8 @@ export async function trafficAnalytics(
                      ELSE coalesce(raw.all_hits, 0) END)::int AS views,
               (coalesce(legacy.uniques, 0) +
                 CASE WHEN $3::boolean THEN coalesce(raw.human_uniques, 0)
-                     ELSE coalesce(raw.all_uniques, 0) END)::int AS uniques
+                     ELSE coalesce(raw.all_uniques, 0) END)::int AS uniques,
+              coalesce(raw.bot_hits, 0)::int AS bot_views
          FROM generate_series($1::date, $2::date, interval '1 day') days(day)
          LEFT JOIN legacy_daily legacy ON legacy.date = days.day
          LEFT JOIN raw_daily raw ON raw.date = days.day
@@ -3078,7 +3079,8 @@ export async function trafficAnalytics(
          'uniques', coalesce(sum(uniques), 0)::int
        ) FROM daily_metrics),
        'daily', coalesce((SELECT jsonb_agg(jsonb_build_object(
-         'day', to_char(day, 'YYYY-MM-DD'), 'views', views, 'uniques', uniques
+         'day', to_char(day, 'YYYY-MM-DD'), 'views', views, 'uniques', uniques,
+         'botViews', bot_views
        ) ORDER BY day) FROM daily_metrics WHERE day >= $4::date), '[]'::jsonb),
        'pages', coalesce((SELECT jsonb_agg(jsonb_build_object('label', label, 'views', views) ORDER BY views DESC)
          FROM ranked_dimensions WHERE kind = 'path' AND position <= 10), '[]'::jsonb),

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
+import { useAuth } from '../../hooks/useAuth';
 import { authRequest, onSessionEnded } from '../../lib/authClient';
 import TrafficBotRules from './TrafficBotRules';
 
@@ -34,7 +35,8 @@ type Stats = {
     talent: CategoryCount;
     employers: CategoryCount;
   };
-  consultationPipeline: {
+  /** Absent for every role except HR managers and the super administrator. */
+  consultationPipeline?: {
     new: number;
     contacted: number;
     scheduled: number;
@@ -49,12 +51,13 @@ type CountryRow = TopRow & { humanViews: number; suspectedBotViews: number };
 type Traffic = {
   totals: { views: number; uniques: number };
   previous: { views: number; uniques: number } | null;
-  daily: { day: string; views: number; uniques: number }[];
-  pages: TopRow[];
-  referrers: TopRow[];
-  countries: CountryRow[];
-  devices: TopRow[];
-  suspectedBots: { hits: number; reasons: { reason: string; hits: number }[] };
+  daily: { day: string; views: number; uniques: number; botViews?: number }[];
+  /** Absent for every role except administrators and super administrators. */
+  pages?: TopRow[];
+  referrers?: TopRow[];
+  countries?: CountryRow[];
+  devices?: TopRow[];
+  suspectedBots?: { hits: number; reasons: { reason: string; hits: number }[] };
 };
 type RangeKey = '7' | '30' | '90' | 'all';
 
@@ -167,6 +170,10 @@ export default function AdminStats() {
   );
 
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdministrator = user?.role === 'admin';
+  const canViewPipeline =
+    user?.role === 'hr_manager' || (isAdministrator && user?.isSuperAdmin === true);
 
   const endSession = useCallback(() => {
     navigate('/admin/login?expired=1', {
@@ -182,7 +189,7 @@ export default function AdminStats() {
       const [statsResult, trafficResult] = await Promise.all([
         authRequest<Stats>(`/api/admin/stats?range=${range}`, { method: 'GET' }),
         authRequest<Traffic>(
-          `/api/admin/traffic?range=${range}&hideBots=${hideBots}`,
+          `/api/admin/traffic?range=${range}&hideBots=${isAdministrator ? hideBots : 'true'}`,
           { method: 'GET' },
         ),
       ]);
@@ -202,7 +209,7 @@ export default function AdminStats() {
       setError(null);
       setLoading(false);
     },
-    [hideBots, range],
+    [hideBots, isAdministrator, range],
   );
 
   useEffect(() => {
@@ -287,23 +294,25 @@ export default function AdminStats() {
                 })}
               </div>
 
-              <section className="mb-6 rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
-                <h2 className="mb-4 font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Consultation pipeline</h2>
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-                  {[
-                    ['New', stats.consultationPipeline.new],
-                    ['Contacted', stats.consultationPipeline.contacted],
-                    ['Scheduled', stats.consultationPipeline.scheduled],
-                    ['Done', stats.consultationPipeline.done],
-                    ['New over 48 hours', stats.consultationPipeline.newOlderThan48Hours],
-                  ].map(([label, total]) => (
-                    <div key={label} className="rounded-xl bg-cream/60 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-charcoal/55">{label}</p>
-                      <p className="mt-2 text-2xl font-bold text-charcoal">{total}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
+              {canViewPipeline && stats.consultationPipeline && (
+                <section className="mb-6 rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
+                  <h2 className="mb-4 font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Consultation pipeline</h2>
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                    {[
+                      ['New', stats.consultationPipeline.new],
+                      ['Contacted', stats.consultationPipeline.contacted],
+                      ['Scheduled', stats.consultationPipeline.scheduled],
+                      ['Done', stats.consultationPipeline.done],
+                      ['New over 48 hours', stats.consultationPipeline.newOlderThan48Hours],
+                    ].map(([label, total]) => (
+                      <div key={label} className="rounded-xl bg-cream/60 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-charcoal/55">{label}</p>
+                        <p className="mt-2 text-2xl font-bold text-charcoal">{total}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               <div className="mb-6 rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -361,36 +370,40 @@ export default function AdminStats() {
                 <div className="rounded-2xl border border-charcoal/10 bg-white p-4 sm:p-6">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold text-charcoal">Website traffic</h2>
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-charcoal/75">
-                      <input
-                        type="checkbox"
-                        checked={hideBots}
-                        onChange={(event) => setHideBots(event.target.checked)}
-                        className="h-4 w-4 accent-deep-green"
-                      />
-                      Hide suspected bots
-                    </label>
+                    {isAdministrator && (
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-charcoal/75">
+                        <input
+                          type="checkbox"
+                          checked={hideBots}
+                          onChange={(event) => setHideBots(event.target.checked)}
+                          className="h-4 w-4 accent-deep-green"
+                        />
+                        Hide suspected bots
+                      </label>
+                    )}
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
                     <div className="rounded-xl bg-cream/60 p-3">
                       <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/50">
-                        {hideBots ? 'Estimated human page views' : 'All page views'}
+                        {!isAdministrator || hideBots ? 'Estimated human page views' : 'All page views'}
                       </p>
                       <p className="mt-1 text-2xl font-bold text-charcoal">{traffic.totals.views}</p>
                       {trafficChange && <p className="text-[0.7rem] text-charcoal/55">{changeLabel(trafficChange.views, 'previous period')}</p>}
                     </div>
                     <div className="rounded-xl bg-cream/60 p-3">
                       <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/50">
-                        {hideBots ? 'Estimated human visitors' : 'All visitor-days'}
+                        {!isAdministrator || hideBots ? 'Estimated human visitors' : 'All visitor-days'}
                       </p>
                       <p className="mt-1 text-2xl font-bold text-charcoal">{traffic.totals.uniques}</p>
                       {trafficChange && <p className="text-[0.7rem] text-charcoal/55">{changeLabel(trafficChange.uniques, 'previous period')}</p>}
                     </div>
-                    <div className="col-span-2 rounded-xl bg-terracotta/10 p-3 lg:col-span-1">
-                      <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-terracotta">Suspected bot hits</p>
-                      <p className="mt-1 text-2xl font-bold text-charcoal">{traffic.suspectedBots.hits}</p>
-                      <p className="text-[0.7rem] text-charcoal/55">Scored from multiple signals</p>
-                    </div>
+                    {isAdministrator && traffic.suspectedBots && (
+                      <div className="col-span-2 rounded-xl bg-terracotta/10 p-3 lg:col-span-1">
+                        <p className="text-[0.7rem] font-semibold uppercase tracking-wider text-terracotta">Suspected bot hits</p>
+                        <p className="mt-1 text-2xl font-bold text-charcoal">{traffic.suspectedBots.hits}</p>
+                        <p className="text-[0.7rem] text-charcoal/55">Scored from multiple signals</p>
+                      </div>
+                    )}
                   </div>
                   <div className="mt-4">
                     <LineChart
@@ -398,13 +411,23 @@ export default function AdminStats() {
                       series={[
                         { key: 'views', label: 'Page views', color: '#1B4332', values: traffic.daily.map((row) => row.views) },
                         { key: 'uniques', label: 'Unique visitors', color: '#C05621', values: traffic.daily.map((row) => row.uniques) },
+                        ...(isAdministrator && !hideBots
+                          ? [{
+                              key: 'bots',
+                              label: 'Suspected bots',
+                              color: '#C95C3D',
+                              values: traffic.daily.map((row) => row.botViews ?? 0),
+                            }]
+                          : []),
                       ]}
                     />
                   </div>
                   <p className="mt-3 text-[0.7rem] text-charcoal/45">
-                    Traffic figures are estimates. Country and referrer lists use the same filter.
+                    {isAdministrator
+                      ? 'Traffic figures are estimates. Country and referrer lists use the same filter.'
+                      : 'Figures are estimates.'}
                   </p>
-                  {traffic.suspectedBots.reasons.length > 0 && (
+                  {isAdministrator && traffic.suspectedBots && traffic.suspectedBots.reasons.length > 0 && (
                     <div className="mt-4 border-t border-charcoal/10 pt-3">
                       <h3 className="text-xs font-bold text-charcoal">Why hits were flagged</h3>
                       <ul className="mt-2 flex flex-wrap gap-2">
@@ -419,12 +442,13 @@ export default function AdminStats() {
                 </div>
               </div>
 
+              {isAdministrator && (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[
-                  { title: 'Top pages', rows: traffic.pages },
-                  { title: 'Top referrers', rows: traffic.referrers },
-                  { title: 'Top countries', rows: traffic.countries },
-                  { title: 'Devices', rows: traffic.devices },
+                  { title: 'Top pages', rows: traffic.pages ?? [] },
+                  { title: 'Top referrers', rows: traffic.referrers ?? [] },
+                  { title: 'Top countries', rows: traffic.countries ?? [] },
+                  { title: 'Devices', rows: traffic.devices ?? [] },
                 ].map((block) => (
                   <div key={block.title} className="rounded-2xl border border-charcoal/10 bg-white p-4">
                     <h3 className="text-sm font-bold text-charcoal">{block.title}</h3>
@@ -452,7 +476,8 @@ export default function AdminStats() {
                   </div>
                 ))}
               </div>
-              <TrafficBotRules />
+              )}
+              {isAdministrator && <TrafficBotRules />}
             </div>
           )}
       </AdminShell>

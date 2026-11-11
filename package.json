@@ -54,6 +54,7 @@
     "indexnow": "node scripts/indexnow.mjs",
     "indexnow:test": "node scripts/indexnow-test.mjs",
     "test:dashboard:rules": "node scripts/test-dashboard-rules.mjs",
+    "test:role-visibility": "node --experimental-strip-types scripts/test-role-visibility.mjs",
     "test:dashboard": "npm run test:dashboard:rules && node scripts/test-dashboard.mjs",
     "check:api": "node scripts/check-api-imports.mjs",
     "preview": "vite preview"

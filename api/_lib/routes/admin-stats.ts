@@ -3,11 +3,13 @@ import { requireAdminDashboard } from '../staff.js';
 import { parseInput, statsQuerySchema } from '../validation.js';
 import {
   dailyCounts,
+  findSessionUserById,
   getDashboardCounts,
   getConsultationPipelineCounts,
   registrationCountsByEvent,
   type CategoryStats,
 } from '../db.js';
+import { filterStatsForViewer, type DashboardViewer } from '../dashboard-visibility.js';
 import { fillDays, rangeWindow } from '../dates.js';
 
 /**
@@ -29,7 +31,7 @@ function withChange(stats: CategoryStats): CategoryStats & { change: number } {
 }
 
 export default endpoint({ methods: ['GET'] }, async (req, res) => {
-  await requireAdminDashboard(req, res);
+  const session = await requireAdminDashboard(req, res);
 
   // Only the range is read: the rewrite that reaches this function also puts
   // `path` in the query string, and a strict schema would reject it.
@@ -85,19 +87,32 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
           employers: 0,
         }));
 
-  sendJson(res, 200, {
-    range: parsed.range,
-    from,
-    to,
-    counts: {
-      registrations: withChange(counts.registrations),
-      subscriptions: withChange(counts.subscriptions),
-      consultations: withChange(counts.consultations),
-      talent: withChange(counts.talent),
-      employers: withChange(counts.employers),
-    },
-    consultationPipeline,
-    series,
-    events,
-  });
+  const user = await findSessionUserById(session.userId);
+  const viewer: DashboardViewer = {
+    role: session.role,
+    isSuperAdmin: user?.is_super_admin === true,
+  };
+
+  sendJson(
+    res,
+    200,
+    filterStatsForViewer(
+      {
+        range: parsed.range,
+        from,
+        to,
+        counts: {
+          registrations: withChange(counts.registrations),
+          subscriptions: withChange(counts.subscriptions),
+          consultations: withChange(counts.consultations),
+          talent: withChange(counts.talent),
+          employers: withChange(counts.employers),
+        },
+        consultationPipeline,
+        series,
+        events,
+      },
+      viewer,
+    ),
+  );
 });
