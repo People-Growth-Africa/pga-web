@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
+import { Skeleton, useDelayedLoading } from '../../components/Loader';
 import AdminShell from '../../components/admin/AdminShell';
 import { useAuth } from '../../hooks/useAuth';
 import { authRequest, onSessionEnded } from '../../lib/authClient';
@@ -14,6 +15,36 @@ import TrafficBotRules from './TrafficBotRules';
  * The page is hidden from non-staff by RequireAuth, but every request is checked
  * again on the server by requireStaff.
  */
+
+function DashboardSkeleton() {
+  return (
+    <div aria-busy="true" className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="rounded-2xl border border-charcoal/10 bg-white p-5">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="mt-4 h-9 w-20" />
+            <Skeleton className="mt-3 h-3 w-32" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <Skeleton className="h-72 w-full" />
+        <Skeleton className="h-72 w-full" />
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <Skeleton key={index} className="h-48 w-full" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashboardSkeletonGate() {
+  const visible = useDelayedLoading(true);
+  return visible ? <DashboardSkeleton /> : <div className="min-h-[320px]" aria-busy="true" />;
+}
 
 type CategoryCount = {
   total: number;
@@ -277,9 +308,7 @@ export default function AdminStats() {
           )}
 
           {!stats || !traffic ? (
-            <p className="rounded-2xl border border-charcoal/10 bg-white px-5 py-10 text-center text-sm text-charcoal/50">
-              Loading dashboard…
-            </p>
+            <DashboardSkeletonGate />
           ) : (
             <div aria-busy={loading}>
               {loading && (

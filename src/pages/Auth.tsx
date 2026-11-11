@@ -6,6 +6,7 @@ import AuthComingSoon from '../components/AuthComingSoon';
 import Select from '../components/Select';
 import { accountScreensOpen } from '../lib/accountGate';
 import SEO from '../components/SEO';
+import { Spinner } from '../components/Loader';
 import { COUNTRIES, TALENT_FIELDS } from '../data/options';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -722,7 +723,11 @@ export default function Auth() {
                     aria-busy={submitting}
                     className="w-full inline-flex items-center justify-center rounded-full bg-brand-green px-6 py-3.5 font-[family-name:var(--font-body)] text-base font-semibold text-white transition-colors motion-reduce:transition-none hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    {submitting ? 'Please wait' : submitLabel}
+                    {submitting ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Spinner /> Please wait
+                      </span>
+                    ) : submitLabel}
                   </button>
                 </form>
               </div>

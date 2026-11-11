@@ -7,6 +7,7 @@ import { useAuth } from './hooks/useAuth';
 import RequireAuth from './components/RequireAuth';
 import { AUTH_ENABLED } from './config/signup-links';
 import TrafficTracker from './components/TrafficTracker';
+import { GlobalPageLoader, LoadingSignal } from './components/Loader';
 import { ADMIN_PORTAL_ROLES, type AuthUser } from './lib/authClient';
 import type { RouteComponents } from './routeComponents';
 
@@ -83,7 +84,7 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
 
   return (
     <PageTransition key={location.pathname}>
-      <Suspense fallback={<div className="min-h-[60vh]" aria-busy="true" />}>
+      <Suspense fallback={<LoadingSignal />}>
           <Routes location={location}>
           <Route path="/" element={<Home />} />
           <Route path="/events" element={<Events />} />
@@ -317,6 +318,7 @@ export default function SiteShell({ routeComponents }: { routeComponents: RouteC
   return (
     <AuthProvider>
       <Layout>
+        <GlobalPageLoader />
         <TrafficTracker />
         <AnimatedRoutes components={routeComponents} />
       </Layout>

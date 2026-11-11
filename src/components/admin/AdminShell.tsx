@@ -1,8 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../../hooks/useAuth';
 import NotificationBell from './NotificationBell';
+import { TopProgressBar } from '../Loader';
+import { beginLoading, endLoading } from '../../lib/loading';
 import {
   ADMIN_PORTAL_ROLES,
   isAdminPortalRole,
@@ -124,6 +126,24 @@ export default function AdminShell({
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+
+  // A route change is a short request-like wait for the thin bar. `settled`
+  // makes the timer and the unmount cleanup agree, so the channel is balanced.
+  useEffect(() => {
+    beginLoading('request');
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      endLoading('request');
+    };
+    const timer = window.setTimeout(finish, 320);
+    return () => {
+      window.clearTimeout(timer);
+      finish();
+    };
+  }, [pathname]);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -209,6 +229,7 @@ export default function AdminShell({
 
   return (
     <div className="min-h-screen bg-[#F5F0E7]">
+      <TopProgressBar />
       <div className="fixed inset-y-0 left-0 z-30 hidden w-[260px] lg:block">{sidebar}</div>
 
       <header className="sticky top-0 z-30 flex items-center justify-between bg-[#0B4B3C] px-5 py-4 text-white lg:hidden">

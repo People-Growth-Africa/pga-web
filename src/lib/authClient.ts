@@ -1,3 +1,5 @@
+import { beginLoading, endLoading } from './loading';
+
 /**
  * The single client for /api/auth. Every call sends cookies, parses JSON, and
  * turns both HTTP failures and network failures into one result shape so forms
@@ -259,13 +261,22 @@ export function authRequest<T>(
   path: string,
   init?: { method?: 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH'; body?: unknown },
 ): Promise<ApiResult<T>> {
-  if ((init?.method ?? 'POST') !== 'GET') return performAuthRequest<T>(path, init);
+  // Every auth call feeds the dashboard's thin progress bar. The channel is
+  // balanced per call, including calls that reuse an in-flight GET.
+  beginLoading('request');
+
+  if ((init?.method ?? 'POST') !== 'GET') {
+    return performAuthRequest<T>(path, init).finally(() => endLoading('request'));
+  }
 
   const existing = inFlightGets.get(path);
-  if (existing) return existing as Promise<ApiResult<T>>;
+  if (existing) {
+    return (existing as Promise<ApiResult<T>>).finally(() => endLoading('request'));
+  }
 
   const request = performAuthRequest<T>(path, init).finally(() => {
     inFlightGets.delete(path);
+    endLoading('request');
   });
   inFlightGets.set(path, request as Promise<ApiResult<unknown>>);
   return request;
