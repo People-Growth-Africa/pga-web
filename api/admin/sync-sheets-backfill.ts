@@ -46,8 +46,11 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     errors: [] as string[],
   };
 
+  console.log('[Backfill] Starting backfill process...');
+
   try {
     // 1. Sync Old Registrations (registrations table - the main one with 31 records)
+    console.log('[Backfill] Querying registrations table...');
     const registrations = await query<{
       id: string;
       created_at: Date;
@@ -64,6 +67,8 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
        WHERE deleted_at IS NULL
        ORDER BY created_at ASC`,
     );
+
+    console.log(`[Backfill] Found ${registrations.length} registrations in old table`);
 
     for (const reg of registrations) {
       try {
@@ -83,6 +88,8 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
         results.errors.push(`Registration ${reg.id}: ${error.message}`);
       }
     }
+
+    console.log(`[Backfill] Synced ${results.registrations} registrations from old table`);
 
     // 2. Sync New Event Registrations (event_registrations table - the simpler one)
     const eventRegistrations = await query<{
@@ -204,6 +211,8 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     }
 
     const total = results.registrations + results.eventRegistrations + results.consultationBookings + results.enquiries;
+
+    console.log('[Backfill] Complete!', results);
 
     return sendJson(res, 200, {
       success: true,
