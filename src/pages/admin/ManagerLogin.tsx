@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import SEO from '../../components/SEO';
+import { Spinner } from '../../components/Loader';
 import { useAuth } from '../../hooks/useAuth';
 import {
   ADMIN_PORTAL_ROLES,
@@ -237,7 +238,11 @@ export default function ManagerLogin({ portal = 'admin' }: { portal?: Portal }) 
                 disabled={submitting}
                 className="w-full rounded-full bg-deep-green px-6 py-3.5 font-[family-name:var(--font-body)] text-sm font-semibold text-white transition-colors hover:bg-brand-green disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
               >
-                {submitting ? 'Signing in…' : 'Log in'}
+                {submitting ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Spinner /> Signing in…
+                  </span>
+                ) : 'Log in'}
               </button>
             </form>
 

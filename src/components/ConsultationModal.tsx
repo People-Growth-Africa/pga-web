@@ -1,5 +1,5 @@
 import { useState, useEffect, useId } from 'react';
-import { m as motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import Select from './Select';
 import { useConsultation } from '../hooks/useConsultation';
 import { useFormsAvailability } from '../hooks/useFormsAvailability';

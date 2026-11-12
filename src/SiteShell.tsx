@@ -1,6 +1,5 @@
 import { Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AnimatePresence, domAnimation, LazyMotion } from 'framer-motion';
 import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
 import { AuthProvider } from './context/AuthContext';
@@ -8,6 +7,7 @@ import { useAuth } from './hooks/useAuth';
 import RequireAuth from './components/RequireAuth';
 import { AUTH_ENABLED } from './config/signup-links';
 import TrafficTracker from './components/TrafficTracker';
+import { GlobalPageLoader, LoadingSignal } from './components/Loader';
 import { ADMIN_PORTAL_ROLES, type AuthUser } from './lib/authClient';
 import type { RouteComponents } from './routeComponents';
 
@@ -83,9 +83,8 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
   }, []);
 
   return (
-    <AnimatePresence mode="wait">
-      <PageTransition key={location.pathname}>
-        <Suspense fallback={<div className="min-h-[60vh]" aria-busy="true" />}>
+    <PageTransition key={location.pathname}>
+      <Suspense fallback={<LoadingSignal />}>
           <Routes location={location}>
           <Route path="/" element={<Home />} />
           <Route path="/events" element={<Events />} />
@@ -310,21 +309,19 @@ function AnimatedRoutes({ components }: { components: RouteComponents }) {
           <Route path="/privacy" element={<Privacy />} />
           <Route path="*" element={<NotFound />} />
           </Routes>
-        </Suspense>
-      </PageTransition>
-    </AnimatePresence>
+      </Suspense>
+    </PageTransition>
   );
 }
 
 export default function SiteShell({ routeComponents }: { routeComponents: RouteComponents }) {
   return (
-    <LazyMotion features={domAnimation}>
-      <AuthProvider>
-        <Layout>
-          <TrafficTracker />
-          <AnimatedRoutes components={routeComponents} />
-        </Layout>
-      </AuthProvider>
-    </LazyMotion>
+    <AuthProvider>
+      <Layout>
+        <GlobalPageLoader />
+        <TrafficTracker />
+        <AnimatedRoutes components={routeComponents} />
+      </Layout>
+    </AuthProvider>
   );
 }

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import AdminShell from '../../components/admin/AdminShell';
+import AuditChangePanel from '../../components/admin/AuditChangePanel';
+import { Skeleton } from '../../components/Loader';
 import SEO from '../../components/SEO';
 import { useAuth } from '../../hooks/useAuth';
 import { authRequest, NETWORK_FAILURE, onSessionEnded } from '../../lib/authClient';
@@ -26,13 +28,6 @@ const EMPTY_FILTERS: Filters = { from: '', to: '', actor: '', role: '', action: 
 const inputClass = 'min-h-[42px] w-full rounded-[9px] border border-charcoal/15 bg-white px-3 py-2 text-sm text-charcoal focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20';
 const labelClass = 'flex flex-col gap-1 text-xs font-medium text-charcoal/65';
 
-function formatDiff(value: Record<string, unknown> | null): string {
-  if (!value) return '—';
-  return Object.entries(value)
-    .map(([key, item]) => `${key}: ${typeof item === 'string' ? item : JSON.stringify(item)}`)
-    .join('\n');
-}
-
 export default function AdminAuditLog() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -44,6 +39,9 @@ export default function AdminAuditLog() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Only one row is open at a time; the panel is never rendered inside the
+  // narrow Details cell. Desktop gets a full-width row, mobile a bottom sheet.
+  const [selected, setSelected] = useState<AuditRow | null>(null);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({ page: String(page) });
@@ -61,6 +59,7 @@ export default function AdminAuditLog() {
 
   useEffect(() => {
     let active = true;
+    setSelected(null);
     void authRequest<AuditPage>(`/api/admin/audit-log?${queryString}`, { method: 'GET' }).then((result) => {
       if (!active) return;
       setLoading(false);
@@ -149,24 +148,73 @@ export default function AdminAuditLog() {
         <div className="overflow-x-auto rounded-2xl border border-charcoal/10 bg-white">
           <table className="w-full min-w-[900px] border-collapse text-left text-sm">
             <thead className="bg-cream/70 text-xs uppercase tracking-wide text-charcoal/60">
-              <tr><th className="px-4 py-3">Date and time</th><th className="px-4 py-3">Account</th><th className="px-4 py-3">Role</th><th className="px-4 py-3">Action</th><th className="px-4 py-3">Record</th><th className="px-4 py-3">Details</th></tr>
+              <tr><th className="px-4 py-3">When</th><th className="px-4 py-3">Account</th><th className="px-4 py-3">Role</th><th className="px-4 py-3">Action</th><th className="px-4 py-3">Target</th><th className="px-4 py-3">Changes</th></tr>
             </thead>
             <tbody className="divide-y divide-charcoal/10">
-              {loading ? <tr><td className="px-4 py-8 text-center text-charcoal/50" colSpan={6}>Loading audit log…</td></tr>
-                : !data?.rows.length ? <tr><td className="px-4 py-8 text-center text-charcoal/50" colSpan={6}>No audit entries match these filters.</td></tr>
-                  : data.rows.map((row) => (
-                    <tr key={row.id} className="align-top">
-                      <td className="whitespace-nowrap px-4 py-3 text-charcoal/70"><time dateTime={row.created_at} title={row.created_at}>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(new Date(row.created_at))}</time></td>
-                      <td className="px-4 py-3">{row.actor_email ?? 'Unknown account'}</td>
-                      <td className="px-4 py-3">{row.actor_role ?? '—'}</td>
-                      <td className="px-4 py-3 font-medium">{row.action}</td>
-                      <td className="px-4 py-3">{row.entity_label ?? row.entity_id ?? row.entity_type}</td>
-                      <td className="px-4 py-3"><details><summary className="cursor-pointer font-semibold text-deep-green">Show</summary><div className="mt-2 grid gap-2 text-xs sm:grid-cols-2"><p className="whitespace-pre-wrap"><strong>Before</strong>{'\n'}{formatDiff(row.before)}</p><p className="whitespace-pre-wrap"><strong>After</strong>{'\n'}{formatDiff(row.after)}</p></div></details></td>
-                    </tr>
+              {loading ? Array.from({ length: 5 }).map((_, index) => (
+                <tr key={`audit-skeleton-${index}`}>
+                  {Array.from({ length: 6 }).map((__, cell) => (
+                    <td key={cell} className="px-4 py-3">
+                      <Skeleton className="h-5 w-full max-w-[180px]" />
+                    </td>
                   ))}
+                </tr>
+              ))
+                : !data?.rows.length ? <tr><td className="px-4 py-8 text-center text-charcoal/50" colSpan={6}>No audit entries match these filters.</td></tr>
+                  : data.rows.map((row) => {
+                    const open = selected?.id === row.id;
+                    return (
+                      <Fragment key={row.id}>
+                        <tr className="align-top">
+                          <td className="whitespace-nowrap px-4 py-3 text-charcoal/70"><time dateTime={row.created_at} title={row.created_at}>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(new Date(row.created_at))}</time></td>
+                          <td className="px-4 py-3">{row.actor_email ?? 'Unknown account'}</td>
+                          <td className="px-4 py-3">{row.actor_role ?? '—'}</td>
+                          <td className="px-4 py-3 font-medium">{row.action}</td>
+                          <td className="px-4 py-3">{row.entity_label ?? row.entity_id ?? row.entity_type}</td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => setSelected(open ? null : row)}
+                              aria-expanded={open}
+                              aria-controls={`audit-changes-${row.id}`}
+                              className="inline-flex min-h-[40px] cursor-pointer items-center rounded-full border border-deep-green px-4 py-2 font-[family-name:var(--font-body)] text-xs font-semibold text-deep-green hover:bg-deep-green hover:text-white"
+                            >
+                              {open ? 'Hide changes' : 'View changes'}
+                            </button>
+                          </td>
+                        </tr>
+                        {open && (
+                          <tr id={`audit-changes-${row.id}`} className="hidden lg:table-row">
+                            <td colSpan={6} className="bg-[#F5F0E7] px-4 py-5">
+                              <AuditChangePanel row={row} onClose={() => setSelected(null)} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
             </tbody>
           </table>
         </div>
+        {selected && (
+          <div className="fixed inset-0 z-[60] lg:hidden">
+            <button
+              type="button"
+              aria-label="Close changes"
+              onClick={() => setSelected(null)}
+              className="absolute inset-0 h-full w-full cursor-default bg-charcoal/50"
+            />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Audit changes"
+              className="absolute inset-x-0 bottom-0 max-h-[86vh] overflow-y-auto rounded-t-[24px] bg-[#F5F0E7] p-4 shadow-elevated"
+            >
+              <AuditChangePanel row={selected} onClose={() => setSelected(null)} />
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 flex items-center justify-between gap-3 text-sm text-charcoal/65">
           <span>{data?.total ?? 0} entries · Page {page} of {pages}</span>
           <div className="flex gap-2">

@@ -1,6 +1,6 @@
 import { useState, useMemo, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { m as motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import AnimateOnScroll from '../components/AnimateOnScroll';
 import SEO from '../components/SEO';
 import { staticPageMeta } from '../lib/pageMeta';

@@ -2,6 +2,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { clientIp, endpoint, headerValue, parseJsonBody } from '../http.js';
 import { parseInput, trackSchema } from '../validation.js';
 import { recordTrafficHit, type TrafficHitInput } from '../db.js';
+import { normalizeReferrerHost } from '../referrers.js';
 
 function normalizedPath(raw: string): string {
   let url: URL;
@@ -23,7 +24,7 @@ function referrerHost(raw: string | undefined): string {
       return '';
     }
     if (host.endsWith('.vercel.app')) return '';
-    return host.slice(0, 100);
+    return normalizeReferrerHost(host);
   } catch {
     return '';
   }

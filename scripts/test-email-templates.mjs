@@ -10,7 +10,7 @@ registerHooks({
   },
 });
 const { EMAIL_TEMPLATE_IDS, DEFAULT_EMAIL_TEMPLATES } = await import('../api/_lib/email-template-content.ts');
-const { renderEmail, renderEmailText } = await import('../api/_lib/email-template.ts');
+const { renderEmail, renderEmailText, renderLeadEmail } = await import('../api/_lib/email-template.ts');
 const { emailTemplateSaveSchema } = await import('../api/_lib/validation.ts');
 const { buildRegistrationEmailVariables } = await import('../api/_lib/registration-email.ts');
 const { interpolateTemplate } = await import('../api/_lib/email-templates.ts');
@@ -135,4 +135,36 @@ assert.match(rendered, /href="https:\/\/example\.com\/\?a=1&amp;b=2"/);
 assert.match(rendered, /&lt;img src=x&gt;/);
 assert.doesNotMatch(rendered, /<script>/);
 assert.match(renderEmailText({ paragraphs: ['Hi'], action: { label: 'Open', url: 'https://example.com' }, links: [{ label: 'More', url: 'https://example.com/more' }], notes: ['Note'] }), /More:\nhttps:\/\/example.com\/more/);
+
+// Zoho Mail Night Mode: every surface names its own background, text never
+// inherits, the logo keeps a solid brand fill, and the old low-contrast muted
+// grey is gone.
+const solidGreen = renderEmail({
+  preheader: 'Preview',
+  heading: 'Solid button',
+  paragraphs: ['Hello'],
+  action: { label: 'Open', url: 'https://example.com', style: 'solid-green' },
+  reason: 'Reason',
+  site: 'https://example.com',
+});
+const leadHtml = renderLeadEmail({
+  kind: 'Consultation',
+  lines: ['Name: Ada Okafor', 'Email: ada@example.com', '', 'I need help with hiring.'],
+  replyTo: 'team@example.com',
+  site: 'https://example.com',
+});
+for (const html of [rendered, answerHtml, solidGreen, leadHtml]) {
+  assert.match(html, /bgcolor="#F2EDE4"/);
+  assert.match(html, /bgcolor="#FFFFFF"/);
+  assert.match(html, /class="pg-body"/);
+  assert.match(html, /@media \(prefers-color-scheme: dark\)/);
+  assert.match(html, /<meta name="color-scheme" content="light only" \/>/);
+  assert.doesNotMatch(html, /background-color:\s*transparent/i);
+  assert.doesNotMatch(html, /color:\s*#838B85/i);
+  assert.doesNotMatch(html, /color:\s*#000000/i);
+}
+assert.match(solidGreen, /background-color:#14805E/);
+assert.match(rendered, /bgcolor="#0F6E56"/);
+assert.match(rendered, /border:1px solid #3E8A76/);
+assert.match(leadHtml, /color:#A85E28/);
 console.log('Email template validation and rendering checks passed.');

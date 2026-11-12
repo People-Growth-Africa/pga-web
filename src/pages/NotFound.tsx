@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { m as motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import SEO from '../components/SEO';
 
 export default function NotFound() {

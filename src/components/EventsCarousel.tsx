@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { m as motion, useReducedMotion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import EventCard from './EventCard';
 import HoverPill from './HoverPill';
 import type { EventItem } from '../data/events';

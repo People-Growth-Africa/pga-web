@@ -1,10 +1,11 @@
 import { Fragment, useState, useEffect, useId, useMemo } from 'react';
-import { m as motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { EventItem } from '../data/events';
 import { leadFailureMessage, submitRegistration } from '../lib/leadClient';
 import { parseConfirmationMessage } from '../lib/confirmationMessage';
 import { useFormsAvailability } from '../hooks/useFormsAvailability';
 import FormsUnavailableNotice, { FormAvailabilityPending } from './FormsUnavailableNotice';
+import { Spinner } from './Loader';
 import {
   ANSWER_LIMITS,
   coerceRegistrationForm,
@@ -564,10 +565,14 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                     disabled={isSubmitting}
                     className="w-full py-3.5 px-6 bg-brand-green text-white font-semibold rounded-full hover:bg-terracotta transition-all text-sm cursor-pointer disabled:opacity-50"
                   >
-                    {isSubmitting
-                      ? 'Saving your place…'
-                      : event.registrationButtonLabel?.trim() ||
-                        (event.type === 'mentorship' ? 'Apply for a place' : 'Reserve my free place')}
+                    {isSubmitting ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Spinner /> Saving your place…
+                      </span>
+                    ) : (
+                      event.registrationButtonLabel?.trim() ||
+                      (event.type === 'mentorship' ? 'Apply for a place' : 'Reserve my free place')
+                    )}
                   </button>
                   <p className="text-center text-[0.7rem] text-charcoal/50 mt-2">
                     We will email your joining link before the session.

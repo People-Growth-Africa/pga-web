@@ -10,18 +10,33 @@
  * The layout is tables with inline styles. That is not nostalgia: Gmail drops
  * <style> blocks in its mobile apps, Outlook lays mail out with Word, and flex
  * or grid simply does not exist there. A table with inline styles renders the
- * same in all of them, and the colours stay put in dark mode because every
- * surface names its own background instead of inheriting one.
+ * same in all of them.
+ *
+ * Zoho Mail's Night Mode is the awkward one: it ignores
+ * @media (prefers-color-scheme: dark) and forces its own inversion. So every
+ * table and cell below names both a bgcolor attribute and an inline
+ * background-color, text never inherits a colour, the mark sits on a solid
+ * brand fill instead of a transparent cell, and the <style> block only exists
+ * as a second line of defence for Gmail web and Apple Mail.
  */
 
 const GREEN_DEEP = '#0F6E56';
-const GREEN = '#1D9E75';
+/**
+ * The lighter brand green only reaches about 3:1 against white text, which is
+ * below the readable threshold for a 15px button label. This darkened sibling
+ * keeps the family look and clears 4.5:1.
+ */
+const GREEN = '#14805E';
 const MINT = '#E1F5EE';
 const TERRACOTTA = '#C4773B';
+/** Terracotta is a fill colour; as small text on white it is too pale. */
+const TERRACOTTA_INK = '#A85E28';
 const CREAM = '#F2EDE4';
+const WHITE = '#FFFFFF';
 const CHARCOAL = '#1A1E1B';
 const INK = '#4A524D';
-const MUTED = '#838B85';
+/** Was #838B85 (about 3.2:1 on white). Small print has to stay readable. */
+const MUTED = '#5B625D';
 const RULE = '#E7E3DA';
 const MINT_INK = '#2C5B4C';
 
@@ -47,7 +62,7 @@ function escapeHtml(value: string): string {
 function shell(input: { preheader: string; body: string; reason: string; site: string }): string {
   const site = escapeHtml(input.site);
   return `<!doctype html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -55,32 +70,53 @@ function shell(input: { preheader: string; body: string; reason: string; site: s
     <meta name="color-scheme" content="light only" />
     <meta name="supported-color-schemes" content="light only" />
     <title>People Growth Africa</title>
+    <style>
+      :root { color-scheme: light only; supported-color-schemes: light only; }
+      /* Gmail web and Apple Mail honour this and keep the light surfaces. Zoho
+         ignores it, so every table and cell also carries bgcolor and an inline
+         background-color. */
+      @media (prefers-color-scheme: dark) {
+        .pg-outer { background-color: ${CREAM} !important; }
+        .pg-card, .pg-body, .pg-footer { background-color: ${WHITE} !important; }
+        .pg-heading { color: ${CHARCOAL} !important; }
+        .pg-text { color: ${INK} !important; }
+        .pg-muted { color: ${MUTED} !important; }
+      }
+    </style>
   </head>
-  <body style="margin:0;padding:0;background-color:${CREAM};">
-    <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;color:${CREAM};">${escapeHtml(input.preheader)}</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${CREAM};">
+  <body bgcolor="${CREAM}" class="pg-outer" style="margin:0;padding:0;background-color:${CREAM};color:${CHARCOAL};">
+    <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:${CREAM};">${escapeHtml(input.preheader)}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${CREAM}" class="pg-outer" style="background-color:${CREAM};">
       <tr>
-        <td align="center" style="padding:28px 14px 36px;">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:20px;overflow:hidden;">
+        <td align="center" bgcolor="${CREAM}" class="pg-outer" style="padding:28px 14px 36px;background-color:${CREAM};">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="${WHITE}" class="pg-card" style="width:100%;max-width:600px;background-color:${WHITE};border-radius:20px;overflow:hidden;">
             <tr>
-              <td align="center" style="background-color:${GREEN_DEEP};padding:26px 32px 22px;">
+              <td align="center" bgcolor="${GREEN_DEEP}" style="background-color:${GREEN_DEEP};padding:26px 32px 22px;">
                 <!-- Was: width="75" height="56" (the old 683x512 canvas). The mark file
-                     is a square now, so its box is square too and the leaf is not stretched. -->
-                <img src="${site}/images/icon-white.png" alt="" width="56" height="56" style="display:block;width:56px;height:56px;border:0;outline:none;" />
-                <p style="margin:10px 0 0;font-family:${HEADING_FONT};font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:#ffffff;">People Growth Africa</p>
+                     is a square now, so its box is square too and the leaf is not stretched.
+                     The badge keeps a solid brand fill and a light rim, so the white mark
+                     never sits on a transparent surface that Zoho could paint black. -->
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" bgcolor="${GREEN_DEEP}" style="background-color:${GREEN_DEEP};">
+                  <tr>
+                    <td align="center" width="76" height="76" bgcolor="${GREEN_DEEP}" style="width:76px;height:76px;background-color:${GREEN_DEEP};border:1px solid #3E8A76;border-radius:16px;">
+                      <img src="${site}/images/icon-white.png" alt="" width="56" height="56" style="display:block;width:56px;height:56px;border:0;outline:none;" />
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:12px 0 0;font-family:${HEADING_FONT};font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:#ffffff;">People Growth Africa</p>
               </td>
             </tr>
             <tr>
-              <td style="background-color:${TERRACOTTA};height:4px;font-size:0;line-height:0;">&nbsp;</td>
+              <td bgcolor="${TERRACOTTA}" style="background-color:${TERRACOTTA};height:4px;font-size:0;line-height:0;">&nbsp;</td>
             </tr>
             <tr>
-              <td style="padding:34px 32px 0;">${input.body}</td>
+              <td bgcolor="${WHITE}" class="pg-body" style="background-color:${WHITE};padding:34px 32px 0;">${input.body}</td>
             </tr>
             <tr>
-              <td style="padding:26px 32px 34px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <td bgcolor="${WHITE}" class="pg-footer" style="background-color:${WHITE};padding:26px 32px 34px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${WHITE}" style="background-color:${WHITE};">
                   <tr>
-                    <td style="border-top:1px solid ${RULE};padding-top:18px;font-family:${BODY_FONT};font-size:12.5px;line-height:1.65;color:${MUTED};">
+                    <td bgcolor="${WHITE}" class="pg-muted" style="background-color:${WHITE};border-top:1px solid ${RULE};padding-top:18px;font-family:${BODY_FONT};font-size:12.5px;line-height:1.65;color:${MUTED};">
                       ${escapeHtml(input.reason)}<br />
                       <a href="${site}" style="color:${GREEN_DEEP};text-decoration:none;font-weight:600;">peoplegrowthafrica.com</a>
                     </td>
@@ -97,24 +133,27 @@ function shell(input: { preheader: string; body: string; reason: string; site: s
 }
 
 function heading(text: string): string {
-  return `<h1 style="margin:0 0 18px;font-family:${HEADING_FONT};font-size:25px;line-height:1.28;font-weight:600;color:${CHARCOAL};">${escapeHtml(text)}</h1>`;
+  return `<h1 class="pg-heading" style="margin:0 0 18px;font-family:${HEADING_FONT};font-size:25px;line-height:1.28;font-weight:600;color:${CHARCOAL};">${escapeHtml(text)}</h1>`;
 }
 
 function paragraph(text: string): string {
-  return `<p style="margin:0 0 18px;font-family:${BODY_FONT};font-size:16px;line-height:1.65;color:${INK};">${escapeHtml(text)}</p>`;
+  return `<p class="pg-text" style="margin:0 0 18px;font-family:${BODY_FONT};font-size:16px;line-height:1.65;color:${INK};">${escapeHtml(text)}</p>`;
 }
 
 /**
  * A green pill. The padding lives on the anchor rather than the cell so the
  * whole shape is clickable in every client, and the link is repeated as text
  * below it because a stripped button should not leave the reader stuck.
+ *
+ * The anchor names its own background as well as the cell: if a dark-mode
+ * client rewrites one of the two, the label still has the other to sit on.
  */
 type ButtonStyle = 'solid-green' | 'solid-deep-green' | 'outline-green' | 'soft-mint';
 
 const BUTTON_STYLE: Record<ButtonStyle, { background: string; color: string; border: string }> = {
-  'solid-green': { background: GREEN, color: '#ffffff', border: GREEN },
-  'solid-deep-green': { background: GREEN_DEEP, color: '#ffffff', border: GREEN_DEEP },
-  'outline-green': { background: '#ffffff', color: GREEN_DEEP, border: GREEN_DEEP },
+  'solid-green': { background: GREEN, color: WHITE, border: GREEN },
+  'solid-deep-green': { background: GREEN_DEEP, color: WHITE, border: GREEN_DEEP },
+  'outline-green': { background: WHITE, color: GREEN_DEEP, border: GREEN_DEEP },
   'soft-mint': { background: MINT, color: MINT_INK, border: MINT },
 };
 
@@ -138,14 +177,14 @@ function button(action: { label: string; url: string; style?: ButtonStyle }): st
   const safeUrl = safeHref(action.url);
   if (!safeUrl) return '';
   const style = BUTTON_STYLE[action.style ?? 'solid-green'] ?? BUTTON_STYLE['solid-green'];
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 0;">
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" bgcolor="${style.background}" style="margin:6px 0 0;background-color:${style.background};border-radius:100px;">
                 <tr>
-                  <td align="center" bgcolor="${style.background}" style="border:1px solid ${style.border};border-radius:100px;">
-                    <a href="${safeUrl}" style="display:inline-block;padding:15px 34px;font-family:${BODY_FONT};font-size:15px;font-weight:600;line-height:1;color:${style.color};text-decoration:none;border-radius:100px;">${escapeHtml(action.label)}</a>
+                  <td align="center" bgcolor="${style.background}" style="border:1px solid ${style.border};border-radius:100px;background-color:${style.background};">
+                    <a href="${safeUrl}" style="display:inline-block;padding:15px 34px;font-family:${BODY_FONT};font-size:15px;font-weight:600;line-height:1;color:${style.color};text-decoration:none;border-radius:100px;background-color:${style.background};">${escapeHtml(action.label)}</a>
                   </td>
                 </tr>
               </table>
-              <p style="margin:18px 0 0;font-family:${BODY_FONT};font-size:12.5px;line-height:1.6;color:${MUTED};">
+              <p class="pg-muted" style="margin:18px 0 0;font-family:${BODY_FONT};font-size:12.5px;line-height:1.6;color:${MUTED};">
                 Button not working? Paste this into your browser:<br />
                 <a href="${safeUrl}" style="color:${GREEN_DEEP};text-decoration:none;word-break:break-all;">${escapeHtml(action.url)}</a>
               </p>`;
@@ -176,9 +215,9 @@ export function renderEmailText(input: {
 /** The "expires in an hour"/"you can ignore this" details, on a mint card. */
 function notes(lines: string[]): string {
   if (lines.length === 0) return '';
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 0;background-color:${MINT};border-radius:14px;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${MINT}" style="margin:26px 0 0;background-color:${MINT};border-radius:14px;">
                 <tr>
-                  <td style="padding:16px 20px;font-family:${BODY_FONT};font-size:13.5px;line-height:1.7;color:${MINT_INK};">
+                  <td bgcolor="${MINT}" style="padding:16px 20px;font-family:${BODY_FONT};font-size:13.5px;line-height:1.7;color:${MINT_INK};background-color:${MINT};">
                     ${lines.map(escapeHtml).join('<br />')}
                   </td>
                 </tr>
@@ -211,7 +250,7 @@ export function renderEmail(input: {
 
   return shell({
     preheader: input.preheader,
-    body: body ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-bottom:30px;">${body}</td></tr></table>` : '',
+    body: body ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${WHITE}" style="background-color:${WHITE};"><tr><td bgcolor="${WHITE}" style="padding-bottom:30px;background-color:${WHITE};">${body}</td></tr></table>` : '',
     reason: input.reason,
     site: input.site,
   });
@@ -247,12 +286,12 @@ function pair(line: string): { label: string; value: string } | null {
 }
 
 function detailTable(rows: { label: string; value: string }[]): string {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${WHITE}" style="margin:0 0 18px;background-color:${WHITE};">
     ${rows
       .map(
         (row) => `<tr>
-      <td style="padding:9px 16px 9px 0;font-family:${BODY_FONT};font-size:13px;line-height:1.5;color:${MUTED};white-space:nowrap;vertical-align:top;">${escapeHtml(row.label)}</td>
-      <td style="padding:9px 0;font-family:${BODY_FONT};font-size:14.5px;line-height:1.5;color:${CHARCOAL};font-weight:500;">${escapeHtml(row.value)}</td>
+      <td class="pg-muted" bgcolor="${WHITE}" style="padding:9px 16px 9px 0;font-family:${BODY_FONT};font-size:13px;line-height:1.5;color:${MUTED};white-space:nowrap;vertical-align:top;background-color:${WHITE};">${escapeHtml(row.label)}</td>
+      <td class="pg-text" bgcolor="${WHITE}" style="padding:9px 0;font-family:${BODY_FONT};font-size:14.5px;line-height:1.5;color:${CHARCOAL};font-weight:500;background-color:${WHITE};">${escapeHtml(row.value)}</td>
     </tr>`,
       )
       .join('\n    ')}
@@ -264,9 +303,9 @@ function transcript(lines: string[]): string {
   const [lead, ...rest] = lines;
   const label = lead?.endsWith(':') ? lead.slice(0, -1) : null;
   const body = (label ? rest : lines).map(escapeHtml).join('<br />');
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${WHITE}" style="margin:0 0 18px;background-color:${WHITE};">
                 <tr>
-                  <td style="border-left:3px solid ${MINT};padding:4px 0 4px 18px;font-family:${BODY_FONT};font-size:15px;line-height:1.7;color:${INK};">
+                  <td bgcolor="${WHITE}" style="border-left:3px solid ${MINT};padding:4px 0 4px 18px;font-family:${BODY_FONT};font-size:15px;line-height:1.7;color:${INK};background-color:${WHITE};">
                     ${label ? `<span style="display:block;font-size:13px;font-weight:600;color:${MUTED};margin-bottom:6px;">${escapeHtml(label)}</span>` : ''}
                     ${body}
                   </td>
@@ -306,7 +345,7 @@ export function renderLeadEmail(input: {
   const template = input.template;
   const actionUrl = template?.actionUrl ?? `mailto:${input.replyTo}`;
   const actionLabel = template?.actionLabel || `Reply to ${input.replyTo}`;
-  const body = `<p style="margin:0 0 6px;font-family:${BODY_FONT};font-size:12px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${TERRACOTTA};">New lead</p>
+  const body = `<p class="pg-text" style="margin:0 0 6px;font-family:${BODY_FONT};font-size:12px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${TERRACOTTA_INK};">New lead</p>
               ${heading(template?.heading ?? input.kind)}
               ${template ? template.paragraphs.map(paragraph).join('') : ''}
               ${groups.join('\n              ')}
@@ -316,7 +355,7 @@ export function renderLeadEmail(input: {
 
   return shell({
     preheader: template?.preheader ?? `${input.kind} from ${input.replyTo}`,
-    body: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-bottom:26px;">${body}</td></tr></table>`,
+    body: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${WHITE}" style="background-color:${WHITE};"><tr><td bgcolor="${WHITE}" style="padding-bottom:26px;background-color:${WHITE};">${body}</td></tr></table>`,
     reason: 'This notification is only ever sent to the People Growth Africa team inbox.',
     site: input.site,
   });

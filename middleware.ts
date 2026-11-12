@@ -20,6 +20,23 @@ function isTrackablePath(path: string): boolean {
   return !STATIC_ASSET_PATH.test(path) && (SCANNER_PATH.test(path) || !PRIVATE_PATH.test(path));
 }
 
+/** A browser warming a link, a crawler rendering a preview or a Lighthouse run. */
+function isPrefetchOrPreview(request: Request): boolean {
+  const purpose = [
+    request.headers.get('sec-purpose'),
+    request.headers.get('purpose'),
+    request.headers.get('x-purpose'),
+    request.headers.get('x-moz'),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    /prefetch|prerender|preview/i.test(purpose) ||
+    request.headers.get('next-router-prefetch') === '1' ||
+    request.headers.get('x-vercel-env') === 'preview'
+  );
+}
+
 function captureHit(request: Request, hitId: string): Promise<void> {
   const url = new URL(request.url);
   const hit = {
@@ -83,6 +100,11 @@ export default function middleware(request: Request, context: RequestContext): R
     request.method !== 'GET' ||
     !isTrackablePath(url.pathname) ||
     isStaffSession(request) ||
+    isPrefetchOrPreview(request) ||
+    // Previews and local runs are not audience traffic. A preview deployment
+    // has its own VERCEL_ENV, and the query flag covers a manual preview link.
+    process.env.VERCEL_ENV === 'preview' ||
+    url.searchParams.has('preview') ||
     (!scanner && !isHtmlNavigation)
   ) {
     return next();
