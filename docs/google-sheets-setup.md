@@ -209,7 +209,69 @@ GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvQIB
 
 ## Step 9: Backfill Existing Data (Optional)
 
-If you have existing form submissions in your database that you want to sync to Google Sheets, run the backfill script:
+If you have existing form submissions in your database that you want to sync to Google Sheets, you have two options:
+
+### Option A: Run via API Endpoint (Recommended - Simple!)
+
+This method lets you trigger the backfill from your browser.
+
+**Step 1: Generate a Secret**
+
+Generate a random secret string (or use any long random string):
+```bash
+# On Mac/Linux
+openssl rand -hex 32
+
+# Or use any random string like: my-super-secret-backfill-key-12345
+```
+
+**Step 2: Add to Vercel Environment Variables**
+
+In Vercel Dashboard → Settings → Environment Variables:
+- Key: `SHEETS_BACKFILL_SECRET`
+- Value: Your generated secret
+- Environments: Production and Preview
+- Click Save
+
+**Step 3: Redeploy**
+
+After adding the variable, redeploy your site (push a commit or click Redeploy in Vercel).
+
+**Step 4: Trigger the Backfill**
+
+Open this URL in your browser (replace with your values):
+```
+https://YOUR_DOMAIN/api/admin/sync-sheets-backfill?secret=YOUR_SECRET
+```
+
+Example:
+```
+https://www.peoplegrowthafrica.com/api/admin/sync-sheets-backfill?secret=my-super-secret-backfill-key-12345
+```
+
+You'll see a JSON response like:
+```json
+{
+  "success": true,
+  "message": "Backfill complete! Synced 135 records to Google Sheets",
+  "results": {
+    "eventRegistrations": 45,
+    "consultationBookings": 23,
+    "enquiries": 67,
+    "total": 135
+  }
+}
+```
+
+**Step 5: Check Your Spreadsheet**
+
+All your historical data should now be in Google Sheets!
+
+---
+
+### Option B: Run Locally via Script
+
+If you prefer to run a command-line script:
 
 ```bash
 npm run sync:sheets-backfill
