@@ -4,6 +4,8 @@ import { insertEventRegistration } from '../../db.js';
 import { appUrl, sendLeadNotification } from '../../email.js';
 import { enforceRateLimit } from '../../ratelimit.js';
 import { recordAuthEvent } from '../../audit.js';
+import { scheduleBestEffort } from '../../best-effort.js';
+import { syncEventRegistration } from '../../sheets-sync.js';
 
 /**
  * An event registration is stored first and the team is told about it second.
@@ -68,6 +70,23 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   });
 
   await recordAuthEvent('event_registration_received', { ip });
+
+  // Background sync to Google Sheets
+  scheduleBestEffort(
+    () =>
+      syncEventRegistration({
+        id,
+        name: data.name,
+        email: data.email,
+        phone: data.phone || null,
+        organisation: data.organisation || null,
+        role: data.role || null,
+        question: data.question || null,
+        eventSlug: data.eventSlug,
+        createdAt: new Date(),
+      }),
+    'sheets-sync',
+  );
 
   sendJson(res, 201, { ok: true });
 });

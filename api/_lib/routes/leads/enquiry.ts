@@ -4,6 +4,8 @@ import { insertEnquiry } from '../../db.js';
 import { sendLeadNotification } from '../../email.js';
 import { enforceRateLimit } from '../../ratelimit.js';
 import { recordAuthEvent } from '../../audit.js';
+import { scheduleBestEffort } from '../../best-effort.js';
+import { syncEnquiry } from '../../sheets-sync.js';
 
 /**
  * A written enquiry from either consultation form. The source says which one,
@@ -64,6 +66,22 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   });
 
   await recordAuthEvent('enquiry_received', { ip });
+
+  // Background sync to Google Sheets
+  scheduleBestEffort(
+    () =>
+      syncEnquiry({
+        id,
+        name: data.name,
+        email: data.email,
+        phone: data.phone || null,
+        subject: data.subject,
+        message: data.message,
+        source: data.source || 'website',
+        createdAt: new Date(),
+      }),
+    'sheets-sync',
+  );
 
   sendJson(res, 201, { ok: true });
 });

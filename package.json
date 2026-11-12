@@ -68,6 +68,7 @@
     "@vercel/functions": "^3.11.1",
     "bcryptjs": "3.0.3",
     "framer-motion": "^13.4.4",
+    "googleapis": "^189.0.0",
     "gsap": "^3.15.0",
     "jose": "6.2.12",
     "papaparse": "^5.5.3",

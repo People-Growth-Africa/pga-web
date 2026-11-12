@@ -10,6 +10,7 @@ import { enforceRateLimit } from '../../ratelimit.js';
 import { recordAuthEvent } from '../../audit.js';
 import { createBestEffortNotification } from '../../notifications.js';
 import { scheduleBestEffort } from '../../best-effort.js';
+import { syncConsultationBooking } from '../../sheets-sync.js';
 
 /**
  * A booking request. Nothing here checks the team's diary, so the visitor is
@@ -61,6 +62,28 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   scheduleBestEffort(
     () => createBestEffortNotification({ event: 'consultation.created' }),
     'notifications',
+  );
+
+  // Background sync to Google Sheets
+  scheduleBestEffort(
+    () =>
+      syncConsultationBooking({
+        id,
+        name: data.name,
+        email: data.email,
+        phone: data.phone || null,
+        organisation: data.organisation || null,
+        teamSize: data.teamSize || null,
+        service: data.service || 'Not specified',
+        meetingFormat: data.meetingFormat,
+        preferredDate: data.preferredDate || null,
+        preferredSlot: data.preferredSlot || null,
+        notes: data.notes || null,
+        status: 'pending',
+        assignedTo: null,
+        createdAt: new Date(),
+      }),
+    'sheets-sync',
   );
 
   await sendLeadNotification({
