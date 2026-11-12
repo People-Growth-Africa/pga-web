@@ -1,6 +1,6 @@
 import { endpoint, sendJson } from '../_lib/http.js';
 import { query } from '../_lib/db.js';
-import { syncEventRegistration, syncConsultationBooking, syncEnquiry } from '../_lib/sheets-sync.js';
+import { syncEventRegistration, syncRegistration, syncConsultationBooking, syncEnquiry } from '../_lib/sheets-sync.js';
 
 /**
  * One-time backfill endpoint to sync existing database records to Google Sheets.
@@ -39,14 +39,52 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
   }
 
   const results = {
-    eventRegistrations: 0,
+    registrations: 0, // Old table
+    eventRegistrations: 0, // New table
     consultationBookings: 0,
     enquiries: 0,
     errors: [] as string[],
   };
 
   try {
-    // 1. Sync Event Registrations
+    // 1. Sync Old Registrations (registrations table - the main one with 31 records)
+    const registrations = await query<{
+      id: string;
+      created_at: Date;
+      event_slug: string;
+      name: string;
+      email: string;
+      phone: string;
+      organization: string | null;
+      notes: string | null;
+      answers: unknown | null;
+    }>(
+      `SELECT id, created_at, event_slug, name, email, phone, organization, notes, answers
+       FROM registrations
+       WHERE deleted_at IS NULL
+       ORDER BY created_at ASC`,
+    );
+
+    for (const reg of registrations) {
+      try {
+        await syncRegistration({
+          id: reg.id,
+          name: reg.name,
+          email: reg.email,
+          phone: reg.phone,
+          organization: reg.organization,
+          notes: reg.notes,
+          answers: reg.answers,
+          eventSlug: reg.event_slug,
+          createdAt: reg.created_at,
+        });
+        results.registrations++;
+      } catch (error: any) {
+        results.errors.push(`Registration ${reg.id}: ${error.message}`);
+      }
+    }
+
+    // 2. Sync New Event Registrations (event_registrations table - the simpler one)
     const eventRegistrations = await query<{
       id: string;
       created_at: Date;
@@ -60,6 +98,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
     }>(
       `SELECT id, created_at, event_slug, name, email, phone, organisation, role, question
        FROM event_registrations
+       WHERE deleted_at IS NULL
        ORDER BY created_at ASC`,
     );
 
@@ -82,7 +121,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
       }
     }
 
-    // 2. Sync Consultation Bookings
+    // 3. Sync Consultation Bookings
     const consultationBookings = await query<{
       id: string;
       created_at: Date;
@@ -130,7 +169,7 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
       }
     }
 
-    // 3. Sync Enquiries
+    // 4. Sync Enquiries
     const enquiries = await query<{
       id: string;
       created_at: Date;
@@ -164,12 +203,13 @@ export default endpoint({ methods: ['GET'] }, async (req, res) => {
       }
     }
 
-    const total = results.eventRegistrations + results.consultationBookings + results.enquiries;
+    const total = results.registrations + results.eventRegistrations + results.consultationBookings + results.enquiries;
 
     return sendJson(res, 200, {
       success: true,
       message: `Backfill complete! Synced ${total} records to Google Sheets`,
       results: {
+        registrations: results.registrations,
         eventRegistrations: results.eventRegistrations,
         consultationBookings: results.consultationBookings,
         enquiries: results.enquiries,

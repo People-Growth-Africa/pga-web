@@ -96,7 +96,7 @@ async function appendRow(sheetName: string, values: any[]): Promise<boolean> {
 }
 
 /**
- * Sync event registration to Google Sheets
+ * Sync event registration to Google Sheets (new format - event_registrations table)
  */
 export async function syncEventRegistration(data: {
   id: string;
@@ -119,6 +119,53 @@ export async function syncEventRegistration(data: {
     data.organisation || '',
     data.role || '',
     data.question || '',
+  ];
+
+  return appendRow('Event Registrations', values);
+}
+
+/**
+ * Sync registration to Google Sheets (old format - registrations table)
+ */
+export async function syncRegistration(data: {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  organization: string | null;
+  notes: string | null;
+  answers: unknown | null;
+  eventSlug: string;
+  createdAt: Date;
+}) {
+  // Format answers JSON for display
+  let answersText = '';
+  if (data.answers && typeof data.answers === 'object') {
+    try {
+      const answersObj = data.answers as Record<string, any>;
+      answersText = Object.entries(answersObj)
+        .map(([key, value]) => {
+          if (typeof value === 'object' && value !== null && 'label' in value && 'answer' in value) {
+            return `${value.label}: ${value.answer}`;
+          }
+          return `${key}: ${JSON.stringify(value)}`;
+        })
+        .join(' | ');
+    } catch {
+      answersText = JSON.stringify(data.answers);
+    }
+  }
+
+  const values = [
+    data.id,
+    data.createdAt.toISOString(),
+    data.eventSlug,
+    data.name,
+    data.email,
+    data.phone,
+    data.organization || '',
+    data.notes || '',
+    answersText,
   ];
 
   return appendRow('Event Registrations', values);

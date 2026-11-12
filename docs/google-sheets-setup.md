@@ -101,7 +101,13 @@ Add these column headers in the first row:
 
 | A | B | C | D | E | F | G | H | I |
 |---|---|---|---|---|---|---|---|---|
-| ID | Created At | Event Slug | Name | Email | Phone | Organisation | Role | Question |
+| ID | Created At | Event Slug | Name | Email | Phone | Organization / Organisation | Role / Notes | Question / Answers |
+
+**Note:** This sheet combines data from both the old `registrations` table and new `event_registrations` table:
+- Old format uses: Organization, Notes, Answers (JSON responses)
+- New format uses: Organisation, Role, Question (simple text)
+
+Both will appear in the same sheet with slightly different data in the last 3 columns.
 
 **Sheet 2: Consultation Bookings**
 
