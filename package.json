@@ -67,7 +67,7 @@
     "@vercel/blob": "^2.8.2",
     "@vercel/functions": "^3.11.1",
     "bcryptjs": "3.0.3",
-    "framer-motion": "^13.4.4",
+    "framer-motion": "^14.11.1",
     "googleapis": "^189.0.0",
     "gsap": "^3.15.0",
     "jose": "6.2.12",
