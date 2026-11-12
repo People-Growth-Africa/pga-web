@@ -39,13 +39,13 @@ import {
 /* Row actions read as buttons, not as prose: the same pill shapes the content
    desk uses, so the two panels feel like one product. */
 const smallOutline =
-  'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-charcoal/15 bg-white px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint';
+  'inline-flex min-h-[36px] cursor-pointer items-center rounded-full border border-charcoal/15 bg-white px-3 font-[family-name:var(--font-body)] text-[0.78rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint sm:min-h-[38px] sm:px-4 sm:text-[0.82rem]';
 
 const smallPrimary =
-  'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-deep-green bg-deep-green px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta';
+  'inline-flex min-h-[36px] cursor-pointer items-center rounded-full border border-deep-green bg-deep-green px-3 font-[family-name:var(--font-body)] text-[0.78rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta sm:min-h-[38px] sm:px-4 sm:text-[0.82rem]';
 
 const smallDanger =
-  'inline-flex min-h-[38px] cursor-pointer items-center rounded-full border border-red-200 bg-white px-4 font-[family-name:var(--font-body)] text-[0.82rem] font-semibold text-red-600 transition-colors hover:bg-red-50';
+  'inline-flex min-h-[36px] cursor-pointer items-center rounded-full border border-red-200 bg-white px-3 font-[family-name:var(--font-body)] text-[0.78rem] font-semibold text-red-600 transition-colors hover:bg-red-50 sm:min-h-[38px] sm:px-4 sm:text-[0.82rem]';
 
 type View = 'list' | 'create' | 'edit';
 
@@ -288,7 +288,7 @@ export default function AdminOversight() {
         )}
 
         {access && (!canEdit || !canPublish) && (
-          <section className="mb-6 grid gap-3 xl:grid-cols-2" aria-label="Locked content permissions">
+          <section className="mb-6 grid gap-3 sm:grid-cols-1 lg:grid-cols-2" aria-label="Locked content permissions">
             {(!canEdit || !canPublish) &&
               ACCESS_PERMISSIONS.filter((permission) =>
                 permission.id === 'content.edit'
@@ -300,13 +300,13 @@ export default function AdminOversight() {
                 return (
                   <article
                     key={permission.id}
-                    className="flex flex-col justify-between gap-4 rounded-[14px] border border-charcoal/10 bg-white p-5 sm:flex-row sm:items-center"
+                    className="flex flex-col justify-between gap-3 rounded-[14px] border border-charcoal/10 bg-white p-4 sm:flex-row sm:items-center sm:gap-4 sm:p-5"
                   >
                     <div className="min-w-0">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-deep-green">
+                      <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-deep-green sm:text-[0.68rem]">
                         Access needed
                       </p>
-                      <h2 className="mt-1 font-[family-name:var(--font-heading)] text-lg font-semibold text-charcoal">
+                      <h2 className="mt-1 font-[family-name:var(--font-heading)] text-base font-semibold text-charcoal sm:text-lg">
                         {permission.label}
                       </h2>
                       {pending ? (
@@ -324,7 +324,7 @@ export default function AdminOversight() {
                           ; that access is no longer active.
                         </p>
                       ) : (
-                        <p className="mt-1 text-sm text-charcoal/60">{permission.description}</p>
+                        <p className="mt-1 text-xs text-charcoal/60 sm:text-sm">{permission.description}</p>
                       )}
                     </div>
                     {!pending && (
@@ -335,7 +335,7 @@ export default function AdminOversight() {
                           setError(null);
                           setNotice(null);
                         }}
-                        className={smallOutline}
+                        className={`${smallOutline} w-full sm:w-auto`}
                       >
                         Request access
                       </button>
@@ -384,7 +384,7 @@ export default function AdminOversight() {
           </p>
         ) : (
           <>
-            <div className="mb-4 flex gap-2">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
               {[false, true].map((deleted) => (
                 <button key={String(deleted)} type="button" aria-pressed={showDeleted === deleted}
                   onClick={() => setShowDeleted(deleted)}
@@ -393,7 +393,7 @@ export default function AdminOversight() {
                 </button>
               ))}
               <select value={postStatus} onChange={(event) => setPostStatusFilter(event.target.value)} aria-label="Filter content status"
-                className="ml-auto min-h-10 rounded-full border border-charcoal/15 bg-white px-4 text-sm">
+                className="min-h-10 rounded-full border border-charcoal/15 bg-white px-4 text-sm sm:ml-auto">
                 <option value="">All statuses</option>
                 <option value="draft">Draft</option>
                 <option value="published">Published</option>
@@ -411,26 +411,26 @@ export default function AdminOversight() {
               return (
                 <li
                   key={post.id}
-                  className="rounded-[16px] border border-charcoal/10 bg-white px-5 py-5 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:px-6"
+                  className="rounded-[16px] border border-charcoal/10 bg-white px-4 py-4 shadow-[0_2px_8px_rgba(0,0,0,0.035)] sm:px-5 sm:py-5 lg:px-6"
                 >
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
+                  <div className="flex flex-col gap-3 sm:gap-4 xl:flex-row xl:items-center">
                     <div className="min-w-0 flex-1">
-                      <div className="mb-2 flex flex-wrap items-center gap-2.5">
+                      <div className="mb-2 flex flex-wrap items-center gap-2 sm:gap-2.5">
                         <PublishBadge published={published} />
                         <TypeBadge type={post.type} />
-                        <span className="font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
+                        <span className="font-[family-name:var(--font-body)] text-[0.72rem] text-charcoal/45 sm:text-[0.78rem]">
                           {published ? 'Live on the site' : post.status === 'scheduled' ? `Scheduled for ${post.publish_at ? new Date(post.publish_at).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) : 'later'}` : 'Not published'}
                         </span>
                       </div>
-                      <h2 className="break-words font-[family-name:var(--font-heading)] text-[1.25rem] font-semibold leading-snug text-charcoal sm:text-[1.35rem]">
+                      <h2 className="break-words font-[family-name:var(--font-heading)] text-lg font-semibold leading-snug text-charcoal sm:text-[1.25rem] lg:text-[1.35rem]">
                         {post.title}
                       </h2>
-                      <p className="mt-1 break-all font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/45">
+                      <p className="mt-1 break-all font-[family-name:var(--font-body)] text-[0.75rem] text-charcoal/45 sm:text-[0.8rem]">
                         /{post.type}/{post.slug}
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end xl:justify-end">
                       {canEdit && !showDeleted && (
                         <button
                           type="button"
@@ -541,7 +541,7 @@ function TypeBadge({ type }: { type: string }) {
 
 /* The same rounded action blocks the Data page uses in its header. */
 const secondaryAction =
-  'inline-flex min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-charcoal/10 bg-white px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint';
+  'inline-flex min-h-[42px] cursor-pointer items-center justify-center rounded-[10px] border border-charcoal/10 bg-white px-4 py-2.5 font-[family-name:var(--font-body)] text-[0.88rem] font-semibold text-deep-green transition-colors hover:border-brand-green hover:bg-mint sm:min-h-[48px] sm:px-5 sm:text-[0.95rem]';
 
 const primaryAction =
-  'inline-flex min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-deep-green px-5 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta';
+  'inline-flex min-h-[42px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-deep-green px-4 py-2.5 font-[family-name:var(--font-body)] text-[0.88rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta sm:min-h-[48px] sm:px-5 sm:text-[0.95rem]';
