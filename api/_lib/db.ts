@@ -259,6 +259,7 @@ export type UserRow = {
 };
 
 async function auditedAccessMutation<T>(input: {
+  mutationCtes?: string;
   mutationSql: string;
   mutationParams: unknown[];
   audit: AuditWrite;
@@ -283,15 +284,15 @@ export async function createAccessRequest(input: {
   requester_email: string;
 } | null> {
   return auditedAccessMutation({
-    mutationSql: `WITH created AS (
-                    INSERT INTO access_requests
-                      (requester_id, permission, reason, requested_duration)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT (requester_id, permission) WHERE status = 'pending'
-                    DO NOTHING
-                    RETURNING id, requester_id, permission, status
-                  )
-                  SELECT created.id, created.requester_id, created.permission, created.status,
+    mutationCtes: `created AS (
+                     INSERT INTO access_requests
+                       (requester_id, permission, reason, requested_duration)
+                     VALUES ($1, $2, $3, $4)
+                     ON CONFLICT (requester_id, permission) WHERE status = 'pending'
+                     DO NOTHING
+                     RETURNING id, requester_id, permission, status
+                   )`,
+    mutationSql: `SELECT created.id, created.requester_id, created.permission, created.status,
                          users.name AS requester_name, users.email AS requester_email
                     FROM created
                     JOIN users ON users.id = created.requester_id`,
@@ -338,25 +339,25 @@ export async function approveAccessRequest(input: {
   requester_email: string;
 } | null> {
   return auditedAccessMutation({
-    mutationSql: `WITH approved AS (
-                    UPDATE access_requests
-                       SET status = 'approved', decided_by = $2, decided_at = now(),
-                           decision_note = NULL
-                     WHERE id = $1 AND status = 'pending'
-                     RETURNING id, requester_id, permission, status
-                  ),
-                  new_grant AS (
-                    INSERT INTO permission_grants
-                      (user_id, permission, granted_by, granted_at, expires_at, request_id)
-                    SELECT requester_id, permission, $2, now(),
-                           CASE WHEN $3::smallint IS NULL THEN NULL
-                                ELSE now() + make_interval(days => $3::integer)
-                           END,
-                           id
-                      FROM approved
-                    RETURNING id, request_id, expires_at
-                  )
-                  SELECT approved.id, approved.requester_id, approved.permission, approved.status,
+    mutationCtes: `approved AS (
+                     UPDATE access_requests
+                        SET status = 'approved', decided_by = $2, decided_at = now(),
+                            decision_note = NULL
+                      WHERE id = $1 AND status = 'pending'
+                      RETURNING id, requester_id, permission, status
+                   ),
+                   new_grant AS (
+                     INSERT INTO permission_grants
+                       (user_id, permission, granted_by, granted_at, expires_at, request_id)
+                     SELECT requester_id, permission, $2, now(),
+                            CASE WHEN $3::smallint IS NULL THEN NULL
+                                 ELSE now() + make_interval(days => $3::integer)
+                            END,
+                            id
+                       FROM approved
+                     RETURNING id, request_id, expires_at
+                   )`,
+    mutationSql: `SELECT approved.id, approved.requester_id, approved.permission, approved.status,
                          new_grant.expires_at::text AS expires_at, new_grant.id AS grant_id,
                          users.name AS requester_name, users.email AS requester_email
                     FROM approved
@@ -382,14 +383,14 @@ export async function declineAccessRequest(input: {
   requester_email: string;
 } | null> {
   return auditedAccessMutation({
-    mutationSql: `WITH declined AS (
-                    UPDATE access_requests
-                       SET status = 'declined', decided_by = $2, decided_at = now(),
-                           decision_note = $3
-                     WHERE id = $1 AND status = 'pending'
-                     RETURNING id, requester_id, permission, status
-                  )
-                  SELECT declined.id, declined.requester_id, declined.permission, declined.status,
+    mutationCtes: `declined AS (
+                     UPDATE access_requests
+                        SET status = 'declined', decided_by = $2, decided_at = now(),
+                            decision_note = $3
+                      WHERE id = $1 AND status = 'pending'
+                      RETURNING id, requester_id, permission, status
+                   )`,
+    mutationSql: `SELECT declined.id, declined.requester_id, declined.permission, declined.status,
                          users.name AS requester_name, users.email AS requester_email
                     FROM declined
                     JOIN users ON users.id = declined.requester_id`,
@@ -2132,11 +2133,12 @@ export async function insertAuditLogRow(input: AuditWrite): Promise<void> {
 }
 
 /**
- * Runs a single-row INSERT/UPDATE/DELETE CTE and writes its audit row from the
- * returned mutation row in the same SQL statement. A no-op mutation produces
- * no audit row and no successful result.
+ * Runs data-modifying CTEs and writes their audit row from the returned
+ * mutation row in the same SQL statement. A no-op mutation produces no audit
+ * row and no successful result.
  */
 export async function auditedMutation<T>(input: {
+  mutationCtes?: string;
   mutationSql: string;
   mutationParams: unknown[];
   audit: AuditWrite;
@@ -2159,7 +2161,8 @@ export async function auditedMutation<T>(input: {
         .map((field) => `'${field}', changed.${mutationAuditColumns[field]}`)
         .join(', ')}), ${p(9)}::jsonb)`
     : `${p(9)}::jsonb`;
-  const text = `WITH changed AS (${input.mutationSql}),
+  const text = `WITH ${input.mutationCtes ? `${input.mutationCtes},` : ''}
+    changed AS (${input.mutationSql}),
     logged AS (
       INSERT INTO audit_logs (
         actor_id, actor_email, actor_role, action, entity_type, entity_id,
