@@ -57,6 +57,7 @@
     "test:role-visibility": "node --experimental-strip-types scripts/test-role-visibility.mjs",
     "test:dashboard": "npm run test:dashboard:rules && node scripts/test-dashboard.mjs",
     "check:api": "node scripts/check-api-imports.mjs",
+    "sync:sheets-backfill": "node scripts/sync-sheets-backfill.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

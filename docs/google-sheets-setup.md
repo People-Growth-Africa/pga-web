@@ -207,7 +207,57 @@ GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvQIB
 
 ---
 
-## Step 9: Test the Integration
+## Step 9: Backfill Existing Data (Optional)
+
+If you have existing form submissions in your database that you want to sync to Google Sheets, run the backfill script:
+
+```bash
+npm run sync:sheets-backfill
+```
+
+**What it does:**
+- Reads all existing event registrations, consultation bookings, and enquiries from the database
+- Syncs them to respective Google Sheets in the correct order (oldest first)
+- Shows progress for each data type
+- Displays a summary when complete
+
+**When to run:**
+- After completing the Google Sheets setup (Steps 1-8)
+- Only once - unless you need to re-sync historical data
+- Safe to run multiple times, but will create duplicate rows
+
+**Output example:**
+```
+✓ Loaded .env.development.local
+✓ Google Sheets client initialized
+
+🔄 Starting Google Sheets backfill...
+
+📋 Fetching event registrations...
+  Found 45 event registrations
+  ✓ Synced 45 event registrations
+
+📋 Fetching consultation bookings...
+  Found 23 consultation bookings
+  ✓ Synced 23 consultation bookings
+
+📋 Fetching enquiries...
+  Found 67 enquiries
+  ✓ Synced 67 enquiries
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Backfill complete! Total records synced: 135
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 Check your Google Spreadsheet:
+   https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit
+```
+
+**Note:** Going forward, all new submissions will sync automatically in real-time. This script is only needed for historical data.
+
+---
+
+## Step 10: Test the Integration
 
 ### Test Locally:
 
@@ -416,6 +466,7 @@ The integration is designed to fail gracefully - if anything goes wrong, forms w
 - [ ] Copied spreadsheet ID from URL
 - [ ] Added all three environment variables (local and/or Vercel)
 - [ ] Redeployed on Vercel (if using production)
+- [ ] Ran backfill script for existing data (optional): `npm run sync:sheets-backfill`
 - [ ] Tested form submission
 - [ ] Verified data appears in spreadsheet
 
