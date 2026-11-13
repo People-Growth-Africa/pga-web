@@ -76,6 +76,7 @@ export default function AdminOversight() {
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
+  const [editorSlugError, setEditorSlugError] = useState<string | null>(null);
   const [selectedPermission, setSelectedPermission] = useState<AccessPermission | null>(null);
   const navigate = useNavigate();
 
@@ -177,10 +178,13 @@ export default function AdminOversight() {
   async function save(draft: PostDraft) {
     setSaving(true);
     setEditorError(null);
+    setEditorSlugError(null);
     const result = editing ? await updatePost(editing.id, draft) : await createPost(draft);
     setSaving(false);
     if (!result.ok) {
-      setEditorError(result.failure.fields?.slug ?? result.failure.error);
+      const slugError = result.failure.fields?.slug ?? null;
+      setEditorSlugError(slugError);
+      setEditorError(slugError ? null : result.failure.error);
       return;
     }
     await refresh();
@@ -263,6 +267,8 @@ export default function AdminOversight() {
                 onClick={() => {
                   setEditing(null);
                   setCreateType('event');
+                  setEditorError(null);
+                  setEditorSlugError(null);
                   setView('create');
                 }}
                 className={secondaryAction}
@@ -274,6 +280,8 @@ export default function AdminOversight() {
                 onClick={() => {
                   setEditing(null);
                   setCreateType('blog');
+                  setEditorError(null);
+                  setEditorSlugError(null);
                   setView('create');
                 }}
                 className={primaryAction}
@@ -369,11 +377,14 @@ export default function AdminOversight() {
             categories={categories}
             saving={saving}
             error={editorError}
+            slugError={editorSlugError}
+            onSlugChange={() => setEditorSlugError(null)}
             canPublish={canPublish}
             onCancel={() => {
               setView('list');
               setEditing(null);
               setEditorError(null);
+              setEditorSlugError(null);
             }}
             onSubmit={(draft) => void save(draft)}
             onAddCategory={async () => {
@@ -452,6 +463,7 @@ export default function AdminOversight() {
                           onClick={() => {
                             setEditing(post);
                             setEditorError(null);
+                            setEditorSlugError(null);
                             setView('edit');
                           }}
                           className={smallOutline}

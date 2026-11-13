@@ -25,6 +25,7 @@ import {
   deletePost,
   permanentlyDeletePost,
   findPostById,
+  hasPostSlugConflict,
   insertPost,
   isUniqueViolation,
   listCategories,
@@ -366,6 +367,9 @@ async function createHandler(req: VercelRequest, res: VercelResponse, manager: P
     : 'draft';
 
   await assertCategoryExists(data.categoryId ?? null);
+  if (await hasPostSlugConflict(data.type, data.slug, null)) {
+    throw fieldError('slug', 'That slug is already in use by a page or an old link. Choose another slug.');
+  }
 
   try {
     const audit = prepareAuditWrite({
@@ -420,6 +424,9 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, manager: P
   if (!existing || existing.deleted_at) throw new ApiError(404, 'not_found', 'That post could not be found.');
 
   await assertCategoryExists(data.categoryId ?? null);
+  if (await hasPostSlugConflict(data.type, data.slug, data.id)) {
+    throw fieldError('slug', 'That slug is already in use by a page or another post’s old link. Choose another slug.');
+  }
 
   try {
     const next = {
@@ -468,8 +475,8 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, manager: P
       });
     }
 
-    if (existing.slug !== data.slug) {
-      await recordPostSlugRedirect(existing.type, existing.slug, existing.id);
+    if (existing.slug !== data.slug || existing.type !== data.type) {
+      await recordPostSlugRedirect(existing.type, existing.slug, data.slug, existing.id);
     }
 
     // The two files a cover is made of are replaced together. Whatever the row
