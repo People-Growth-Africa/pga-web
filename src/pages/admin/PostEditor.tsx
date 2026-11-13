@@ -269,7 +269,10 @@ export default function PostEditor({
   // Event-only tabs disappear with the type; a manager who was on one of them
   // would otherwise be left looking at a panel that no longer has a heading.
   useEffect(() => {
-    if (type !== 'event' && (activeTab === 'event' || activeTab === 'registration')) {
+    if (
+      type !== 'event' &&
+      (activeTab === 'event' || activeTab === 'speakers' || activeTab === 'registration')
+    ) {
       setActiveTab('basics');
     }
   }, [type, activeTab]);
@@ -584,7 +587,7 @@ export default function PostEditor({
     ...(type === 'event'
       ? [{ label: 'Start date and location', ok: !eventStartInvalid && !locationMissing }]
       : []),
-    ...(speakers.length > 0
+    ...(type === 'event' && speakers.length > 0
       ? [
           {
             label: `${speakers.length} speaker${speakers.length === 1 ? '' : 's'} with photos`,
@@ -612,13 +615,13 @@ export default function PostEditor({
         error: eventStartInvalid || locationMissing,
       });
     }
-    list.push({
-      id: 'speakers',
-      label: 'Speakers',
-      ...(speakers.length > 0 ? { count: speakers.length } : {}),
-      error: speakersMissingPhotos.length > 0,
-    });
     if (type === 'event') {
+      list.push({
+        id: 'speakers',
+        label: 'Speakers',
+        ...(speakers.length > 0 ? { count: speakers.length } : {}),
+        error: speakersMissingPhotos.length > 0,
+      });
       list.push({
         id: 'registration',
         label: 'Registration',
@@ -752,7 +755,7 @@ export default function PostEditor({
     <div className="space-y-4">
       {checklistCard}
       {canPublish && scheduleCard}
-      {previewCard}
+      {type === 'event' && previewCard}
     </div>
   );
 

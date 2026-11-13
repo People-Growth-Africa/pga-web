@@ -446,7 +446,8 @@ export function renderFallbackArticle(post: PagePost): string {
     isEvent && registration
       ? `<p style="margin:2rem 0 0"><a href="${escapeHtml(registration)}" rel="noopener noreferrer" style="display:inline-block;background:#0f6e56;color:#fff;padding:.7rem 1.4rem;border-radius:999px;text-decoration:none;font-weight:600">Register for this event</a></p>`
       : '',
-    post.showSpeakers && post.speakers.length > 0
+    // Speakers belong to events; a blog post's byline is its author, not a cast.
+    isEvent && post.showSpeakers && post.speakers.length > 0
       ? renderSpeakersHtml(post.speakers)
       : '',
     '</article>',
