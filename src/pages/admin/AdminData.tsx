@@ -239,6 +239,15 @@ function CopyIcon() {
   );
 }
 
+function GoogleSheetsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 shrink-0">
+      <path fill="#0F9D58" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+      <path fill="#F1F1F1" d="M14 17H8v-2h6v2zm2-3H8v-2h8v2zm0-3H8V9h8v2z"/>
+    </svg>
+  );
+}
+
 export default function AdminData() {
   const { user } = useAuth();
   const confirm = useConfirm();
@@ -513,6 +522,11 @@ export default function AdminData() {
     </>
   );
 
+  const spreadsheetId = import.meta.env.VITE_GOOGLE_SHEETS_SPREADSHEET_ID;
+  const googleSheetsUrl = spreadsheetId
+    ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`
+    : null;
+
   return (
     <>
       <SEO title="Data | People Growth Africa" description="Staff data lists and CSV export." />
@@ -520,43 +534,56 @@ export default function AdminData() {
         title="Data"
         subtitle="Newest first. Personal data, do not share it outside the team."
         actions={
-          canExport ? (
-            <button
-              type="button"
-              onClick={() => void exportCsv()}
-              disabled={exporting || loading}
-              className="inline-flex w-full min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-deep-green bg-deep-green px-6 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta disabled:opacity-60 xl:w-auto"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2 stroke-linecap-round stroke-linejoin-round">
-                <path d="M12 3v12m0 0l-4-4m4 4l4-4" />
-                <path d="M5 21h14" />
-              </svg>
-              {exporting ? 'Preparing CSV…' : 'Export CSV'}
-            </button>
-          ) : access ? (
-            latestExportRequest?.status === 'pending' ? (
-              <span className="inline-flex min-h-[48px] items-center justify-center rounded-[10px] bg-[#F7E9D7] px-5 text-sm font-semibold text-[#754A21]">
-                Export access pending
-              </span>
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+            {googleSheetsUrl && (
+              <a
+                href={googleSheetsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-full min-h-[48px] cursor-pointer items-center justify-center gap-2.5 rounded-[10px] border border-brand-green/30 bg-white px-6 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-brand-green transition-colors hover:border-brand-green hover:bg-mint/50 xl:w-auto"
+              >
+                <GoogleSheetsIcon />
+                Open in Google Sheets
+              </a>
+            )}
+            {canExport ? (
+              <button
+                type="button"
+                onClick={() => void exportCsv()}
+                disabled={exporting || loading}
+                className="inline-flex w-full min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-deep-green bg-deep-green px-6 py-2.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:border-terracotta hover:bg-terracotta disabled:opacity-60 xl:w-auto"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-2 stroke-linecap-round stroke-linejoin-round">
+                  <path d="M12 3v12m0 0l-4-4m4 4l4-4" />
+                  <path d="M5 21h14" />
+                </svg>
+                {exporting ? 'Preparing CSV…' : 'Export CSV'}
+              </button>
+            ) : access ? (
+              latestExportRequest?.status === 'pending' ? (
+                <span className="inline-flex min-h-[48px] items-center justify-center rounded-[10px] bg-[#F7E9D7] px-5 text-sm font-semibold text-[#754A21]">
+                  Export access pending
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRequestDialogOpen(true)}
+                  className="inline-flex min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-white px-5 font-[family-name:var(--font-body)] text-sm font-semibold text-deep-green transition-colors hover:bg-mint"
+                >
+                  Request export access
+                </button>
+              )
             ) : (
               <button
                 type="button"
-                onClick={() => setRequestDialogOpen(true)}
-                className="inline-flex min-h-[48px] cursor-pointer items-center justify-center rounded-[10px] border border-deep-green bg-white px-5 font-[family-name:var(--font-body)] text-sm font-semibold text-deep-green transition-colors hover:bg-mint"
+                disabled
+                title={accessError ?? undefined}
+                className="inline-flex min-h-[48px] items-center justify-center rounded-[10px] border border-charcoal/15 bg-white px-5 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal/50"
               >
-                Request export access
+                {checkingAccess ? 'Checking export access…' : 'Export access unavailable'}
               </button>
-            )
-          ) : (
-            <button
-              type="button"
-              disabled
-              title={accessError ?? undefined}
-              className="inline-flex min-h-[48px] items-center justify-center rounded-[10px] border border-charcoal/15 bg-white px-5 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal/50"
-            >
-              {checkingAccess ? 'Checking export access…' : 'Export access unavailable'}
-            </button>
-          )
+            )}
+          </div>
         }
       >
         {/* Tabs scroll sideways in their own container on narrow screens. */}
