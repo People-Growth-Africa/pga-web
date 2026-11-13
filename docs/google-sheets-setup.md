@@ -99,15 +99,42 @@ The downloaded file will look like this:
 
 Add these column headers in the first row:
 
-| A | B | C | D | E | F | G | H | I |
-|---|---|---|---|---|---|---|---|---|
-| ID | Created At | Event Slug | Name | Email | Phone | Organization / Organisation | Role / Notes | Question / Answers |
+| A | B | C | D | E | F | G | H | I | J |
+|---|---|---|---|---|---|---|---|---|---|
+| ID | Created At | Event Slug | Name | Email | Phone | Organization / Organisation | Role / Notes | Questions | Answers |
 
 **Note:** This sheet combines data from both the old `registrations` table and new `event_registrations` table:
-- Old format uses: Organization, Notes, Answers (JSON responses)
-- New format uses: Organisation, Role, Question (simple text)
+- Old format uses: Organization, Notes, Questions (numbered list), Answers (numbered list matching questions)
+- New format uses: Organisation, Role, Question (simple text - single question field)
 
-Both will appear in the same sheet with slightly different data in the last 3 columns.
+**Questions and Answers Format (Old Registrations Table):**
+
+Form questions and answers are formatted as clean numbered lists for easy reading:
+
+**Questions Column:**
+```
+1. How did you hear about this event?
+2. What is your primary area of interest in agriculture?
+3. Which topics would you like to see covered?
+4. How many years of experience do you have?
+```
+
+**Answers Column:**
+```
+1. WhatsApp
+2. Agricultural Technology
+3. From Code to Crops: How Software Engineering and AI Are Creating Opportunities
+4. 1 to 3 years
+```
+
+The system automatically:
+- Filters out basic identity fields (name, email, phone) since they have their own columns
+- Removes all JSON/technical formatting (curly brackets, type fields, questionIds)
+- Extracts only the question labels and answer values
+- Presents them as clean numbered lists
+- Handles multiple-choice answers (checkboxes) by joining them with commas
+
+This makes the data **human-readable for non-technical team members** reviewing registrations.
 
 **Sheet 2: Consultation Bookings**
 

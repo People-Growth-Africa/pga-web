@@ -138,21 +138,67 @@ export async function syncRegistration(data: {
   eventSlug: string;
   createdAt: Date;
 }) {
-  // Format answers JSON for display
+  // Skip basic fields (name, email, phone) from questions/answers since they have their own columns
+  const skipQuestionIds = ['name', 'email', 'phone', 'full_name', 'fullName'];
+
+  // Format answers JSON into clean Questions and Answers columns
+  let questionsText = '';
   let answersText = '';
+
   if (data.answers && typeof data.answers === 'object') {
     try {
       const answersObj = data.answers as Record<string, any>;
-      answersText = Object.entries(answersObj)
-        .map(([key, value]) => {
-          if (typeof value === 'object' && value !== null && 'label' in value && 'answer' in value) {
-            return `${value.label}: ${value.answer}`;
+      const formattedQA: Array<{ question: string; answer: string }> = [];
+
+      Object.entries(answersObj).forEach(([key, value]) => {
+        // Check if this is a structured question object
+        if (typeof value === 'object' && value !== null && 'label' in value) {
+          const questionId = value.questionId || key;
+          
+          // Skip basic identity fields
+          if (skipQuestionIds.includes(questionId)) {
+            return;
           }
-          return `${key}: ${JSON.stringify(value)}`;
-        })
-        .join(' | ');
-    } catch {
-      answersText = JSON.stringify(data.answers);
+
+          const question = value.label;
+          let answer = '';
+
+          // Handle different answer formats
+          if ('value' in value) {
+            if (Array.isArray(value.value)) {
+              // Checkboxes - join array values
+              answer = value.value.join(', ');
+            } else {
+              answer = String(value.value);
+            }
+          } else if ('answer' in value) {
+            if (Array.isArray(value.answer)) {
+              answer = value.answer.join(', ');
+            } else {
+              answer = String(value.answer);
+            }
+          }
+
+          if (question && answer) {
+            formattedQA.push({ question, answer });
+          }
+        }
+      });
+
+      // Format as numbered lists
+      if (formattedQA.length > 0) {
+        questionsText = formattedQA
+          .map((qa, index) => `${index + 1}. ${qa.question}`)
+          .join('\n');
+        
+        answersText = formattedQA
+          .map((qa, index) => `${index + 1}. ${qa.answer}`)
+          .join('\n');
+      }
+    } catch (error) {
+      console.error('[Sheets] Failed to parse answers:', error);
+      questionsText = '';
+      answersText = '';
     }
   }
 
@@ -165,7 +211,8 @@ export async function syncRegistration(data: {
     data.phone,
     data.organization || '',
     data.notes || '',
-    answersText,
+    questionsText, // Clean questions column
+    answersText,   // Clean answers column
   ];
 
   return appendRow('Event Registrations', values);
