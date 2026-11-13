@@ -4,6 +4,8 @@ import { findEventForRegistration, insertRegistration, isUniqueViolation } from 
 import { appUrl, sendRegistrationConfirmationEmail } from '../email.js';
 import { buildRegistrationEmailVariables } from '../registration-email.js';
 import { enforceRateLimit } from '../ratelimit.js';
+import { scheduleBestEffort } from '../best-effort.js';
+import { syncRegistration } from '../sheets-sync.js';
 import {
   DEFAULT_REGISTRATION_FORM,
   answerText,
@@ -189,6 +191,23 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     } catch {
       console.error('[registrations] confirmation email failed');
     }
+
+    // Sync to Google Sheets (best effort, non-blocking)
+    scheduleBestEffort(
+      () =>
+        syncRegistration({
+          id,
+          name,
+          email,
+          phone: phone || '',
+          organization: organization || null,
+          notes: notes || null,
+          answers,
+          eventSlug: data.eventSlug,
+          createdAt: new Date(),
+        }),
+      'sheets-sync',
+    );
 
     sendJson(res, 201, { ok: true });
   } catch (error) {

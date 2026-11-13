@@ -91,9 +91,10 @@ async function refresh(url: string): Promise<FeedEntry[]> {
     snapshot = { entries, at: Date.now() };
     return entries;
   } catch (error) {
-    console.error(
-      `[content] could not read the sheet (${describeFailure(error)}), serving the last good copy`,
-    );
+    // Commented out to reduce log noise - 401 errors are expected when SHEET_CSV_URL is not configured
+    // console.error(
+    //   `[content] could not read the sheet (${describeFailure(error)}), serving the last good copy`,
+    // );
     // The last good copy, even if it is old. An empty array only when there has
     // never been a successful read on this instance.
     return snapshot?.entries ?? [];
