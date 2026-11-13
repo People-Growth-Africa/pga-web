@@ -210,17 +210,8 @@ export function blogMeta(post: BlogPost): PageMeta {
 }
 
 /** An event's page: /events/<slug>. */
-/** The same map as api/_lib/canonical-slugs.ts, for the page head. */
-const EVENT_SLUG_ALIASES: Readonly<Record<string, string>> = {
-  'career-advancement-in-agriculture': 'career-advancements-in-agriculture',
-};
-
-function canonicalEventSlug(slug: string): string {
-  return EVENT_SLUG_ALIASES[slug] ?? slug;
-}
-
 export function eventMeta(event: EventMetaSource): PageMeta {
-  const canonicalSlug = canonicalEventSlug(event.slug);
+  const canonicalSlug = event.slug;
   return {
     path: `/events/${canonicalSlug}`,
     title: event.title,

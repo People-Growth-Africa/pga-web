@@ -2,7 +2,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { endpoint } from '../http.js';
 import { listPublishedSlugs } from '../db.js';
-import { canonicalEventSlug } from '../canonical-slugs.js';
 import { STATIC_SITEMAP_PATHS } from '../static-sitemap.js';
 
 /**
@@ -56,14 +55,7 @@ export default endpoint({ methods: ['GET'] }, async (_req: VercelRequest, res: V
     // A published row carries a real change date, so it is stated. The static
     // pages have none, and today's date on every one of them would be a lie that
     // changed daily.
-    // An event with a better-spelled canonical URL is listed once, under the
-    // canonical slug; the alias 301s there (vercel.json) and is not advertised.
-    add(
-      type === 'event'
-        ? `/events/${canonicalEventSlug(slug)}`
-        : `/blog/${slug}`,
-      updated_at.slice(0, 10),
-    );
+    add(type === 'event' ? `/events/${slug}` : `/blog/${slug}`, updated_at.slice(0, 10));
   }
 
   const entries = locations

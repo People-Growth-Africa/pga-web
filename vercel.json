@@ -17,11 +17,6 @@
       "permanent": true
     },
     {
-      "source": "/events/career-advancement-in-agriculture",
-      "destination": "/events/career-advancements-in-agriculture",
-      "permanent": true
-    },
-    {
       "source": "/admin",
       "destination": "/admin/stats",
       "permanent": false

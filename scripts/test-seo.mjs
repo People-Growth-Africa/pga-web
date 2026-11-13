@@ -314,6 +314,10 @@ const apex = (vercel.redirects ?? []).find((rule) =>
 check(Boolean(apex), 'vercel.json redirects the apex host');
 check(apex?.destination === 'https://www.peoplegrowthafrica.com/$1', 'the apex redirect targets www and keeps the path');
 check(apex?.permanent === true, 'the apex redirect is permanent');
+check(
+  !(vercel.redirects ?? []).some((rule) => rule.source === '/events/career-advancement-in-agriculture'),
+  'vercel.json does not redirect the published singular event slug',
+);
 
 const fallbackRewrite = (vercel.rewrites ?? []).find((rule) => rule.source === '/(.*)');
 check(
