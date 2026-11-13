@@ -72,6 +72,14 @@ await sql.query('ALTER TABLE post_speakers DROP CONSTRAINT IF EXISTS post_speake
 await sql.query(`ALTER TABLE post_speakers ADD CONSTRAINT post_speakers_linkedin_check
   CHECK (linkedin_url IS NULL OR linkedin_url ~ '^https://')`);
 
+// The focal point is where the face sits, as a percentage of the photo. The
+// defaults are a portrait's head; an older row picks them up without a rewrite.
+await sql.query('ALTER TABLE post_speakers ADD COLUMN IF NOT EXISTS photo_focus_x integer NOT NULL DEFAULT 50');
+await sql.query('ALTER TABLE post_speakers ADD COLUMN IF NOT EXISTS photo_focus_y integer NOT NULL DEFAULT 25');
+await sql.query('ALTER TABLE post_speakers DROP CONSTRAINT IF EXISTS post_speakers_focus_check');
+await sql.query(`ALTER TABLE post_speakers ADD CONSTRAINT post_speakers_focus_check
+  CHECK (photo_focus_x BETWEEN 0 AND 100 AND photo_focus_y BETWEEN 0 AND 100)`);
+
 // The only query the public side makes: every speaker for a page, in order.
 await sql.query(`CREATE INDEX IF NOT EXISTS post_speakers_post_position_idx
   ON post_speakers (post_id, position)`);

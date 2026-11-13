@@ -41,6 +41,8 @@ type PublicSpeaker = {
   photoUrl: string | null;
   photoThumbUrl: string | null;
   linkedinUrl: string | null;
+  photoFocusX: number;
+  photoFocusY: number;
 };
 
 type PublicPost = {
@@ -87,6 +89,8 @@ function toPublicSpeaker(row: SpeakerRow): PublicSpeaker {
     photoUrl: row.photo_url,
     photoThumbUrl: row.photo_thumb_url,
     linkedinUrl: row.linkedin_url,
+    photoFocusX: row.photo_focus_x,
+    photoFocusY: row.photo_focus_y,
   };
 }
 

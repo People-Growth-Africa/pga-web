@@ -427,6 +427,9 @@ const postSpeakerSchema = z.strictObject({
   photoUrl: coverImageUrl,
   photoThumbUrl: coverImageUrl,
   linkedinUrl,
+  /** The face's position in the photo, as a percentage of each axis. */
+  photoFocusX: z.number().int().min(0).max(100).default(50),
+  photoFocusY: z.number().int().min(0).max(100).default(25),
 });
 
 const postFields = {

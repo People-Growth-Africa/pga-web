@@ -11,11 +11,14 @@ export type SpeakerView = {
   role: string | null;
   organisation: string | null;
   bio: string | null;
-  /** The 400px square, for the carousel and the modal card. */
+  /** The full image, for the carousel and the modal card. */
   photoUrl: string | null;
-  /** The 96px square, for the circular row. */
+  /** The small image, for the circular row. */
   photoThumbUrl: string | null;
   linkedinUrl: string | null;
+  /** Where the face sits, as a percentage of the image on each axis. */
+  photoFocusX: number;
+  photoFocusY: number;
 };
 
 /**
@@ -34,6 +37,8 @@ export type SpeakerRecord = {
   photo_url: string | null;
   photo_thumb_url: string | null;
   linkedin_url: string | null;
+  photo_focus_x: number;
+  photo_focus_y: number;
 };
 
 /** One speaker as the editor holds it, before a save. */
@@ -46,6 +51,8 @@ export type SpeakerDraftInput = {
   photoUrl: string | null;
   photoThumbUrl: string | null;
   linkedinUrl: string | null;
+  photoFocusX: number;
+  photoFocusY: number;
 };
 
 /** A saved row as a draft the form can edit. */
@@ -59,6 +66,8 @@ export function speakerToDraft(record: SpeakerRecord): SpeakerDraftInput {
     photoUrl: record.photo_url,
     photoThumbUrl: record.photo_thumb_url,
     linkedinUrl: record.linkedin_url,
+    photoFocusX: record.photo_focus_x ?? 50,
+    photoFocusY: record.photo_focus_y ?? 25,
   };
 }
 
@@ -72,6 +81,8 @@ export function speakerDraftToView(draft: SpeakerDraftInput): SpeakerView {
     photoUrl: draft.photoUrl,
     photoThumbUrl: draft.photoThumbUrl,
     linkedinUrl: draft.linkedinUrl,
+    photoFocusX: draft.photoFocusX,
+    photoFocusY: draft.photoFocusY,
   };
 }
 
@@ -93,6 +104,11 @@ export function speakerThumb(speaker: SpeakerView): string | null {
 
 export function speakerPhoto(speaker: SpeakerView): string | null {
   return speaker.photoUrl ?? speaker.photoThumbUrl;
+}
+
+/** The CSS object-position that keeps the face in frame. */
+export function speakerFocus(speaker: Pick<SpeakerView, 'photoFocusX' | 'photoFocusY'>): string {
+  return `${speaker.photoFocusX}% ${speaker.photoFocusY}%`;
 }
 
 /** "Role, Organisation", or whichever of the two is set. */
@@ -142,6 +158,12 @@ export function coerceSpeakers(value: unknown): SpeakerView[] {
     const name = typeof record.name === 'string' ? record.name.trim() : '';
     if (!name) return [];
     const text = (key: string) => (typeof record[key] === 'string' ? (record[key] as string) : null);
+    const focus = (key: string, fallback: number) => {
+      const value = record[key];
+      return typeof value === 'number' && Number.isFinite(value)
+        ? Math.min(100, Math.max(0, value))
+        : fallback;
+    };
     return [
       {
         name,
@@ -151,6 +173,8 @@ export function coerceSpeakers(value: unknown): SpeakerView[] {
         photoUrl: text('photoUrl'),
         photoThumbUrl: text('photoThumbUrl'),
         linkedinUrl: text('linkedinUrl'),
+        photoFocusX: focus('photoFocusX', 50),
+        photoFocusY: focus('photoFocusY', 25),
       },
     ];
   });

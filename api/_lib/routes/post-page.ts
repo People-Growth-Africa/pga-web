@@ -120,6 +120,8 @@ export default async function postPage(req: VercelRequest, res: VercelResponse):
       photoUrl: speaker.photo_url,
       photoThumbUrl: speaker.photo_thumb_url,
       linkedinUrl: speaker.linkedin_url,
+      photoFocusX: speaker.photo_focus_x,
+      photoFocusY: speaker.photo_focus_y,
     })),
   };
 

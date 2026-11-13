@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import {
+  speakerFocus,
   speakerInitial,
   speakerLine,
   speakerLinkedIn,
@@ -10,21 +11,26 @@ import {
 } from '../lib/speakers';
 
 /**
- * The floating carousel a reader gets by clicking a speaker.
+ * The floating portrait card a reader gets by clicking a speaker.
  *
- * It is a dialog in the accessibility sense, not just visually: focus moves into
- * it, Tab cycles inside it, Escape closes it, and the page behind does not
- * scroll. The caller owns the "return focus" half - it knows which speaker
- * button was pressed - so `onClose` is the only way out.
+ * The photo fills the card and the text sits on a progressive blur at the bottom:
+ * the face stays readable, the copy stays legible on a light photo, and the two
+ * meet without a visible edge. The card only knows the speaker, its neighbours
+ * and the focal point each photo carries.
  *
- * Everything here is CSS transitions and a little state. No animation library:
- * the whole motion budget is one pop on the centre card and a 350ms slide
- * between speakers, and both are switched off when the reader asks for reduced
- * motion.
+ * It is a dialog in the accessibility sense: focus moves into it, Tab cycles
+ * inside it, Escape closes it and the page behind does not scroll. Return focus
+ * is the caller's half - it knows which card was pressed - so `onClose` is the
+ * only way out.
+ *
+ * Everything here is CSS transitions and component state. No animation library.
  */
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+/** The bio is clamped in the card; below this length "More" would do nothing. */
+const BIO_NEEDS_MORE = 120;
 
 export default function SpeakerCarousel({
   speakers,
@@ -40,25 +46,32 @@ export default function SpeakerCarousel({
     Math.min(Math.max(startIndex, 0), Math.max(count - 1, 0)),
   );
   const [direction, setDirection] = useState(1);
+  const [expanded, setExpanded] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
 
-  /** A portal needs a document; an opened dialog is always a client event. */
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const speaker = speakers[index]!;
+  const previous = speakers[(index - 1 + count) % count]!;
+  const next = speakers[(index + 1) % count]!;
+  const photo = speakerPhoto(speaker);
+  const line = speakerLine(speaker);
+  const linkedIn = speakerLinkedIn(speaker);
+  const hasMore = Boolean(speaker.bio && speaker.bio.length > BIO_NEEDS_MORE);
 
   const go = useCallback(
     (step: number) => {
       if (count < 2) return;
       setDirection(step);
+      setExpanded(false);
       setIndex((current) => (current + step + count) % count);
     },
     [count],
   );
 
   // Opening the dialog takes the focus and the scrollbar; closing gives both
-  // back. Stored rather than assumed, because a page can already be locked.
+  // back. The body's own value is restored rather than assumed, because a page
+  // can already be locked when this opens.
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -67,12 +80,19 @@ export default function SpeakerCarousel({
     };
   }, []);
 
-  // The dialog only exists once `mounted` flips, so this has to wait for it:
-  // with an empty dependency list the ref was still null and focus never left
-  // the page behind the backdrop.
   useEffect(() => {
-    if (mounted) closeRef.current?.focus();
-  }, [mounted]);
+    closeRef.current?.focus();
+  }, []);
+
+  // Preload the centre and its two neighbours; the rest load only if visited.
+  useEffect(() => {
+    for (const entry of [speaker, previous, next]) {
+      const url = entry.photoUrl ?? entry.photoThumbUrl;
+      if (!url) continue;
+      const image = new Image();
+      image.src = url;
+    }
+  }, [speaker, previous, next]);
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape') {
@@ -92,8 +112,7 @@ export default function SpeakerCarousel({
     }
     if (event.key !== 'Tab' || !dialogRef.current) return;
 
-    // Focus trap: the browser would otherwise walk out of the dialog into the
-    // page behind it, which is still there and still looks reachable.
+    // Focus trap: the page behind is still there and still looks reachable.
     const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
       (node) => node.offsetParent !== null || node === document.activeElement,
     );
@@ -101,6 +120,7 @@ export default function SpeakerCarousel({
 
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();
@@ -126,14 +146,7 @@ export default function SpeakerCarousel({
     if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
   }
 
-  if (!mounted || count === 0) return null;
-
-  const speaker = speakers[index]!;
-  const previous = speakers[(index - 1 + count) % count]!;
-  const next = speakers[(index + 1) % count]!;
-  const photo = speakerPhoto(speaker);
-  const linkedIn = speakerLinkedIn(speaker);
-  const line = speakerLine(speaker);
+  if (count === 0 || typeof document === 'undefined') return null;
 
   return createPortal(
     <div className="fixed inset-0 z-[120]">
@@ -144,7 +157,7 @@ export default function SpeakerCarousel({
         aria-label="Close speaker details"
         tabIndex={-1}
         onClick={onClose}
-        className="absolute inset-0 h-full w-full cursor-default border-none bg-deep-green/85 backdrop-blur-md"
+        className="absolute inset-0 h-full w-full cursor-default border-none bg-[#161a19]/90 backdrop-blur-md"
       />
 
       <div
@@ -153,189 +166,191 @@ export default function SpeakerCarousel({
         aria-modal="true"
         aria-labelledby="speaker-dialog-name"
         onKeyDown={handleKeyDown}
-        className="pointer-events-none absolute inset-0 flex items-center justify-center px-4 py-[max(1rem,env(safe-area-inset-top))]"
+        className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(4.5rem,env(safe-area-inset-top))]"
       >
         <button
           ref={closeRef}
           type="button"
           onClick={onClose}
           aria-label="Close speaker details"
-          className="pointer-events-auto absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white text-charcoal shadow-card transition-colors hover:bg-mint focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 md:right-8 md:top-8"
+          className="pointer-events-auto absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white md:right-8 md:top-8"
         >
-          <svg
-            viewBox="0 0 24 24"
-            className="h-5 w-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
         </button>
 
-        <div className="pointer-events-none relative flex w-full max-w-[1060px] items-center justify-center">
-          {/* Neighbours peek at the sides on a wide screen. They are decoration:
-              the arrows, the dots, the keys and the swipe are the controls. */}
-          {count > 1 && (
-            <>
-              <div
-                aria-hidden="true"
-                key={`prev-${index}`}
-                className="speaker-neighbour pointer-events-none absolute left-0 hidden h-[300px] w-[300px] rounded-[26px] bg-white/90 lg:block"
-                style={{ transform: 'translateX(-8%) rotate(-4deg) scale(.86)' }}
-              >
-                <div className="flex h-full items-center justify-center">
-                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-mint/80 font-[family-name:var(--font-heading)] text-xl font-semibold text-deep-green/60">
-                    {speakerInitial(previous.name)}
-                  </span>
-                </div>
-              </div>
-              <div
-                aria-hidden="true"
-                key={`next-${index}`}
-                className="speaker-neighbour pointer-events-none absolute right-0 hidden h-[300px] w-[300px] rounded-[26px] bg-white/90 lg:block"
-                style={{ transform: 'translateX(8%) rotate(4deg) scale(.86)' }}
-              >
-                <div className="flex h-full items-center justify-center">
-                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-mint/80 font-[family-name:var(--font-heading)] text-xl font-semibold text-deep-green/60">
-                    {speakerInitial(next.name)}
-                  </span>
-                </div>
-              </div>
-            </>
-          )}
+        <div className="relative mx-auto flex w-full max-w-[1100px] flex-1 items-center justify-center">
+          <div className="relative flex w-[320px] items-center justify-center md:w-[340px]">
+            {/* Neighbours: only the two adjacent cards exist, and only the sliver
+                outside the centre card is visible. Clicking one moves to it. */}
+            {count > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => go(-1)}
+                  aria-label={`Previous speaker: ${previous.name}`}
+                  className="speaker-neighbour absolute right-[calc(100%-24px)] top-0 z-0 h-full w-full overflow-hidden rounded-[34px] border border-white/10 bg-[#10231d] md:right-[calc(100%+32px)]"
+                >
+                  <NeighbourFace speaker={previous} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => go(1)}
+                  aria-label={`Next speaker: ${next.name}`}
+                  className="speaker-neighbour absolute left-[calc(100%-24px)] top-0 z-0 h-full w-full overflow-hidden rounded-[34px] border border-white/10 bg-[#10231d] md:left-[calc(100%+32px)]"
+                >
+                  <NeighbourFace speaker={next} />
+                </button>
+              </>
+            )}
 
-          {count > 1 && (
-            <button
-              type="button"
-              onClick={() => go(-1)}
-              aria-label="Previous speaker"
-              className="pointer-events-auto absolute left-2 z-20 hidden h-11 w-11 items-center justify-center rounded-full bg-deep-green text-white shadow-card transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-white md:flex lg:left-[-3.25rem]"
+            {count > 1 && (
+              <button
+                type="button"
+                onClick={() => go(-1)}
+                aria-label="Previous speaker"
+                className="pointer-events-auto absolute -left-[4.5rem] top-1/2 z-20 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white md:flex"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+              </button>
+            )}
+
+            {count > 1 && (
+              <button
+                type="button"
+                onClick={() => go(1)}
+                aria-label="Next speaker"
+                className="pointer-events-auto absolute -right-[4.5rem] top-1/2 z-20 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white md:flex"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
+              </button>
+            )}
+
+            {/* Two levels: the track slides, the card pops, and the two never
+                fight over one transform. */}
+            <div
+              key={index}
+              className="speaker-track pointer-events-auto relative z-10 w-full"
+              style={{ '--slide-from': direction > 0 ? '48px' : '-48px' } as React.CSSProperties}
             >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
+              <div
+                className="speaker-slide relative w-full"
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
               >
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
-            </button>
-          )}
-
-          {count > 1 && (
-            <button
-              type="button"
-              onClick={() => go(1)}
-              aria-label="Next speaker"
-              className="pointer-events-auto absolute right-2 z-20 hidden h-11 w-11 items-center justify-center rounded-full bg-deep-green text-white shadow-card transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-white md:flex lg:right-[-3.25rem]"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M9 6l6 6-6 6" />
-              </svg>
-            </button>
-          )}
-
-          {/* Two levels on purpose: the track slides, the card pops, and two
-              animations never fight over the same transform. */}
-          <div
-            key={index}
-            className="speaker-track pointer-events-auto relative w-full md:w-[600px]"
-            style={{ '--slide-from': direction > 0 ? '48px' : '-48px' } as React.CSSProperties}
-          >
-          <div
-            className="speaker-slide relative w-full rounded-[26px] bg-white shadow-elevated"
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
-            <div className="max-h-[calc(100dvh-8rem)] overflow-y-auto overscroll-contain p-5 md:max-h-[calc(100dvh-9rem)] md:p-7">
-              <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-7">
-                <div className="h-[220px] w-full shrink-0 overflow-hidden rounded-[18px] bg-mint md:h-[220px] md:w-[220px]">
+                <article className="relative h-[min(620px,calc(100dvh-9.5rem))] w-full overflow-hidden rounded-[34px] border border-white/10 bg-[#10231d] shadow-[0_30px_80px_rgba(0,0,0,0.55)] md:h-[580px]">
                   {photo ? (
                     <img
                       src={photo}
-                      alt={speaker.name}
-                      className="h-full w-full object-cover"
+                      alt={`${speaker.name}${line ? `, ${line}` : ''}`}
+                      className="absolute inset-0 h-full w-full object-cover"
+                      style={{ objectPosition: speakerFocus(speaker) }}
                       loading="eager"
                     />
                   ) : (
-                    <div
-                      aria-hidden="true"
-                      className="flex h-full w-full items-center justify-center font-[family-name:var(--font-heading)] text-6xl font-semibold text-deep-green"
-                    >
-                      {speakerInitial(speaker.name)}
+                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-[#7fc7ae] to-[#0f3b2f]">
+                      <span className="font-[family-name:var(--font-heading)] text-7xl font-semibold text-white/90">
+                        {speakerInitial(speaker.name)}
+                      </span>
                     </div>
                   )}
-                </div>
 
-                <div className="min-w-0 flex-1">
-                  <p className="font-[family-name:var(--font-body)] text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-brand-green">
-                    Speaker {index + 1} of {count}
-                  </p>
-                  <h2
-                    id="speaker-dialog-name"
-                    className="mt-2 break-words font-[family-name:var(--font-heading)] text-[1.6rem] font-semibold leading-tight text-charcoal md:text-[1.9rem]"
-                  >
-                    {speaker.name}
-                  </h2>
-                  {line && (
-                    <p className="mt-1.5 font-[family-name:var(--font-body)] text-[0.95rem] font-medium text-charcoal/70">
-                      {line}
+                  {/* 1. Progressive blur over the bottom 58%. */}
+                  <div
+                    aria-hidden="true"
+                    className="speaker-blur pointer-events-none absolute inset-x-0 bottom-0 h-[58%] [backdrop-filter:blur(16px)] [-webkit-backdrop-filter:blur(16px)] [mask-image:linear-gradient(to_bottom,transparent,#000_55%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent,#000_55%)]"
+                  />
+                  {/* 2. Dark gradient under the text. */}
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-[72%] bg-gradient-to-t from-[#0a1c17] via-[#0a1c17]/75 to-transparent"
+                  />
+
+                  {/* 3. Text. */}
+                  <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 p-5 text-white md:p-6">
+                    <p className="font-[family-name:var(--font-body)] text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#9be8c9]">
+                      Speaker {index + 1} of {count}
                     </p>
-                  )}
-                  {speaker.bio && (
-                    <p className="mt-4 whitespace-pre-line break-words font-[family-name:var(--font-body)] text-[0.95rem] leading-relaxed text-charcoal/60">
-                      {speaker.bio}
-                    </p>
-                  )}
-                  {linkedIn && (
-                    <a
-                      href={linkedIn}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-5 inline-flex min-h-[44px] items-center gap-1.5 font-[family-name:var(--font-body)] text-[0.92rem] font-semibold text-deep-green underline decoration-brand-green/40 underline-offset-4 transition-colors hover:text-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
+                    <h2
+                      id="speaker-dialog-name"
+                      className="break-words font-[family-name:var(--font-heading)] text-[1.5rem] font-semibold leading-tight md:text-[1.75rem]"
                     >
-                      LinkedIn
-                      <span aria-hidden="true">→</span>
-                      <span className="sr-only">(opens in a new tab)</span>
-                    </a>
-                  )}
-                </div>
+                      {speaker.name}
+                    </h2>
+                    {line && (
+                      <p className="break-words font-[family-name:var(--font-body)] text-[0.82rem] font-medium text-white/75">
+                        {line}
+                      </p>
+                    )}
+                    {speaker.bio && (
+                      <div className="mt-1">
+                        <p
+                          className={`break-words font-[family-name:var(--font-body)] text-[0.85rem] leading-relaxed text-white/80 ${
+                            expanded
+                              ? 'max-h-[340px] overflow-y-auto pr-1 md:max-h-[360px]'
+                              : 'line-clamp-3'
+                          }`}
+                        >
+                          {speaker.bio}
+                        </p>
+                        {hasMore && (
+                          <button
+                            type="button"
+                            onClick={() => setExpanded((value) => !value)}
+                            aria-expanded={expanded}
+                            className="mt-1 min-h-[36px] font-[family-name:var(--font-body)] text-[0.85rem] font-semibold text-white underline decoration-white/40 underline-offset-4 hover:decoration-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                          >
+                            {expanded ? 'Less' : 'More'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <span className="font-[family-name:var(--font-body)] text-[0.78rem] text-white/45">
+                        ← swipe →
+                      </span>
+                      {linkedIn && (
+                        <a
+                          href={linkedIn}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-white px-5 font-[family-name:var(--font-body)] text-[0.88rem] font-semibold text-[#0a1c17] transition-colors hover:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a1c17]"
+                        >
+                          LinkedIn
+                          <span aria-hidden="true">↗</span>
+                          <span className="sr-only">(opens in a new tab)</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </article>
               </div>
             </div>
           </div>
-          </div>
         </div>
 
-        {/* Announced, not seen: the visible position line is inside the card. */}
+        {/* Announced, not seen. */}
         <p aria-live="polite" className="sr-only">
-          Speaker {index + 1} of {count}
+          Speaker {index + 1} of {count}: {speaker.name}
         </p>
 
         {count > 1 && (
-          <div className="pointer-events-auto absolute inset-x-0 bottom-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-wrap items-center justify-center gap-1 px-4">
+          <div className="pointer-events-auto mt-4 flex flex-wrap items-center justify-center gap-1">
             {speakers.map((entry, dotIndex) => (
               <button
                 key={`${entry.name}-${dotIndex}`}
                 type="button"
                 title={`Go to ${entry.name}`}
                 onClick={() => {
+                  if (dotIndex === index) return;
                   setDirection(dotIndex > index ? 1 : -1);
+                  setExpanded(false);
                   setIndex(dotIndex);
                 }}
                 aria-label={`Show speaker ${dotIndex + 1}: ${entry.name}`}
@@ -344,8 +359,8 @@ export default function SpeakerCarousel({
               >
                 <span
                   aria-hidden="true"
-                  className={`block h-2.5 rounded-full transition-all duration-300 ${
-                    dotIndex === index ? 'w-8 bg-white' : 'w-2.5 bg-white/40'
+                  className={`block h-2 rounded-full transition-all duration-300 ${
+                    dotIndex === index ? 'w-6 bg-white' : 'w-2 bg-white/35'
                   }`}
                 />
               </button>
@@ -358,11 +373,33 @@ export default function SpeakerCarousel({
   );
 }
 
+/** A neighbour's photo, dimmed and blurred by the card that wraps it. */
+function NeighbourFace({ speaker }: { speaker: SpeakerView }) {
+  const photo = speakerPhoto(speaker);
+  return (
+    <span className="block h-full w-full">
+      {photo ? (
+        <img
+          src={photo}
+          alt=""
+          loading="eager"
+          className="h-full w-full object-cover"
+          style={{ objectPosition: speakerFocus(speaker) }}
+        />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center bg-gradient-to-b from-[#7fc7ae] to-[#0f3b2f] font-[family-name:var(--font-heading)] text-7xl font-semibold text-white/80">
+          {speakerInitial(speaker.name)}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /**
- * Inline styles rather than a stylesheet: these keyframes exist for this
- * component alone, and the site's CSS is built from src/, so a rule here travels
- * with the component that needs it. The reduced-motion block comes last on
- * purpose - it has to win over the animations above.
+ * Clamped line count for the bio is a utility class from the site's stylesheet;
+ * these keyframes are for this component alone. The reduced-motion block comes
+ * last on purpose. The @supports block replaces a blur that would not render
+ * with a stronger gradient, so the text stays legible either way.
  */
 const CAROUSEL_CSS = `
 @keyframes speaker-slide-in {
@@ -370,17 +407,20 @@ const CAROUSEL_CSS = `
   to { opacity: 1; transform: translateX(0) scale(1); }
 }
 @keyframes speaker-card-pop {
-  from { opacity: 0; transform: translateY(16px) scale(.94); }
-  60% { opacity: 1; transform: translateY(0) scale(1.02); }
+  from { opacity: 0; transform: translateY(16px) scale(.96); }
+  60% { opacity: 1; transform: translateY(0) scale(1.015); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .speaker-track { animation: speaker-slide-in 350ms ease both; }
 .speaker-slide { animation: speaker-card-pop 500ms cubic-bezier(.2,.9,.3,1.2) both; }
-/* No slide animation here: its final transform would replace the deliberate
-   scale/rotation that places the peek beside the card. */
-.speaker-neighbour { opacity: .35; }
-@media (max-width: 1023px) {
-  .speaker-neighbour { display: none; }
+.speaker-neighbour {
+  opacity: .4;
+  transform: scale(.9);
+  filter: blur(3px);
+}
+.speaker-neighbour:hover, .speaker-neighbour:focus-visible { opacity: .55; }
+@media (max-width: 767px) {
+  .speaker-neighbour { transform: scale(1); filter: blur(2px); }
 }
 @keyframes speaker-fade-in {
   from { opacity: 0; }
@@ -388,6 +428,9 @@ const CAROUSEL_CSS = `
 }
 @media (prefers-reduced-motion: reduce) {
   .speaker-track, .speaker-slide { animation: speaker-fade-in 200ms ease both !important; transform: none !important; }
-  .speaker-neighbour { animation: none !important; opacity: .35 !important; transform: none !important; }
+  .speaker-neighbour { animation: none !important; transform: scale(.9) !important; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .speaker-blur { background: linear-gradient(to bottom, transparent, rgba(10,28,23,.62) 55%, rgba(10,28,23,.8)); }
 }
 `;

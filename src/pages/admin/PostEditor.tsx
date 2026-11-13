@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import PostBody from '../../components/PostBody';
-import SpeakerCarousel from '../../components/SpeakerCarousel';
 import RegistrationFormBuilder from '../../components/admin/RegistrationFormBuilder';
 import { eventsList } from '../../data/events';
 import { blogPosts } from '../../data/posts';
@@ -69,6 +68,9 @@ import type {
  *   manager is editing one: by default the tab is a toggle and a grid.
  */
 
+/** The visitor carousel, loaded only when the preview is opened. */
+const SpeakerCarousel = lazy(() => import('../../components/SpeakerCarousel'));
+
 /** Every slug the build already ships, so a new one cannot quietly shadow it. */
 const BUILT_IN_SLUGS = new Set<string>([
   ...blogPosts.map((post) => `blog/${post.slug}`),
@@ -108,6 +110,8 @@ function emptySpeaker(): SpeakerDraftInput {
     photoUrl: null,
     photoThumbUrl: null,
     linkedinUrl: null,
+    photoFocusX: 50,
+    photoFocusY: 25,
   };
 }
 
@@ -395,6 +399,8 @@ export default function PostEditor({
         photoUrl: speaker.photoUrl || null,
         photoThumbUrl: speaker.photoThumbUrl || null,
         linkedinUrl: speaker.linkedinUrl?.trim() || null,
+        photoFocusX: Math.round(speaker.photoFocusX),
+        photoFocusY: Math.round(speaker.photoFocusY),
       })),
     };
   }
@@ -563,7 +569,12 @@ export default function PostEditor({
       setSpeakerUploadError(result.failure.error);
       return;
     }
-    updateSpeakerForm({ photoUrl: result.data.url, photoThumbUrl: result.data.thumbUrl });
+    updateSpeakerForm({
+      photoUrl: result.data.url,
+      photoThumbUrl: result.data.thumbUrl,
+      photoFocusX: 50,
+      photoFocusY: 25,
+    });
   }
 
   function changeTab(next: TabId) {
@@ -728,6 +739,7 @@ export default function PostEditor({
                     src={speaker.photoThumbUrl ?? speaker.photoUrl ?? ''}
                     alt=""
                     className="h-full w-full object-cover"
+                    style={{ objectPosition: `${speaker.photoFocusX}% ${speaker.photoFocusY}%` }}
                   />
                 ) : (
                   speakerInitial(speaker.name)
@@ -1478,11 +1490,13 @@ export default function PostEditor({
       </div>
 
       {previewOpen && previewSpeakers.length > 0 && (
-        <SpeakerCarousel
-          speakers={previewSpeakers}
-          startIndex={0}
-          onClose={() => setPreviewOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <SpeakerCarousel
+            speakers={previewSpeakers}
+            startIndex={0}
+            onClose={() => setPreviewOpen(false)}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -1594,7 +1608,14 @@ function SpeakerPanel({
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-mint font-[family-name:var(--font-heading)] text-base font-semibold text-deep-green">
                     {avatar ? (
-                      <img src={avatar} alt="" className="h-full w-full object-cover" />
+                      <img
+                        src={avatar}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        style={{
+                          objectPosition: `${speaker.photoFocusX}% ${speaker.photoFocusY}%`,
+                        }}
+                      />
                     ) : (
                       speakerInitial(speaker.name)
                     )}
@@ -1697,7 +1718,14 @@ function SpeakerPanel({
                 }`}
               >
                 {photo ? (
-                  <img src={photo} alt="" className="h-full w-full object-cover" />
+                  <img
+                    src={photo}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    style={{
+                      objectPosition: `${form.values.photoFocusX}% ${form.values.photoFocusY}%`,
+                    }}
+                  />
                 ) : (
                   <span className="px-2 font-[family-name:var(--font-body)] text-[0.72rem] leading-tight text-charcoal/50">
                     {uploading ? 'Uploading…' : 'Add photo'}
@@ -1790,6 +1818,15 @@ function SpeakerPanel({
             </Field>
           </div>
 
+          {form.values.photoUrl && (
+            <FocusPicker
+              photoUrl={form.values.photoUrl}
+              x={form.values.photoFocusX}
+              y={form.values.photoFocusY}
+              onChange={onFormChange}
+            />
+          )}
+
           {error && (
             <p role="alert" className="mt-3 font-[family-name:var(--font-body)] text-[0.82rem] font-medium text-red-600">
               {error}
@@ -1835,6 +1872,138 @@ function SpeakerPanel({
         </div>
       )}
     </Card>
+  );
+}
+
+/**
+ * Where the face is in the photo.
+ *
+ * The photo keeps its own shape, so the editor has to say which part the card
+ * should show. Dragging the dot - or nudging it with the arrow keys - is that
+ * answer, and the two previews update from the same numbers the public card and
+ * avatar will use.
+ */
+function FocusPicker({
+  photoUrl,
+  x,
+  y,
+  onChange,
+}: {
+  photoUrl: string;
+  x: number;
+  y: number;
+  onChange: (patch: Partial<SpeakerDraftInput>) => void;
+}) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  function moveTo(clientX: number, clientY: number) {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const rect = frame.getBoundingClientRect();
+    const nextX = Math.round(Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100)));
+    const nextY = Math.round(Math.min(100, Math.max(0, ((clientY - rect.top) / rect.height) * 100)));
+    if (nextX !== x || nextY !== y) onChange({ photoFocusX: nextX, photoFocusY: nextY });
+  }
+
+  function nudge(event: React.KeyboardEvent<HTMLDivElement>) {
+    const step = event.shiftKey ? 10 : 2;
+    const moves: Record<string, [number, number]> = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    };
+    const move = moves[event.key];
+    if (!move) return;
+    event.preventDefault();
+    onChange({
+      photoFocusX: Math.min(100, Math.max(0, x + move[0])),
+      photoFocusY: Math.min(100, Math.max(0, y + move[1])),
+    });
+  }
+
+  const position = { objectPosition: `${x}% ${y}%` };
+
+  return (
+    <div className="mt-5 rounded-[14px] border border-charcoal/10 bg-cream/30 p-4">
+      <div className="flex flex-wrap items-start gap-5">
+        <div className="min-w-0 flex-1 basis-[240px]">
+          <span className="block font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal">
+            Focal point
+          </span>
+          <p className="mt-1 font-[family-name:var(--font-body)] text-[0.76rem] leading-relaxed text-charcoal/50">
+            Drag the dot to the face, or use the arrow keys. The card and avatar follow it.
+          </p>
+          <div
+            ref={frameRef}
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setDragging(true);
+              moveTo(event.clientX, event.clientY);
+            }}
+            onPointerMove={(event) => {
+              if (dragging) moveTo(event.clientX, event.clientY);
+            }}
+            onPointerUp={() => setDragging(false)}
+            onPointerCancel={() => setDragging(false)}
+            className="relative mt-3 w-full max-w-[320px] cursor-crosshair touch-none overflow-hidden rounded-xl border border-charcoal/10 bg-charcoal/5"
+          >
+            <img src={photoUrl} alt="" draggable={false} className="block h-auto w-full" />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 w-px bg-white/50"
+              style={{ left: `${x}%` }}
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 h-px bg-white/50"
+              style={{ top: `${y}%` }}
+            />
+            <div
+              role="slider"
+              tabIndex={0}
+              aria-label="Photo focal point"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={x}
+              aria-valuetext={`${x}% across, ${y}% down`}
+              onKeyDown={nudge}
+              className="absolute flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              style={{ left: `${x}%`, top: `${y}%` }}
+            >
+              <span className="block h-4 w-4 rounded-full border-2 border-white bg-brand-green shadow-[0_0_0_2px_rgba(0,0,0,0.35)]" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-end gap-4">
+          <div>
+            <span className="block font-[family-name:var(--font-body)] text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/40">
+              Card
+            </span>
+            <div className="mt-1 h-[130px] w-[76px] overflow-hidden rounded-[10px] bg-mint">
+              <img src={photoUrl} alt="" className="h-full w-full object-cover" style={position} />
+            </div>
+          </div>
+          <div>
+            <span className="block font-[family-name:var(--font-body)] text-[0.7rem] font-semibold uppercase tracking-wider text-charcoal/40">
+              Avatar
+            </span>
+            <div className="mt-1 h-14 w-14 overflow-hidden rounded-full bg-mint">
+              <img src={photoUrl} alt="" className="h-full w-full object-cover" style={position} />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange({ photoFocusX: 50, photoFocusY: 25 })}
+            className="min-h-[44px] rounded-full px-3 font-[family-name:var(--font-body)] text-[0.8rem] font-semibold text-deep-green hover:bg-mint/60"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

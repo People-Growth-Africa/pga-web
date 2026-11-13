@@ -30,6 +30,8 @@ export type PageSpeaker = {
   photoUrl: string | null;
   photoThumbUrl: string | null;
   linkedinUrl: string | null;
+  photoFocusX: number;
+  photoFocusY: number;
 };
 
 /** The fields a page needs, including the body so the response can carry it. */
@@ -344,7 +346,7 @@ function renderSpeakersHtml(speakers: PageSpeaker[]): string {
     return [
       '<li style="width:9.5rem;list-style:none">',
       photo
-        ? `<img src="${escapeHtml(absoluteUrl(photo))}" alt="" width="96" height="96" loading="lazy" style="width:6rem;height:6rem;border-radius:999px;object-fit:cover;background:#d9ece5" />`
+        ? `<img src="${escapeHtml(absoluteUrl(photo))}" alt="" width="96" height="96" loading="lazy" style="width:6rem;height:6rem;border-radius:999px;object-fit:cover;object-position:${speaker.photoFocusX}% ${speaker.photoFocusY}%;background:#d9ece5" />`
         : `<div aria-hidden="true" style="display:flex;width:6rem;height:6rem;align-items:center;justify-content:center;border-radius:999px;background:#d9ece5;color:#0f6e56;font-family:Georgia,'Times New Roman',serif;font-size:1.75rem;font-weight:700">${escapeHtml(speaker.name.trim().charAt(0).toUpperCase())}</div>`,
       `<p style="margin:.7rem 0 0;font-weight:600">${escapeHtml(speaker.name)}</p>`,
       line ? `<p style="margin:.15rem 0 0;font-size:.9rem;color:#5b6b68">${escapeHtml(line)}</p>` : '',

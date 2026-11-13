@@ -3202,6 +3202,8 @@ export type SpeakerRow = {
   photo_url: string | null;
   photo_thumb_url: string | null;
   linkedin_url: string | null;
+  photo_focus_x: number;
+  photo_focus_y: number;
 };
 
 /** One speaker as a save request describes them; `id` only for an existing row. */
@@ -3214,10 +3216,12 @@ export type SpeakerWrite = {
   photoUrl: string | null;
   photoThumbUrl: string | null;
   linkedinUrl: string | null;
+  photoFocusX: number;
+  photoFocusY: number;
 };
 
 const SPEAKER_COLUMNS = `id, post_id, position, name, role, organisation, bio,
-         photo_url, photo_thumb_url, linkedin_url`;
+         photo_url, photo_thumb_url, linkedin_url, photo_focus_x, photo_focus_y`;
 
 /** Speakers for several posts at once, grouped by their `post_id`. */
 export async function listSpeakersForPosts(postIds: string[]): Promise<SpeakerRow[]> {
@@ -3274,7 +3278,8 @@ export async function syncPostSpeakers(
       await query(
         `UPDATE post_speakers
             SET position = $3, name = $4, role = $5, organisation = $6, bio = $7,
-                photo_url = $8, photo_thumb_url = $9, linkedin_url = $10, updated_at = now()
+                photo_url = $8, photo_thumb_url = $9, linkedin_url = $10,
+                photo_focus_x = $11, photo_focus_y = $12, updated_at = now()
           WHERE id = $1 AND post_id = $2`,
         [
           speaker.id,
@@ -3287,6 +3292,8 @@ export async function syncPostSpeakers(
           speaker.photoUrl,
           speaker.photoThumbUrl,
           speaker.linkedinUrl,
+          speaker.photoFocusX,
+          speaker.photoFocusY,
         ],
       );
       continue;
@@ -3294,8 +3301,9 @@ export async function syncPostSpeakers(
 
     await query(
       `INSERT INTO post_speakers
-         (post_id, position, name, role, organisation, bio, photo_url, photo_thumb_url, linkedin_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         (post_id, position, name, role, organisation, bio, photo_url, photo_thumb_url, linkedin_url,
+          photo_focus_x, photo_focus_y)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         postId,
         position,
@@ -3306,6 +3314,8 @@ export async function syncPostSpeakers(
         speaker.photoUrl,
         speaker.photoThumbUrl,
         speaker.linkedinUrl,
+        speaker.photoFocusX,
+        speaker.photoFocusY,
       ],
     );
   }

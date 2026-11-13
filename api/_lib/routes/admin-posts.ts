@@ -243,6 +243,8 @@ function speakerWrites(speakers: PostCreateInput['speakers']): SpeakerWrite[] {
     photoUrl: speaker.photoUrl ?? null,
     photoThumbUrl: speaker.photoThumbUrl ?? null,
     linkedinUrl: speaker.linkedinUrl ?? null,
+    photoFocusX: speaker.photoFocusX,
+    photoFocusY: speaker.photoFocusY,
   }));
 }
 
@@ -308,7 +310,17 @@ async function logSpeakerChanges(input: {
       continue;
     }
 
-    const fields = ['name', 'role', 'organisation', 'bio', 'photo_url', 'photo_thumb_url', 'linkedin_url'] as const;
+    const fields = [
+      'name',
+      'role',
+      'organisation',
+      'bio',
+      'photo_url',
+      'photo_thumb_url',
+      'linkedin_url',
+      'photo_focus_x',
+      'photo_focus_y',
+    ] as const;
     if (fields.some((key) => previous[key] !== row[key])) {
       await logAudit({
         req: input.req,

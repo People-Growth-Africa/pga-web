@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
-import SpeakerCarousel from './SpeakerCarousel';
 import {
   hasSpeakers,
+  speakerFocus,
   speakerInitial,
   speakerLine,
   speakerThumb,
@@ -10,20 +10,27 @@ import {
 } from '../lib/speakers';
 
 /**
- * "Meet the speakers" - the block at the end of a post.
+ * "Meet the speakers" - the block at the end of an event.
  *
- * It renders nothing at all when the post has no speakers or the manager turned
- * the section off, so an older post keeps the exact layout it had before this
+ * It renders nothing at all when the event has no speakers or the manager turned
+ * the section off, so an older page keeps the exact layout it had before this
  * existed: no heading, no padding, no empty gap.
  *
- * Names, roles and bios are in the page's HTML. That matters for two readers:
- * a crawler that never runs the script sees who is speaking, and the pop
- * animation is decoration on top of text that was already there.
+ * Names, roles and bios are in the page's HTML. That matters for two readers: a
+ * crawler that never runs the script sees who is speaking, and the pop animation
+ * is decoration on top of text that was already there.
  *
- * The pop is one CSS animation per speaker, revealed by an IntersectionObserver
- * that runs once. Without an observer (or with reduced motion) the row is simply
- * visible from the start - the section never depends on JavaScript to be read.
+ * The carousel is a lazy import. It is the heaviest thing this feature adds and
+ * most readers never open it, so it must not be in the initial bundle; hovering
+ * or focusing a card starts the download, and clicking shows it.
  */
+
+/** The carousel, split out of the initial bundle. */
+const SpeakerCarousel = lazy(() => import('./SpeakerCarousel'));
+
+function prefetchCarousel() {
+  void import('./SpeakerCarousel');
+}
 
 /** The whole pop: up, overshoot slightly, settle. */
 const POP_CSS = `
@@ -33,7 +40,13 @@ const POP_CSS = `
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 .speaker-pop { opacity: 0; }
-.speaker-pop.speaker-pop-in { animation: speaker-pop-in 600ms cubic-bezier(.2,.9,.3,1.2) both; }
+.speaker-pop.speaker-pop-in {
+  animation: speaker-pop-in 600ms cubic-bezier(.2,.9,.3,1.2) both;
+  animation-delay: calc(var(--speaker-index, 0) * 250ms);
+}
+@media (max-width: 767px) {
+  .speaker-pop.speaker-pop-in { animation-delay: calc(var(--speaker-index, 0) * 150ms); }
+}
 @keyframes speaker-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -48,12 +61,6 @@ const POP_CSS = `
 }
 `;
 
-/** 250ms between speakers on a wide screen, 150ms on a phone. */
-function staggerForViewport(): number {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 250;
-  return window.matchMedia('(max-width: 767px)').matches ? 150 : 250;
-}
-
 export default function MeetTheSpeakers({
   speakers,
   show = true,
@@ -64,14 +71,9 @@ export default function MeetTheSpeakers({
   const list = (speakers ?? []).filter((speaker) => speaker.name.trim() !== '');
   const [revealed, setRevealed] = useState(false);
   const [openAt, setOpenAt] = useState<number | null>(null);
-  const [stagger, setStagger] = useState(250);
   const sectionRef = useRef<HTMLElement>(null);
   // The button that opened the dialog, so closing puts focus back where it was.
   const openerRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    setStagger(staggerForViewport());
-  }, []);
 
   useEffect(() => {
     if (list.length === 0) return;
@@ -82,7 +84,8 @@ export default function MeetTheSpeakers({
       typeof window.matchMedia === 'function' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    if (reduced || typeof IntersectionObserver === 'undefined') {
+    if (reduced) return;
+    if (typeof IntersectionObserver === 'undefined') {
       setRevealed(true);
       return;
     }
@@ -120,12 +123,15 @@ export default function MeetTheSpeakers({
       <div className="mx-auto max-w-[1100px] px-6">
         <h2
           id="speakers-heading"
-          className="mb-10 text-center font-[family-name:var(--font-heading)] text-[1.7rem] font-semibold text-charcoal sm:text-[2rem]"
+          className="text-center font-[family-name:var(--font-heading)] text-[1.7rem] font-semibold text-charcoal sm:text-[2rem]"
         >
           Meet the speakers
         </h2>
+        <p className="mt-2 text-center font-[family-name:var(--font-body)] text-[0.82rem] text-charcoal/45 md:hidden">
+          Tap a speaker to open
+        </p>
 
-        <ul className="flex flex-wrap justify-center gap-x-8 gap-y-10 sm:gap-x-12">
+        <ul className="mt-10 grid grid-cols-2 justify-items-center gap-x-5 gap-y-9 md:flex md:flex-wrap md:justify-center md:gap-x-10">
           {list.map((speaker, index) => {
             const photo = speakerThumb(speaker);
             const line = speakerLine(speaker);
@@ -134,34 +140,37 @@ export default function MeetTheSpeakers({
               <li
                 key={`${speaker.name}-${index}`}
                 className={`speaker-pop w-[136px] ${revealed ? 'speaker-pop-in' : ''}`}
-                style={{ animationDelay: `${index * stagger}ms` }}
+                style={{ '--speaker-index': index } as React.CSSProperties}
               >
                 <button
                   type="button"
                   aria-haspopup="dialog"
                   aria-label={`${speaker.name}${line ? `, ${line}` : ''}. Open speaker details.`}
+                  onMouseEnter={prefetchCarousel}
+                  onFocus={prefetchCarousel}
                   onClick={(event) => {
                     openerRef.current = event.currentTarget;
                     setOpenAt(index);
                   }}
-                  className="group flex w-full min-h-[44px] flex-col items-center rounded-[18px] bg-transparent px-1 py-1 text-center transition-transform duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-4"
+                  className="group flex min-h-[44px] w-full flex-col items-center rounded-[18px] bg-transparent px-1 py-1 text-center transition-transform duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-4"
                 >
-                  <span className="block h-32 w-32 overflow-hidden rounded-full bg-mint shadow-card">
+                  <span className="block h-24 w-24 overflow-hidden rounded-full bg-mint shadow-card md:h-32 md:w-32">
                     {photo ? (
                       <img
                         src={photo}
                         srcSet={
                           speaker.photoUrl && speaker.photoThumbUrl
-                            ? `${speaker.photoThumbUrl} 96w, ${speaker.photoUrl} 400w`
+                            ? `${speaker.photoThumbUrl} 240w, ${speaker.photoUrl} 1000w`
                             : undefined
                         }
-                        sizes="128px"
+                        sizes="(max-width: 767px) 96px, 128px"
                         alt=""
                         width={128}
                         height={128}
                         loading="lazy"
                         decoding="async"
                         className="h-full w-full object-cover"
+                        style={{ objectPosition: speakerFocus(speaker) }}
                       />
                     ) : (
                       <span
@@ -191,7 +200,9 @@ export default function MeetTheSpeakers({
       </div>
 
       {openAt !== null && (
-        <SpeakerCarousel speakers={list} startIndex={openAt} onClose={closeCarousel} />
+        <Suspense fallback={null}>
+          <SpeakerCarousel speakers={list} startIndex={openAt} onClose={closeCarousel} />
+        </Suspense>
       )}
     </section>
   );
