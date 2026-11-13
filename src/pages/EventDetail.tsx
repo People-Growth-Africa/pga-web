@@ -316,6 +316,10 @@ export default function EventDetail() {
         </div>
       </section>
 
+      {/* The speakers sit straight after the event itself, before anything the
+          page recommends; nothing at all when there are none. */}
+      <MeetTheSpeakers speakers={event.speakers} show={event.showSpeakers !== false} />
+
       {/* ── More events ──────────────────────────────── */}
       {relatedEvents.length > 0 && (
         <section className="bg-cream/50 py-16">
@@ -376,10 +380,6 @@ export default function EventDetail() {
           <EventRegistrationModal event={registering} onClose={() => setRegistering(null)} />
         </Suspense>
       )}
-
-      {/* The speakers, last: an addition after everything the event page already
-          had, and nothing at all when there are none. */}
-      <MeetTheSpeakers speakers={event.speakers} show={event.showSpeakers !== false} />
     </>
   );
 }
