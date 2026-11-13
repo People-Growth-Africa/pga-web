@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
 import { useAuth } from '../../hooks/useAuth';
+import { useConfirm } from '../../hooks/useConfirm';
 import { onSessionEnded } from '../../lib/authClient';
 import { livePostPath } from '../../lib/published';
 import CategoriesDialog from './CategoriesDialog';
@@ -54,6 +55,7 @@ const TYPE_OPTIONS = [
 
 export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [posts, setPosts] = useState<AdminPost[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,9 +74,6 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
   const [notice, setNotice] = useState<Notice>(null);
 
   const [categoriesOpen, setCategoriesOpen] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<AdminPost | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-
   const searchRef = useRef(search);
   const navigate = useNavigate();
 
@@ -195,22 +194,20 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
     });
   }
 
-  async function handleDelete() {
-    if (!pendingDelete) return;
-    setDeleteBusy(true);
-
-    const result = await deletePost(pendingDelete.id);
-    setDeleteBusy(false);
-
-    if (!result.ok) {
-      setNotice({ kind: 'error', text: result.failure.error });
-      setPendingDelete(null);
-      return;
-    }
-
-    await refresh();
-    setPendingDelete(null);
-    setNotice({ kind: 'success', text: `“${pendingDelete.title}” was deleted.` });
+  async function handleDelete(post: AdminPost) {
+    await confirm({
+      tone: 'danger',
+      title: `Delete “${post.title}”?`,
+      message: 'It will be moved to Deleted and can be restored.',
+      note: 'Restore it any time from Content oversight, Deleted tab.',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        const result = await deletePost(post.id);
+        if (!result.ok) throw new Error(result.failure.error);
+        await refresh();
+        setNotice({ kind: 'success', text: `“${post.title}” was deleted.` });
+      },
+    });
   }
 
   async function restore(post: AdminPost) {
@@ -224,13 +221,19 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
   }
 
   async function purge(post: AdminPost) {
-    const result = await purgePost(post.id);
-    if (!result.ok) {
-      setNotice({ kind: 'error', text: result.failure.error });
-      return;
-    }
-    await refresh();
-    setNotice({ kind: 'success', text: `“${post.title}” was permanently purged.` });
+    await confirm({
+      tone: 'danger',
+      title: `Delete “${post.title}” forever?`,
+      message: 'This post will be permanently deleted and cannot be undone.',
+      confirmLabel: 'Delete forever',
+      requireText: post.title,
+      onConfirm: async () => {
+        const result = await purgePost(post.id);
+        if (!result.ok) throw new Error(result.failure.error);
+        await refresh();
+        setNotice({ kind: 'success', text: `“${post.title}” was permanently purged.` });
+      },
+    });
   }
 
   async function handleAddCategory(): Promise<string | null> {
@@ -500,13 +503,11 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
                             <>
                               <button type="button" onClick={() => void restore(post)} className={smallOutline}>Restore</button>
                               {user?.isSuperAdmin && (
-                                <button type="button" onClick={() => {
-                                  if (window.confirm(`Permanently purge “${post.title}”? This cannot be undone.`)) void purge(post);
-                                }} className={smallDanger}>Purge</button>
+                                <button type="button" onClick={() => void purge(post)} className={smallDanger}>Purge</button>
                               )}
                             </>
                           ) : (
-                            <button type="button" onClick={() => setPendingDelete(post)} className={smallDanger}>Delete</button>
+                            <button type="button" onClick={() => void handleDelete(post)} className={smallDanger}>Delete</button>
                           )}
                           {!showDeleted && published && (
                             <Link
@@ -536,46 +537,6 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
         }}
       />
 
-      {pendingDelete && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 p-6 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-title"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setPendingDelete(null);
-          }}
-        >
-          <div className="w-full max-w-[440px] rounded-[24px] bg-white p-7 shadow-elevated">
-            <h2
-              id="delete-title"
-              className="mb-2 font-[family-name:var(--font-heading)] text-lg font-semibold text-charcoal"
-            >
-              Delete this post?
-            </h2>
-            <p className="mb-6 font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal/65">
-              “{pendingDelete.title}” will be hidden from the site and sitemap. It can be restored from the Deleted tab.
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => void handleDelete()}
-                disabled={deleteBusy}
-                className="flex-1 cursor-pointer rounded-full bg-red-600 px-6 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {deleteBusy ? 'Deleting…' : 'Delete post'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPendingDelete(null)}
-                className="cursor-pointer rounded-full border border-charcoal/15 bg-white px-6 py-3 font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal hover:bg-cream"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

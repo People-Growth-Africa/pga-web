@@ -1,5 +1,6 @@
 import { lazy, useEffect, useState, type ComponentType } from 'react';
 import { BrowserRouter } from 'react-router-dom';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import Home from './pages/Home';
 import SiteShell from './SiteShell';
 import type { RouteComponents } from './routeComponents';
@@ -93,9 +94,11 @@ export default function App({ initialRouteComponents }: AppProps) {
     : routeComponents;
 
   return (
-    <BrowserRouter>
-      <SiteShell routeComponents={activeRouteComponents} />
-      <DeferredAnalytics />
-    </BrowserRouter>
+    <ConfirmProvider>
+      <BrowserRouter>
+        <SiteShell routeComponents={activeRouteComponents} />
+        <DeferredAnalytics />
+      </BrowserRouter>
+    </ConfirmProvider>
   );
 }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
+import { useConfirm } from '../../hooks/useConfirm';
 import { onSessionEnded, roleLabel } from '../../lib/authClient';
 import {
   ACCESS_PERMISSIONS,
@@ -40,6 +41,7 @@ function needsReview(grantedAt: string): boolean {
 }
 
 export default function AdminAccess() {
+  const confirm = useConfirm();
   const [overview, setOverview] = useState<AccessOverview | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [durations, setDurations] = useState<Record<string, AccessDuration>>({});
@@ -110,18 +112,28 @@ export default function AdminAccess() {
 
   async function revoke(grantId: string, name: string | null, email: string) {
     const target = name ?? email;
-    if (!window.confirm(`Revoke this access grant for ${target}?`)) return;
-    setBusyId(grantId);
-    setError(null);
-    setNotice(null);
-    const result = await revokePermissionGrant(grantId);
-    setBusyId(null);
-    if (!result.ok) {
-      setError(result.failure.error);
-      return;
-    }
-    setNotice(`Access revoked for ${target}.`);
-    await load();
+    await confirm({
+      tone: 'warning',
+      title: `Revoke access for ${target}?`,
+      message: `This staff member will lose this access grant.`,
+      confirmLabel: 'Revoke access',
+      onConfirm: async () => {
+        setBusyId(grantId);
+        setError(null);
+        setNotice(null);
+        try {
+          const result = await revokePermissionGrant(grantId);
+          if (!result.ok) {
+            setError(result.failure.error);
+            throw new Error(result.failure.error);
+          }
+          setNotice(`Access revoked for ${target}.`);
+          await load();
+        } finally {
+          setBusyId(null);
+        }
+      },
+    });
   }
 
   const pendingRequests = overview?.pendingRequests ?? [];

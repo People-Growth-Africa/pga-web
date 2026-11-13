@@ -4,6 +4,7 @@ import PostBody from '../../components/PostBody';
 import RegistrationFormBuilder from '../../components/admin/RegistrationFormBuilder';
 import { eventsList } from '../../data/events';
 import { blogPosts } from '../../data/posts';
+import { useConfirm } from '../../hooks/useConfirm';
 import {
   isoToLagosInput,
   lagosInputToIso,
@@ -164,6 +165,7 @@ export default function PostEditor({
   /** The same pipeline, squared, for speaker portraits. */
   uploadSpeakerPhoto: typeof uploadSpeakerPhotoFn;
 }) {
+  const confirm = useConfirm();
   const initial = useMemo(() => toDraft(post, initialType), [post, initialType]);
   const initialSpeakers = useMemo<SpeakerItem[]>(
     () =>
@@ -454,9 +456,15 @@ export default function PostEditor({
   const speakerDirty =
     speakerForm !== null && JSON.stringify(speakerForm.values) !== speakerForm.initial;
 
-  function confirmDiscard(): boolean {
+  async function confirmDiscard(): Promise<boolean> {
     if (!speakerDirty) return true;
-    return window.confirm('You have unsaved changes to this speaker. Discard them?');
+    return confirm({
+      tone: 'warning',
+      title: 'Discard unsaved changes?',
+      message: 'You have changes that have not been saved. They will be lost.',
+      cancelLabel: 'Keep editing',
+      confirmLabel: 'Discard',
+    });
   }
 
   function updateSpeakerForm(patch: Partial<SpeakerDraftInput>) {
@@ -465,8 +473,8 @@ export default function PostEditor({
     );
   }
 
-  function openAddSpeaker() {
-    if (!confirmDiscard()) return;
+  async function openAddSpeaker() {
+    if (!(await confirmDiscard())) return;
     const values = emptySpeaker();
     setSelectedSpeaker(null);
     setSpeakerError(null);
@@ -475,9 +483,9 @@ export default function PostEditor({
     setFormOpenCount((count) => count + 1);
   }
 
-  function openSpeaker(item: SpeakerItem) {
+  async function openSpeaker(item: SpeakerItem) {
     if (speakerForm?.key === item.key) return;
-    if (!confirmDiscard()) return;
+    if (!(await confirmDiscard())) return;
     const { key, ...values } = item;
     setSelectedSpeaker(key);
     setSpeakerError(null);
@@ -486,8 +494,8 @@ export default function PostEditor({
     setFormOpenCount((count) => count + 1);
   }
 
-  function closeSpeakerForm() {
-    if (!confirmDiscard()) return;
+  async function closeSpeakerForm() {
+    if (!(await confirmDiscard())) return;
     setSpeakerForm(null);
     setSelectedSpeaker(null);
     setSpeakerError(null);
@@ -525,8 +533,15 @@ export default function PostEditor({
     setSpeakerUploadError(null);
   }
 
-  function removeSpeaker(item: SpeakerItem) {
-    if (!window.confirm(`Remove ${item.name || 'this speaker'} from this post?`)) return;
+  async function removeSpeaker(item: SpeakerItem) {
+    const name = item.name || 'this speaker';
+    const confirmed = await confirm({
+      tone: 'danger',
+      title: `Remove ${name}?`,
+      message: 'They will no longer appear on this post.',
+      confirmLabel: 'Remove',
+    });
+    if (!confirmed) return;
     if (speakerForm?.key === item.key) {
       setSpeakerForm(null);
       setSelectedSpeaker(null);
@@ -577,9 +592,9 @@ export default function PostEditor({
     });
   }
 
-  function changeTab(next: TabId) {
+  async function changeTab(next: TabId) {
     if (next === activeTab) return;
-    if (activeTab === 'speakers' && next !== 'speakers' && !confirmDiscard()) return;
+    if (activeTab === 'speakers' && next !== 'speakers' && !(await confirmDiscard())) return;
     if (next !== 'speakers') {
       setSpeakerForm(null);
       setSelectedSpeaker(null);
@@ -866,7 +881,7 @@ export default function PostEditor({
               id={`tab-${tab.id}`}
               aria-selected={active}
               aria-controls={`panel-${tab.id}`}
-              onClick={() => changeTab(tab.id)}
+              onClick={() => void changeTab(tab.id)}
               className={`inline-flex min-h-[44px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 font-[family-name:var(--font-body)] text-[0.9rem] font-semibold transition-colors ${
                 active
                   ? 'bg-deep-green text-white'

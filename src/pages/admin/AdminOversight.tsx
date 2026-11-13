@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
 import { useAuth } from '../../hooks/useAuth';
+import { useConfirm } from '../../hooks/useConfirm';
 import { onSessionEnded } from '../../lib/authClient';
 import { livePostPath } from '../../lib/published';
 import PostEditor from './PostEditor';
@@ -60,6 +61,7 @@ type View = 'list' | 'create' | 'edit';
  */
 export default function AdminOversight() {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [posts, setPosts] = useState<AdminPost[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [access, setAccess] = useState<AccessOverview | null>(null);
@@ -199,14 +201,19 @@ export default function AdminOversight() {
   }
 
   async function remove(post: AdminPost) {
-    if (!window.confirm(`Delete “${post.title}”? It will be moved to Deleted and can be restored.`)) return;
-    const result = await deletePost(post.id);
-    if (!result.ok) {
-      setNotice(result.failure.error);
-      return;
-    }
-    await refresh();
-    setNotice('Deleted.');
+    await confirm({
+      tone: 'danger',
+      title: `Delete “${post.title}”?`,
+      message: 'It will be moved to Deleted and can be restored.',
+      note: 'Restore it any time from Content oversight, Deleted tab.',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        const result = await deletePost(post.id);
+        if (!result.ok) throw new Error(result.failure.error);
+        await refresh();
+        setNotice('Deleted.');
+      },
+    });
   }
 
   async function restore(post: AdminPost) {
@@ -220,13 +227,19 @@ export default function AdminOversight() {
   }
 
   async function purge(post: AdminPost) {
-    const result = await purgePost(post.id);
-    if (!result.ok) {
-      setNotice(result.failure.error);
-      return;
-    }
-    await refresh();
-    setNotice('Permanently purged.');
+    await confirm({
+      tone: 'danger',
+      title: `Delete “${post.title}” forever?`,
+      message: 'This post will be permanently deleted and cannot be undone.',
+      confirmLabel: 'Delete forever',
+      requireText: post.title,
+      onConfirm: async () => {
+        const result = await purgePost(post.id);
+        if (!result.ok) throw new Error(result.failure.error);
+        await refresh();
+        setNotice('Permanently purged.');
+      },
+    });
   }
 
   return (
@@ -464,9 +477,7 @@ export default function AdminOversight() {
                         <button type="button" onClick={() => void restore(post)} className={smallOutline}>Restore</button>
                       )}
                       {showDeleted && user?.isSuperAdmin && (
-                        <button type="button" onClick={() => {
-                          if (window.confirm(`Permanently purge “${post.title}”? This cannot be undone.`)) void purge(post);
-                        }} className={smallDanger}>Purge</button>
+                        <button type="button" onClick={() => void purge(post)} className={smallDanger}>Purge</button>
                       )}
                       {!showDeleted && published && (
                         <a

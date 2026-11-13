@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import SEO from '../../components/SEO';
 import AdminShell from '../../components/admin/AdminShell';
 import { useAuth } from '../../hooks/useAuth';
+import { useConfirm } from '../../hooks/useConfirm';
 import { authRequest, NETWORK_FAILURE, onSessionEnded } from '../../lib/authClient';
 import AccessRequestDialog from './AccessRequestDialog';
 import {
@@ -240,6 +241,7 @@ function CopyIcon() {
 
 export default function AdminData() {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [type, setType] = useState<DataType>('registrations');
   const [showDeleted, setShowDeleted] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
@@ -370,18 +372,19 @@ export default function AdminData() {
     [query],
   );
 
-  const mutateRecord = useCallback(async (row: Row, action: 'delete' | 'restore' | 'purge') => {
-    if (!row.id) return;
+  const mutateRecord = useCallback(async (row: Row, action: 'delete' | 'restore' | 'purge'): Promise<string | null> => {
+    if (!row.id) return 'That record could not be found.';
     const result = await authRequest<{ ok: boolean }>('/api/admin/data', {
       method: 'POST',
       body: JSON.stringify({ action, type, id: row.id }),
     });
     if (!result.ok) {
       setError(result.failure.error);
-      return;
+      return result.failure.error;
     }
     setError(null);
     await load();
+    return null;
   }, [type, load]);
 
   const mutateConsultation = useCallback(async (
@@ -779,7 +782,20 @@ export default function AdminData() {
             loading={loading}
             isSuperAdmin={user?.isSuperAdmin === true}
             onRestore={(row) => void mutateRecord(row, 'restore')}
-            onPurge={(row) => void mutateRecord(row, 'purge')}
+            onPurge={(row) => {
+              const target = row.name?.trim() || row.email || row.id || 'Deleted record';
+              void confirm({
+                tone: 'danger',
+                title: `Delete “${target}” forever?`,
+                message: `This ${type} record will be permanently deleted and cannot be undone.`,
+                confirmLabel: 'Delete forever',
+                requireText: target,
+                onConfirm: async () => {
+                  const failure = await mutateRecord(row, 'purge');
+                  if (failure) throw new Error(failure);
+                },
+              });
+            }}
           />
         ) : type === 'registrations' ? (
           <>
@@ -1433,9 +1449,7 @@ function DeletedRecordsPanel({
             {isSuperAdmin && (
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm('Permanently delete this record? This cannot be undone.')) onPurge(row);
-                }}
+                onClick={() => onPurge(row)}
                 className="min-h-10 rounded-[9px] border border-terracotta/40 px-4 text-sm font-semibold text-terracotta hover:bg-terracotta/10"
               >
                 Purge
