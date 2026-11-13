@@ -18,6 +18,12 @@ export default defineConfig({
         ]
       : []),
   ],
+  define: {
+    // Expose GOOGLE_SHEETS_SPREADSHEET_ID to the frontend for "Open in Google Sheets" button
+    'import.meta.env.GOOGLE_SHEETS_SPREADSHEET_ID': JSON.stringify(
+      process.env.GOOGLE_SHEETS_SPREADSHEET_ID || ''
+    ),
+  },
   resolve: {
     alias: {
       '@': '/src',

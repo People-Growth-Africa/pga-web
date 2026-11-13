@@ -522,7 +522,7 @@ export default function AdminData() {
     </>
   );
 
-  const spreadsheetId = import.meta.env.VITE_GOOGLE_SHEETS_SPREADSHEET_ID;
+  const spreadsheetId = import.meta.env.VITE_GOOGLE_SHEETS_SPREADSHEET_ID || import.meta.env.GOOGLE_SHEETS_SPREADSHEET_ID;
   const googleSheetsUrl = spreadsheetId
     ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`
     : null;
