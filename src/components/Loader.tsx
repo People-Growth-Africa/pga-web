@@ -61,7 +61,7 @@ export function GlobalPageLoader() {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-cream/85 px-6">
+    <div className="fixed inset-0 z-[var(--z-overlay)] flex items-center justify-center bg-cream/85 px-6">
       <Loader />
     </div>
   );
@@ -78,7 +78,7 @@ export function TopProgressBar() {
   return (
     <div
       aria-hidden="true"
-      className={`pointer-events-none fixed inset-x-0 top-0 z-[80] h-[3px] overflow-hidden transition-opacity duration-150 ${
+      className={`pointer-events-none fixed inset-x-0 top-0 z-[var(--z-progress)] h-[3px] overflow-hidden transition-opacity duration-150 ${
         active ? 'opacity-100' : 'opacity-0'
       }`}
     >

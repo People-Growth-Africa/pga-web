@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import AnimateOnScroll from '../components/AnimateOnScroll';
@@ -12,6 +12,7 @@ import NotFound from './NotFound';
 import type { EventItem } from '../data/events';
 import { isSafeHttpUrl } from '../lib/content';
 import { findEvent, mergeBlogPosts, mergeEvents, splitEvents } from '../lib/contentMerge';
+import { formWindow } from '../lib/registrationForm';
 import { useContent } from '../hooks/useContent';
 import { useLivePosts } from '../hooks/useLivePosts';
 import { eventMeta } from '../lib/pageMeta';
@@ -36,6 +37,7 @@ export default function EventDetail() {
   const live = useLivePosts();
   // The modal still takes an EventItem; an EventView is one, with extra facts.
   const [registering, setRegistering] = useState<EventItem | null>(null);
+  const registerButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -88,6 +90,10 @@ export default function EventDetail() {
   }
 
   const registrationUrl = isSafeHttpUrl(event.registrationUrl) ? event.registrationUrl : null;
+  const registrationWindow =
+    !registrationUrl && event.origin !== 'sheet' && event.registrationForm
+      ? formWindow(event.registrationForm)
+      : 'open';
   const detail = event.format;
   // The cover a manager uploaded, full size where there is one and the
   // thumbnail otherwise. It becomes the hero's backdrop rather than an image
@@ -104,9 +110,9 @@ export default function EventDetail() {
       href={registrationUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-deep-green px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
+      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-deep-green px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 max-[380px]:w-full"
     >
-      Register for this event
+      {event.registrationButtonLabel?.trim() || 'Register for this event'}
       <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round" aria-hidden="true">
         <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
         <polyline points="15 3 21 3 21 9" />
@@ -117,17 +123,27 @@ export default function EventDetail() {
   ) : event.origin === 'sheet' ? (
     <a
       href={`mailto:hello@peoplegrowthafrica.com?subject=${encodeURIComponent(`Registration: ${event.title}`)}`}
-      className="inline-flex w-full items-center justify-center rounded-full bg-deep-green px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
+      className="inline-flex min-h-12 items-center justify-center rounded-full bg-deep-green px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 max-[380px]:w-full"
     >
       Register your interest
     </a>
+  ) : registrationWindow !== 'open' ? (
+    <button
+      type="button"
+      disabled
+      className="inline-flex min-h-12 cursor-not-allowed items-center justify-center rounded-full bg-charcoal/15 px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-charcoal/60 max-[380px]:w-full"
+    >
+      {registrationWindow === 'closed' ? 'Registration closed' : 'Registration not open yet'}
+    </button>
   ) : (
     <button
       type="button"
+      ref={registerButtonRef}
       onClick={() => setRegistering(event)}
-      className="inline-flex w-full items-center justify-center rounded-full bg-deep-green px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
+      className="inline-flex min-h-12 items-center justify-center rounded-full bg-deep-green px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 max-[380px]:w-full"
     >
-      {event.type === 'mentorship' ? 'Apply for a place' : 'Register free'}
+      {event.registrationButtonLabel?.trim() ||
+        (event.type === 'mentorship' ? 'Apply for a place' : 'Register free')}
     </button>
   );
 
@@ -191,6 +207,12 @@ export default function EventDetail() {
               {detail ? ` • ${detail}` : ''}
             </p>
 
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <div className="max-[380px]:w-full">{registerButton}</div>
+              <div className="max-[380px]:w-full [&>div]:max-[380px]:w-full [&_button]:max-[380px]:w-full">
+                <EventShareButton slug={event.slug} title={event.title} labelled />
+              </div>
+            </div>
           </AnimateOnScroll>
         </div>
       </section>
@@ -298,11 +320,6 @@ export default function EventDetail() {
               )}
             </dl>
 
-            <div className="mt-6 hidden lg:block">{registerButton}</div>
-            <div className="mt-3 flex justify-center">
-              <EventShareButton slug={event.slug} title={event.title} labelled />
-            </div>
-
             {event.price && (
               <p className="mt-3 text-center font-[family-name:var(--font-body)] text-[0.8rem] text-charcoal/50">
                 {event.price}
@@ -371,17 +388,13 @@ export default function EventDetail() {
         </section>
       )}
 
-      <div className="h-24 lg:hidden" aria-hidden="true" />
-      {registerButton && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-charcoal/10 bg-white/95 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur lg:hidden">
-          <div className="mx-auto max-w-[320px] pr-14 [&>a]:w-full [&>button]:w-full">
-            {registerButton}
-          </div>
-        </div>
-      )}
       {registering && (
         <Suspense fallback={null}>
-          <EventRegistrationModal event={registering} onClose={() => setRegistering(null)} />
+          <EventRegistrationModal
+            event={registering}
+            onClose={() => setRegistering(null)}
+            returnFocusRef={registerButtonRef}
+          />
         </Suspense>
       )}
     </>

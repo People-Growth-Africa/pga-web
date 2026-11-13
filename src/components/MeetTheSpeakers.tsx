@@ -51,12 +51,23 @@ const POP_CSS = `
   from { opacity: 0; }
   to { opacity: 1; }
 }
+.speaker-view-profiles { opacity: 0; }
+.speaker-view-profiles.speaker-view-profiles-in {
+  animation: speaker-fade-in 250ms ease both;
+  animation-delay: var(--speaker-button-delay-desktop, 850ms);
+}
 @media (prefers-reduced-motion: reduce) {
   .speaker-pop { opacity: 1; transform: none !important; }
   .speaker-pop.speaker-pop-in {
     animation: speaker-fade-in 200ms ease both !important;
     animation-delay: 0ms !important;
     transform: none !important;
+  }
+  .speaker-view-profiles { opacity: 1; animation: none !important; }
+}
+@media (max-width: 767px) {
+  .speaker-view-profiles.speaker-view-profiles-in {
+    animation-delay: var(--speaker-button-delay-mobile, 850ms);
   }
 }
 `;
@@ -70,10 +81,11 @@ export default function MeetTheSpeakers({
 }) {
   const list = (speakers ?? []).filter((speaker) => speaker.name.trim() !== '');
   const [revealed, setRevealed] = useState(false);
-  const [openAt, setOpenAt] = useState<number | null>(null);
+  const [carousel, setCarousel] = useState<{
+    index: number;
+    opener: HTMLButtonElement;
+  } | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
-  // The button that opened the dialog, so closing puts focus back where it was.
-  const openerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (list.length === 0) return;
@@ -107,9 +119,7 @@ export default function MeetTheSpeakers({
   if (!show || !hasSpeakers(list)) return null;
 
   function closeCarousel() {
-    setOpenAt(null);
-    openerRef.current?.focus();
-    openerRef.current = null;
+    setCarousel(null);
   }
 
   return (
@@ -127,10 +137,6 @@ export default function MeetTheSpeakers({
         >
           Meet the speakers
         </h2>
-        <p className="mt-2 text-center font-[family-name:var(--font-body)] text-[0.82rem] text-charcoal/45 md:hidden">
-          Tap a speaker to open
-        </p>
-
         <ul className="mt-10 grid grid-cols-2 justify-items-center gap-x-5 gap-y-9 md:flex md:flex-wrap md:justify-center md:gap-x-10">
           {list.map((speaker, index) => {
             const photo = speakerThumb(speaker);
@@ -149,12 +155,11 @@ export default function MeetTheSpeakers({
                   onMouseEnter={prefetchCarousel}
                   onFocus={prefetchCarousel}
                   onClick={(event) => {
-                    openerRef.current = event.currentTarget;
-                    setOpenAt(index);
+                    setCarousel({ index, opener: event.currentTarget });
                   }}
-                  className="group flex min-h-[44px] w-full flex-col items-center rounded-[18px] bg-transparent px-1 py-1 text-center transition-transform duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-4"
+                  className="group flex min-h-[44px] w-full cursor-pointer flex-col items-center rounded-[18px] bg-transparent px-1 py-1 text-center focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0f6b50] focus-visible:outline-offset-4"
                 >
-                  <span className="block h-24 w-24 overflow-hidden rounded-full bg-mint shadow-card md:h-32 md:w-32">
+                  <span className="block h-24 w-24 overflow-hidden rounded-full bg-mint shadow-card transition-transform duration-[180ms] group-hover:scale-[1.06] group-hover:ring-[3px] group-hover:ring-[#0f6b50] group-focus-visible:scale-[1.06] group-focus-visible:ring-[3px] group-focus-visible:ring-[#0f6b50] md:h-32 md:w-32">
                     {photo ? (
                       <img
                         src={photo}
@@ -197,11 +202,38 @@ export default function MeetTheSpeakers({
             );
           })}
         </ul>
+
+        <div className="mt-8 flex justify-center">
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            aria-label="View profiles"
+            onMouseEnter={prefetchCarousel}
+            onFocus={prefetchCarousel}
+            onClick={(event) => {
+              setCarousel({ index: 0, opener: event.currentTarget });
+            }}
+            className={`speaker-view-profiles ${revealed ? 'speaker-view-profiles-in' : ''} inline-flex h-12 w-full items-center justify-center rounded-full bg-[#0f6b50] px-8 font-[family-name:var(--font-body)] text-[15px] font-bold text-white transition-colors hover:bg-[#0b5942] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0f6b50] focus-visible:ring-offset-2 md:w-auto`}
+            style={
+              {
+                '--speaker-button-delay-desktop': `${(list.length - 1) * 250 + 850}ms`,
+                '--speaker-button-delay-mobile': `${(list.length - 1) * 150 + 850}ms`,
+              } as React.CSSProperties
+            }
+          >
+            View profiles
+          </button>
+        </div>
       </div>
 
-      {openAt !== null && (
+      {carousel && (
         <Suspense fallback={null}>
-          <SpeakerCarousel speakers={list} startIndex={openAt} onClose={closeCarousel} />
+          <SpeakerCarousel
+            speakers={list}
+            startIndex={carousel.index}
+            opener={carousel.opener}
+            onClose={closeCarousel}
+          />
         </Suspense>
       )}
     </section>

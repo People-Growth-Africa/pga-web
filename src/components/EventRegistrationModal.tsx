@@ -1,8 +1,19 @@
-import { Fragment, useState, useEffect, useId, useMemo } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import type { EventItem } from '../data/events';
 import { leadFailureMessage, submitRegistration } from '../lib/leadClient';
 import { parseConfirmationMessage } from '../lib/confirmationMessage';
+import { useConfirm } from '../hooks/useConfirm';
 import { useFormsAvailability } from '../hooks/useFormsAvailability';
 import FormsUnavailableNotice, { FormAvailabilityPending } from './FormsUnavailableNotice';
 import { Spinner } from './Loader';
@@ -212,16 +223,27 @@ function AnswerField({
 interface EventRegistrationModalProps {
   event: EventItem | null;
   onClose: () => void;
+  returnFocusRef?: { current: HTMLButtonElement | null };
 }
 
-export default function EventRegistrationModal({ event, onClose }: EventRegistrationModalProps) {
+export default function EventRegistrationModal({
+  event,
+  onClose,
+  returnFocusRef,
+}: EventRegistrationModalProps) {
+  const confirm = useConfirm();
   const formId = useId();
+  const titleId = useId();
+  const dateId = useId();
   const [answers, setAnswers] = useState<RegistrationAnswers>({});
   const [website, setWebsite] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   // Asked once on open, so the form is not put in front of someone only to
   // refuse their submission afterwards.
   const formsAvailability = useFormsAvailability();
@@ -235,6 +257,48 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
   // Which questions the conditions currently show. Recomputed on every answer
   // so a change of mind shows and hides follow-up questions live.
   const visible = useMemo(() => visibleQuestionIds(form, answers), [form, answers]);
+  const hasAnswers = Object.values(answers).some((value) =>
+    Array.isArray(value) ? value.length > 0 : value.trim() !== '',
+  );
+
+  const requestClose = useCallback(async () => {
+    if (hasAnswers && !isConfirmed) {
+      const shouldClose = await confirm({
+        title: 'Leave registration?',
+        message: 'Your details have not been submitted. They will be lost if you close this form.',
+        cancelLabel: 'Keep registering',
+        confirmLabel: 'Leave form',
+        tone: 'warning',
+      });
+      if (!shouldClose) return;
+    }
+    onClose();
+  }, [confirm, hasAnswers, isConfirmed, onClose]);
+
+  useLayoutEffect(() => {
+    if (!event) return;
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const returnFocusTarget = returnFocusRef?.current;
+    const originalStyle = body.getAttribute('style');
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const currentPadding = Number.parseFloat(window.getComputedStyle(body).paddingRight) || 0;
+
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
+    if (scrollbarWidth > 0) body.style.paddingRight = `${currentPadding + scrollbarWidth}px`;
+    titleRef.current?.focus({ preventScroll: true });
+
+    return () => {
+      if (originalStyle === null) body.removeAttribute('style');
+      else body.setAttribute('style', originalStyle);
+      window.scrollTo({ top: scrollY, left: 0, behavior: 'instant' });
+      returnFocusTarget?.focus({ preventScroll: true });
+    };
+  }, [event, returnFocusRef]);
 
   useEffect(() => {
     // A question hidden after being answered must not leak its stale value into
@@ -255,12 +319,23 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
   }, [visible]);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+    if (!Object.keys(fieldErrors).length) return;
+    const scrollArea = scrollAreaRef.current;
+    const firstInvalid =
+      scrollArea?.querySelector<HTMLElement>('[aria-invalid="true"]') ??
+      scrollArea?.querySelector<HTMLElement>('[role="alert"]');
+    if (!scrollArea || !firstInvalid) return;
+    const areaTop = scrollArea.getBoundingClientRect().top;
+    const fieldTop = firstInvalid.getBoundingClientRect().top;
+    scrollArea.scrollTo({
+      top: scrollArea.scrollTop + fieldTop - areaTop - 16,
+      behavior: 'smooth',
+    });
+  }, [fieldErrors]);
+
+  useEffect(() => {
+    if (isConfirmed) scrollAreaRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+  }, [isConfirmed]);
 
   useEffect(() => {
     // A different event means different questions and a fresh form.
@@ -344,52 +419,88 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
   const emailAnswer =
     form.questions.find((question) => question.type === 'email')?.id ?? '';
   const nameAnswer = form.questions.find((question) => question.id === 'name')?.id ?? '';
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      void requestClose();
+      return;
+    }
+    if (event.key !== 'Tab') return;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[calc(env(safe-area-inset-top)+1rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] bg-charcoal/70 backdrop-blur-sm sm:items-center lg:items-start lg:pt-6">
-      <div className="fixed inset-0" onClick={onClose} />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative z-10 w-full max-w-[620px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[24px] border border-charcoal/10 bg-white shadow-elevated"
+    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable?.length) {
+      event.preventDefault();
+      titleRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  return createPortal(
+      <div
+        className="registration-modal-overlay fixed inset-0 flex items-center justify-center overflow-hidden bg-charcoal/70 p-3 backdrop-blur-sm sm:p-4"
+        style={{
+          zIndex: 'var(--z-registration-modal)',
+          paddingTop: 'max(12px, env(safe-area-inset-top))',
+          paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+        }}
+        onClick={(mouseEvent) => {
+          if (mouseEvent.target === mouseEvent.currentTarget) void requestClose();
+        }}
       >
-        {/* Close Button: sticky so it stays reachable while the form scrolls.
-            The wrapper has no height, so the button floats over the header
-            instead of pushing it down. */}
-        <div className="pointer-events-none sticky top-0 z-30 flex h-0 justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close modal"
-            className="pointer-events-auto mt-4 mr-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-deep-green shadow-md ring-1 ring-charcoal/10 transition-colors motion-reduce:transition-none hover:bg-mint focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green cursor-pointer"
-          >
-            <svg
-              className="h-4 w-4 stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={dateId}
+          onKeyDown={handleDialogKeyDown}
+          className="registration-dialog-card flex w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] border border-charcoal/10 bg-white shadow-elevated"
+        >
+          <div className="relative flex-shrink-0 bg-deep-green p-6 pr-16 text-white md:p-8 md:pr-20">
+            <span className="mb-2 inline-block rounded-full bg-mint px-3 py-1 text-xs font-semibold uppercase tracking-wider text-deep-green">
+              {event.typeLabel}
+            </span>
+            <h3
+              ref={titleRef}
+              id={titleId}
+              tabIndex={-1}
+              className="mb-1 font-[family-name:var(--font-heading)] text-xl font-semibold leading-snug outline-none md:text-2xl"
             >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
+              {event.title}
+            </h3>
+            <p id={dateId} className="text-xs font-medium text-white/80 md:text-sm">
+              {event.date} &bull; {event.time}
+            </p>
+            <button
+              type="button"
+              onClick={() => void requestClose()}
+              aria-label="Close modal"
+              className="absolute right-3 top-3 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-deep-green shadow-md ring-1 ring-charcoal/10 transition-colors motion-reduce:transition-none hover:bg-mint focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green sm:right-4 sm:top-4"
+            >
+              <svg
+                className="h-4 w-4 stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
 
-        {/* Header */}
-        <div className="bg-deep-green p-6 md:p-8 text-white relative">
-          <span className="inline-block px-3 py-1 rounded-full bg-mint text-deep-green text-xs font-semibold uppercase tracking-wider mb-2">
-            {event.typeLabel}
-          </span>
-          <h3 className="font-[family-name:var(--font-heading)] text-xl md:text-2xl font-semibold leading-snug mb-1">
-            {event.title}
-          </h3>
-          <p className="text-xs md:text-sm text-white/80 font-medium">
-            {event.date} &bull; {event.time}
-          </p>
-        </div>
-
-        {/* Content Body */}
-        <div className="p-6 md:p-8">
+          <div ref={scrollAreaRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6 md:p-8">
           <AnimatePresence mode="wait">
             {formsAvailability !== 'available' ? (
               <motion.div
@@ -464,7 +575,7 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                   </button>
                   <button
                     type="button"
-                    onClick={onClose}
+                    onClick={() => void requestClose()}
                     className="px-6 py-2.5 bg-cream text-charcoal text-xs font-semibold rounded-full hover:bg-charcoal/10 transition-all border border-charcoal/15"
                   >
                     Close
@@ -492,7 +603,7 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
                 </p>
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => void requestClose()}
                   className="px-6 py-2.5 bg-cream text-charcoal text-xs font-semibold rounded-full hover:bg-charcoal/10 transition-all border border-charcoal/15"
                 >
                   Close
@@ -581,8 +692,9 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
               </motion.form>
             )}
           </AnimatePresence>
+          </div>
         </div>
-      </motion.div>
-    </div>
+      </div>,
+      document.body,
   );
 }

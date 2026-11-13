@@ -59,6 +59,24 @@
   }
 }
 
+/* Shared layers for fixed public-site UI. Dialogs sit above site chrome, and
+   the discard confirmation intentionally sits above the registration modal. */
+:root {
+  --z-floating: 40;
+  --z-sticky: 50;
+  --z-overlay: 70;
+  --z-progress: 80;
+  --z-carousel: 120;
+  --z-share-menu: 150;
+  --z-registration-modal: 310;
+  --z-confirm-dialog: 320;
+}
+
+.registration-dialog-card {
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+}
+
 /* Base styles */
 html {
   scroll-behavior: smooth;

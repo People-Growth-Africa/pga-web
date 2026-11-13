@@ -15,7 +15,7 @@ export default function WhatsAppConcierge() {
   const waUrl = `https://wa.me/${phoneNumber}?text=${defaultMessage}`;
 
   return (
-    <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end">
+    <div className="fixed bottom-6 right-6 z-[var(--z-floating)] flex flex-col items-end">
       {isOpen && (
         <div className="concierge-enter mb-3 w-80 bg-white rounded-[20px] shadow-elevated border border-charcoal/10 overflow-hidden text-left">
           <div className="bg-deep-green p-4 text-white flex items-center justify-between">

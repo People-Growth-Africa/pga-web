@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { COPIED_FEEDBACK_MS, copyText } from '../lib/clipboard';
 
 const SITE_URL = 'https://www.peoplegrowthafrica.com';
@@ -33,7 +34,9 @@ export default function EventShareButton({ slug, title, labelled = false }: Prop
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const copiedTimer = useRef<number | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const url = eventUrl(slug);
 
   // The confirmation is a moment, not a state: put the button back once it has
@@ -48,7 +51,8 @@ export default function EventShareButton({ slug, title, labelled = false }: Prop
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
-      if (!wrapper.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!wrapper.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
@@ -60,6 +64,39 @@ export default function EventShareButton({ slug, title, labelled = false }: Prop
       document.removeEventListener('keydown', escape);
     };
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const positionMenu = () => {
+      const button = wrapper.current?.querySelector('button');
+      const menu = menuRef.current;
+      if (!button || !menu) return;
+
+      const anchor = button.getBoundingClientRect();
+      const bounds = menu.getBoundingClientRect();
+      const margin = 8;
+      const left = Math.max(
+        margin,
+        Math.min(anchor.right - bounds.width, window.innerWidth - bounds.width - margin),
+      );
+      const below = anchor.bottom + margin;
+      const top =
+        below + bounds.height <= window.innerHeight - margin
+          ? below
+          : Math.max(margin, anchor.top - bounds.height - margin);
+
+      setMenuPosition({ top, left });
+    };
+
+    positionMenu();
+    window.addEventListener('resize', positionMenu);
+    window.addEventListener('scroll', positionMenu, true);
+    return () => {
+      window.removeEventListener('resize', positionMenu);
+      window.removeEventListener('scroll', positionMenu, true);
+    };
+  }, [open, copyFailed]);
 
   async function share() {
     if (hasTouchPointer() && typeof navigator.share === 'function') {
@@ -133,12 +170,19 @@ export default function EventShareButton({ slug, title, labelled = false }: Prop
         {copied ? 'Link copied to the clipboard' : ''}
       </span>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label="Share this event"
-          className="absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-charcoal/10 bg-white p-1.5 shadow-elevated"
-        >
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label="Share this event"
+            className="fixed z-[var(--z-share-menu)] w-56 overflow-hidden rounded-2xl border border-charcoal/10 bg-white p-1.5 shadow-elevated"
+            style={{
+              top: menuPosition?.top ?? 0,
+              left: menuPosition?.left ?? 0,
+              visibility: menuPosition ? 'visible' : 'hidden',
+            }}
+          >
           <button
             type="button"
             role="menuitem"
@@ -183,8 +227,9 @@ export default function EventShareButton({ slug, title, labelled = false }: Prop
           >
             X
           </a>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

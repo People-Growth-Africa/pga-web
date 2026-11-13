@@ -229,7 +229,7 @@ export default function Navbar() {
 
   return (
     <nav
-      className={`fixed top-0 left-0 right-0 z-50 transition-colors duration-300 motion-reduce:transition-none ${
+      className={`fixed top-0 left-0 right-0 z-[var(--z-sticky)] transition-colors duration-300 motion-reduce:transition-none ${
         scrolled
           ? 'bg-deep-green shadow-lg py-3'
           : 'bg-gradient-to-b from-charcoal/60 via-charcoal/20 to-transparent py-5'

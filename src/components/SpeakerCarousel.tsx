@@ -19,11 +19,10 @@ import {
  * and the focal point each photo carries.
  *
  * It is a dialog in the accessibility sense: focus moves into it, Tab cycles
- * inside it, Escape closes it and the page behind does not scroll. Return focus
- * is the caller's half - it knows which card was pressed - so `onClose` is the
- * only way out.
- *
- * Everything here is CSS transitions and component state. No animation library.
+ * inside it, Escape closes it and the page behind does not scroll. The opener
+ * is passed in so it can return focus to the exact card or button that launched
+ * it. Everything here is CSS transitions and component state; no animation
+ * library is needed.
  */
 
 const FOCUSABLE =
@@ -35,10 +34,12 @@ const BIO_NEEDS_MORE = 120;
 export default function SpeakerCarousel({
   speakers,
   startIndex = 0,
+  opener = null,
   onClose,
 }: {
   speakers: SpeakerView[];
   startIndex?: number;
+  opener?: HTMLElement | null;
   onClose: () => void;
 }) {
   const count = speakers.length;
@@ -77,8 +78,9 @@ export default function SpeakerCarousel({
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previousOverflow;
+      opener?.focus({ preventScroll: true });
     };
-  }, []);
+  }, [opener]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -149,7 +151,7 @@ export default function SpeakerCarousel({
   if (count === 0 || typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[120]">
+    <div className="fixed inset-0 z-[var(--z-carousel)]">
       <style>{CAROUSEL_CSS}</style>
 
       <button

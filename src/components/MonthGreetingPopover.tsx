@@ -155,7 +155,7 @@ export default function MonthGreetingPopover() {
   return (
     <motion.div
       className={
-        'fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6' +
+        'fixed inset-0 z-[var(--z-overlay)] flex items-center justify-center p-4 sm:p-6' +
         (isClosing ? ' pointer-events-none' : '')
       }
       initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }}

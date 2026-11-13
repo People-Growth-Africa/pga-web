@@ -177,7 +177,7 @@ function ConfirmDialog({
 
   return createPortal(
     <div
-      className="confirm-dialog-backdrop fixed inset-0 z-[300] flex items-end justify-center bg-[#0e1e1a]/50 backdrop-blur-[3px] sm:items-center sm:p-5"
+      className="confirm-dialog-backdrop fixed inset-0 z-[var(--z-confirm-dialog)] flex items-end justify-center bg-[#0e1e1a]/50 backdrop-blur-[3px] sm:items-center sm:p-5"
       onClick={(event) => {
         if (event.target === event.currentTarget) cancel();
       }}
