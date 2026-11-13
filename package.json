@@ -74,7 +74,7 @@
     "googleapis": "^189.0.0",
     "gsap": "^3.15.0",
     "jose": "6.2.12",
-    "papaparse": "^5.5.3",
+    "papaparse": "^5.7.0",
     "pngjs": "^7.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -85,7 +85,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.4",
-    "@types/papaparse": "^5.3.16",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vercel/node": "20.0.0",
