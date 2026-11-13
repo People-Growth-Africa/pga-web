@@ -346,13 +346,13 @@ export default function EventRegistrationModal({ event, onClose }: EventRegistra
   const nameAnswer = form.questions.find((question) => question.id === 'name')?.id ?? '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-charcoal/70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[calc(env(safe-area-inset-top)+1rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] bg-charcoal/70 backdrop-blur-sm sm:items-center lg:items-start lg:pt-6">
       <div className="fixed inset-0" onClick={onClose} />
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative z-10 bg-white rounded-[24px] max-w-[620px] w-full max-h-[90vh] overflow-y-auto shadow-elevated border border-charcoal/10"
+        className="relative z-10 w-full max-w-[620px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[24px] border border-charcoal/10 bg-white shadow-elevated"
       >
         {/* Close Button: sticky so it stays reachable while the form scrolls.
             The wrapper has no height, so the button floats over the header

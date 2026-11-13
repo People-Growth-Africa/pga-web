@@ -191,10 +191,6 @@ export default function EventDetail() {
               {detail ? ` • ${detail}` : ''}
             </p>
 
-            {/* The aside sits below the body on a phone, which put the register
-                button off the first screen. This is the same button, above the
-                fold at 375px; the aside keeps it on desktop. */}
-            <div className="mx-auto mt-6 max-w-[320px] lg:hidden">{registerButton}</div>
           </AnimateOnScroll>
         </div>
       </section>
@@ -375,6 +371,14 @@ export default function EventDetail() {
         </section>
       )}
 
+      <div className="h-24 lg:hidden" aria-hidden="true" />
+      {registerButton && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-charcoal/10 bg-white/95 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur lg:hidden">
+          <div className="mx-auto max-w-[320px] pr-14 [&>a]:w-full [&>button]:w-full">
+            {registerButton}
+          </div>
+        </div>
+      )}
       {registering && (
         <Suspense fallback={null}>
           <EventRegistrationModal event={registering} onClose={() => setRegistering(null)} />
