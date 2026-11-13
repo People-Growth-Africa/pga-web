@@ -45,13 +45,15 @@ function sheetUrl(): string | null {
  * Only messages this module wrote itself are ever logged. A `fetch` TypeError can
  * carry the request URL in its message, and SHEET_CSV_URL must not end up in the
  * platform logs.
+ * 
+ * Note: Currently commented out to reduce log noise. Uncomment if you need to debug sheet errors.
  */
-function describeFailure(error: unknown): string {
-  if (!(error instanceof Error)) return 'unknown error';
-  if (/^status \d{3}$/.test(error.message)) return error.message;
-  if (error.message === 'not-csv') return 'the sheet returned a page, not CSV';
-  return error.name;
-}
+// function describeFailure(error: unknown): string {
+//   if (!(error instanceof Error)) return 'unknown error';
+//   if (/^status \d{3}$/.test(error.message)) return error.message;
+//   if (error.message === 'not-csv') return 'the sheet returned a page, not CSV';
+//   return error.name;
+// }
 
 function logSkipped(skipped: SkippedRow[]): void {
   // A short note per row, capped: a badly formed sheet should not bury the log.
