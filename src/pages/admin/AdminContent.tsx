@@ -18,6 +18,7 @@ import {
   updatePost,
   restorePost,
   uploadCover,
+  uploadSpeakerPhoto,
   type AdminCategory,
   type AdminPost,
   type PostDraft,
@@ -316,6 +317,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
             onSubmit={(draft) => void handleSubmit(draft)}
             onAddCategory={handleAddCategory}
             uploadCover={uploadCover}
+            uploadSpeakerPhoto={uploadSpeakerPhoto}
           />
         ) : (
           <>

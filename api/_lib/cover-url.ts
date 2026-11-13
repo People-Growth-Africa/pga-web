@@ -25,15 +25,21 @@
 export const COVER_MEDIA_PREFIX = '/api/media/';
 
 /**
- * The pathnames a cover may live at, and nothing else: one of the two cover
- * folders, one file name segment, an image extension.
+ * The pathnames an image of ours may live at, and nothing else: one of the
+ * known folders, one file name segment, an image extension.
  *
  * The server generates those names itself (api/_lib/routes/admin-upload.ts), so
  * anything else did not come from here. Refusing the rest is what stops the
  * media endpoint from becoming a reader for the whole store: `..`, another
- * folder, or a pathname outside covers/ never reaches the Blob API.
+ * folder, or a pathname outside these never reaches the Blob API.
  */
+const MEDIA_PATHNAME = /^(?:covers|speakers)\/(?:full|thumb)\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:webp|jpe?g|png)$/;
+
+/** A cover, which is a post's hero image. */
 const COVER_PATHNAME = /^covers\/(?:full|thumb)\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:webp|jpe?g|png)$/;
+
+/** A speaker photo: a 400px square and its 96px thumbnail. */
+const SPEAKER_PATHNAME = /^speakers\/(?:full|thumb)\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:webp|jpe?g|png)$/;
 
 /** The host a Vercel Blob store answers on, in either access mode. */
 const BLOB_URL = /^https:\/\/[a-z0-9-]+\.(?:public|private)\.blob\.vercel-storage\.com\//i;
@@ -43,9 +49,49 @@ export function isCoverPathname(pathname: string): boolean {
   return COVER_PATHNAME.test(pathname);
 }
 
+/** Is this a pathname a speaker photo of ours can live at? */
+export function isSpeakerPathname(pathname: string): boolean {
+  return SPEAKER_PATHNAME.test(pathname);
+}
+
+/**
+ * Any image of ours the media endpoint may serve: covers and speaker photos.
+ * Used by the reader, which serves whichever was asked for, and by cleanup,
+ * which has to be able to remove either without learning a second rule.
+ */
+export function isMediaPathname(pathname: string): boolean {
+  return MEDIA_PATHNAME.test(pathname);
+}
+
+/** The URL a page uses for an image this deployment stores. */
+export function mediaUrl(pathname: string): string {
+  return `${COVER_MEDIA_PREFIX}${pathname}`;
+}
+
 /** The URL a page uses for a cover this deployment stores. */
 export function coverUrl(pathname: string): string {
-  return `${COVER_MEDIA_PREFIX}${pathname}`;
+  return mediaUrl(pathname);
+}
+
+/**
+ * The Blob pathname behind any image URL of ours, or null when the URL is not
+ * ours to serve or delete (a pasted image, another host, a malformed value).
+ */
+export function mediaPathname(url: string | null | undefined): string | null {
+  if (!url) return null;
+
+  if (url.startsWith(COVER_MEDIA_PREFIX)) {
+    const pathname = url.slice(COVER_MEDIA_PREFIX.length);
+    return isMediaPathname(pathname) ? pathname : null;
+  }
+
+  if (!BLOB_URL.test(url)) return null;
+  try {
+    const pathname = new URL(url).pathname.replace(/^\/+/, '');
+    return isMediaPathname(pathname) ? pathname : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

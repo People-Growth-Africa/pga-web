@@ -9,6 +9,7 @@ import { eventsList, type EventItem, type EventType } from '../data/events';
 import { coerceRegistrationForm } from './registrationForm';
 import { formatEventDate, formatTime, type FeedEntry } from './content';
 import { displayTime, formatEventDay, lagosDate, lagosTime, type LivePost } from './published';
+import type { SpeakerView } from './speakers';
 
 /**
  * How the sheet joins the content that already ships with the site.
@@ -57,6 +58,10 @@ export type BlogView = BlogPost & {
    */
   linkLabel?: string | null;
   linkUrl?: string | null;
+  /** The speakers a manager added, in position order. Always present for a live post. */
+  speakers?: SpeakerView[];
+  /** Whether the page should show the section at all. */
+  showSpeakers?: boolean;
 };
 
 /** A built-in or sheet event, with the extra facts the cards and page need. */
@@ -76,6 +81,10 @@ export type EventView = EventItem & {
   isPast: boolean;
   /** Online events say so instead of naming a venue, and the JSON-LD follows. */
   isOnline: boolean;
+  /** The speakers a manager added, in position order. */
+  speakers?: SpeakerView[];
+  /** Whether the page should show the section at all. */
+  showSpeakers?: boolean;
 };
 
 function initials(name: string): string {
@@ -158,6 +167,8 @@ export function blogFromLive(post: LivePost): BlogView {
     detailImage: post.coverImageUrl ?? post.coverImageThumbUrl ?? undefined,
     linkLabel: post.linkLabel,
     linkUrl: post.linkUrl,
+    speakers: post.speakers ?? [],
+    showSpeakers: post.showSpeakers ?? true,
     date: (post.publishedAt ?? post.updatedAt).slice(0, 10),
     author,
     readTime: readTime(post.body),
@@ -341,6 +352,8 @@ export function eventFromLive(post: LivePost, today: string = todayInLagos()): E
     detailImageUrl: post.coverImageUrl ?? post.coverImageThumbUrl,
     isPast,
     isOnline: post.isOnline,
+    speakers: post.speakers ?? [],
+    showSpeakers: post.showSpeakers ?? true,
   };
 }
 

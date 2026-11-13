@@ -6,6 +6,7 @@ import EventCard from '../components/EventCard';
 import EventShareButton from '../components/EventShareButton';
 import SafeContent from '../components/SafeContent';
 import PostBody from '../components/PostBody';
+import MeetTheSpeakers from '../components/MeetTheSpeakers';
 import SEO from '../components/SEO';
 import NotFound from './NotFound';
 import type { EventItem } from '../data/events';
@@ -375,6 +376,10 @@ export default function EventDetail() {
           <EventRegistrationModal event={registering} onClose={() => setRegistering(null)} />
         </Suspense>
       )}
+
+      {/* The speakers, last: an addition after everything the event page already
+          had, and nothing at all when there are none. */}
+      <MeetTheSpeakers speakers={event.speakers} show={event.showSpeakers !== false} />
     </>
   );
 }

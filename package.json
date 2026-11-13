@@ -27,6 +27,7 @@
     "migrate:notifications": "node scripts/migrate-notifications.mjs",
     "migrate:retention": "node scripts/migrate-retention.mjs",
     "migrate:scheduled-publishing": "node scripts/migrate-scheduled-publishing.mjs",
+    "migrate:post-speakers": "node scripts/migrate-post-speakers.mjs",
     "migrate:consultation-pipeline": "node scripts/migrate-consultation-pipeline.mjs",
     "migrate:auth-sessions": "node scripts/migrate-auth-sessions.mjs",
     "test:auth-sessions": "node scripts/test-auth-sessions.mjs",

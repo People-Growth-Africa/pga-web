@@ -1,6 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-import { findPostSlugRedirect, findPublishedPostBySlug, type PostType } from '../db.js';
+import {
+  findPostSlugRedirect,
+  findPublishedPostBySlug,
+  listPostSpeakers,
+  type PostType,
+} from '../db.js';
 import {
   renderFallbackArticle,
   renderGoneHead,
@@ -85,6 +90,10 @@ export default async function postPage(req: VercelRequest, res: VercelResponse):
     return;
   }
 
+  // The speakers are part of the page a crawler reads, not only of the app it
+  // mounts afterwards: names, roles and bios belong in the HTML.
+  const speakerRows = await listPostSpeakers(row.id);
+
   const post: PagePost = {
     type: row.type,
     slug: row.slug,
@@ -102,6 +111,16 @@ export default async function postPage(req: VercelRequest, res: VercelResponse):
     registrationUrl: row.registration_url ?? null,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
+    showSpeakers: row.show_speakers,
+    speakers: speakerRows.map((speaker) => ({
+      name: speaker.name,
+      role: speaker.role,
+      organisation: speaker.organisation,
+      bio: speaker.bio,
+      photoUrl: speaker.photo_url,
+      photoThumbUrl: speaker.photo_thumb_url,
+      linkedinUrl: speaker.linkedin_url,
+    })),
   };
 
   const html = withContent(withHead(shell, renderPostHead(post)), renderFallbackArticle(post));

@@ -1208,6 +1208,8 @@ export type PostRow = {
   registration_button_label: string | null;
   /** The event's editable registration form, or null for the built-in fields. */
   registration_form: unknown | null;
+  /** Whether the public page shows the "Meet the speakers" section. */
+  show_speakers: boolean;
   status: PostStatus;
   published_at: string | null;
   publish_at: string | null;
@@ -1224,7 +1226,7 @@ const POST_COLUMNS = `p.id, p.type, p.slug, p.title, p.excerpt, p.body, p.catego
          ${isoTimestamp('p', 'event_start')} AS event_start,
          ${isoTimestamp('p', 'event_end')} AS event_end,
          p.location_text, p.is_online, p.registration_url,
-         p.registration_intro, p.registration_button_label, p.registration_form, p.status,
+         p.registration_intro, p.registration_button_label, p.registration_form, p.show_speakers, p.status,
          ${isoTimestamp('p', 'published_at')} AS published_at,
          ${isoTimestamp('p', 'publish_at')} AS publish_at,
          ${isoTimestamp('p', 'created_at')} AS created_at,
@@ -1398,6 +1400,8 @@ export async function insertPost(input: {
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
   registrationForm: unknown | null;
+  /** Whether the public page shows the speakers section. */
+  showSpeakers: boolean;
   status: PostStatus;
   publishAt: string | null;
   authorId: string;
@@ -1407,10 +1411,11 @@ export async function insertPost(input: {
        (type, slug, title, excerpt, body, category_id, cover_image_url, cover_image_thumb_url,
         link_label, link_url, event_start, event_end, location_text, is_online, registration_url,
         registration_intro, registration_button_label, registration_form, status, publish_at, published_at,
+        show_speakers,
         author_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
              $16, $17, $18::jsonb, $19, $20,
-             CASE WHEN $19 = 'published' THEN now() ELSE NULL END, $21)
+             CASE WHEN $19 = 'published' THEN now() ELSE NULL END, $22, $21)
      RETURNING id, type, slug, title, status`;
   const params = [
       input.type,
@@ -1434,6 +1439,7 @@ export async function insertPost(input: {
       input.status,
       input.publishAt,
       input.authorId,
+      input.showSpeakers,
   ];
   if (input.audit) {
     const [row] = await auditedMutation<{ id: string }>({
@@ -1472,6 +1478,8 @@ export async function updatePost(input: {
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
   registrationForm: unknown | null;
+  /** Whether the public page shows the speakers section. */
+  showSpeakers: boolean;
   status: PostStatus;
   publishAt: string | null;
   audit?: AuditWrite;
@@ -1497,6 +1505,7 @@ export async function updatePost(input: {
             registration_form = $19::jsonb,
             status = $20,
             publish_at = $21,
+            show_speakers = $22,
             published_at = CASE
               WHEN $20 = 'published' THEN coalesce(published_at, now())
               ELSE NULL END,
@@ -1525,6 +1534,7 @@ export async function updatePost(input: {
       input.registrationForm === null ? null : JSON.stringify(input.registrationForm),
       input.status,
       input.publishAt,
+      input.showSpeakers,
   ];
   if (input.audit) {
     const [row] = await auditedMutation<{ id: string }>({
@@ -3169,4 +3179,136 @@ export async function findTrafficBotRule(id: string): Promise<TrafficBotRuleRow 
        FROM traffic_bot_rules WHERE id = $1`,
     [id],
   );
+}
+
+/* ── Post speakers ──────────────────────────────────────────────────────── */
+
+/**
+ * One speaker on a post.
+ *
+ * The list belongs to the post: a speaker has no page of its own and no
+ * identity outside the post they appear on, which is why the table is a child
+ * of `posts` with ON DELETE CASCADE and why the editor saves the whole list with
+ * the post instead of calling a separate endpoint per row.
+ */
+export type SpeakerRow = {
+  id: string;
+  post_id: string;
+  position: number;
+  name: string;
+  role: string | null;
+  organisation: string | null;
+  bio: string | null;
+  photo_url: string | null;
+  photo_thumb_url: string | null;
+  linkedin_url: string | null;
+};
+
+/** One speaker as a save request describes them; `id` only for an existing row. */
+export type SpeakerWrite = {
+  id?: string | null;
+  name: string;
+  role: string | null;
+  organisation: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  photoThumbUrl: string | null;
+  linkedinUrl: string | null;
+};
+
+const SPEAKER_COLUMNS = `id, post_id, position, name, role, organisation, bio,
+         photo_url, photo_thumb_url, linkedin_url`;
+
+/** Speakers for several posts at once, grouped by their `post_id`. */
+export async function listSpeakersForPosts(postIds: string[]): Promise<SpeakerRow[]> {
+  if (postIds.length === 0) return [];
+  return query<SpeakerRow>(
+    `SELECT ${SPEAKER_COLUMNS}
+       FROM post_speakers
+      WHERE post_id = ANY($1::uuid[])
+      ORDER BY post_id, position, created_at`,
+    [postIds],
+  );
+}
+
+/** Every speaker on one post, in display order. */
+export async function listPostSpeakers(postId: string): Promise<SpeakerRow[]> {
+  return query<SpeakerRow>(
+    `SELECT ${SPEAKER_COLUMNS}
+       FROM post_speakers
+      WHERE post_id = $1
+      ORDER BY position, created_at`,
+    [postId],
+  );
+}
+
+/**
+ * Makes the post's speakers match the list that was saved.
+ *
+ * Ids are what tell an edit from a new speaker, so an edited speaker keeps its
+ * row (and its id) and only the fields that changed are written. Rows the
+ * request did not name are deleted, which is how a removal works; the caller
+ * gets them back so it can delete the photos they pointed at. An id that does
+ * not belong to this post is treated as a new speaker rather than trusted, so a
+ * request cannot move another post's speaker by guessing an id.
+ */
+export async function syncPostSpeakers(
+  postId: string,
+  speakers: SpeakerWrite[],
+): Promise<{ removed: SpeakerRow[] }> {
+  const existing = await listPostSpeakers(postId);
+  const known = new Map(existing.map((row) => [row.id, row]));
+  const kept = new Set(
+    speakers
+      .map((speaker) => speaker.id ?? '')
+      .filter((id) => id !== '' && known.has(id)),
+  );
+  const removed = existing.filter((row) => !kept.has(row.id));
+
+  for (const row of removed) {
+    await query('DELETE FROM post_speakers WHERE id = $1 AND post_id = $2', [row.id, postId]);
+  }
+
+  for (const [position, speaker] of speakers.entries()) {
+    if (speaker.id && known.has(speaker.id)) {
+      await query(
+        `UPDATE post_speakers
+            SET position = $3, name = $4, role = $5, organisation = $6, bio = $7,
+                photo_url = $8, photo_thumb_url = $9, linkedin_url = $10, updated_at = now()
+          WHERE id = $1 AND post_id = $2`,
+        [
+          speaker.id,
+          postId,
+          position,
+          speaker.name,
+          speaker.role,
+          speaker.organisation,
+          speaker.bio,
+          speaker.photoUrl,
+          speaker.photoThumbUrl,
+          speaker.linkedinUrl,
+        ],
+      );
+      continue;
+    }
+
+    await query(
+      `INSERT INTO post_speakers
+         (post_id, position, name, role, organisation, bio, photo_url, photo_thumb_url, linkedin_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        postId,
+        position,
+        speaker.name,
+        speaker.role,
+        speaker.organisation,
+        speaker.bio,
+        speaker.photoUrl,
+        speaker.photoThumbUrl,
+        speaker.linkedinUrl,
+      ],
+    );
+  }
+
+  return { removed };
 }

@@ -30,6 +30,7 @@ import {
   updatePost,
   restorePost,
   uploadCover,
+  uploadSpeakerPhoto,
   type AdminCategory,
   type AdminPost,
   type PostDraft,
@@ -369,6 +370,7 @@ export default function AdminOversight() {
               return null;
             }}
             uploadCover={uploadCover}
+            uploadSpeakerPhoto={uploadSpeakerPhoto}
           />
         ) : loading || (access === null && !error) ? (
           <p className="rounded-[16px] border border-charcoal/10 bg-white p-10 text-center text-sm text-charcoal/50">

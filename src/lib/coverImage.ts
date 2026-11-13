@@ -18,6 +18,10 @@ const FULL_WIDTH = 1600;
 /** Long edge of the grid thumbnail. Cards are never wider than ~380 CSS px. */
 const THUMB_WIDTH = 640;
 
+/** A speaker photo is a square: 400px in the carousel, 96px in the avatar row. */
+const SPEAKER_SIZE = 400;
+const SPEAKER_THUMB_SIZE = 96;
+
 const FULL_QUALITY = 0.82;
 const THUMB_QUALITY = 0.72;
 
@@ -124,6 +128,77 @@ async function render(source: ImageBitmap | HTMLImageElement, targetWidth: numbe
   if (!blob) throw new CoverError('This browser could not convert the image. Try another browser.');
 
   return new File([blob], `${name}.webp`, { type: 'image/webp' });
+}
+
+/**
+ * The centred square of the source, drawn at `targetSize`.
+ *
+ * A portrait crop rather than a letterbox: a speaker's face is what the circle
+ * and the carousel card show, so the widest square that fits is the right crop
+ * and every avatar is the same shape.
+ */
+async function renderSquare(
+  source: ImageBitmap | HTMLImageElement,
+  targetSize: number,
+  quality: number,
+  name: string,
+): Promise<File> {
+  const { width, height } = dimensions(source);
+  if (width === 0 || height === 0) throw new CoverError('That image is empty.');
+
+  const side = Math.min(width, height);
+  const out = Math.min(targetSize, side);
+  const canvas = document.createElement('canvas');
+  canvas.width = out;
+  canvas.height = out;
+
+  const context = canvas.getContext('2d');
+  if (!context) throw new CoverError('This browser could not prepare the image. Try another browser.');
+
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(
+    source,
+    Math.round((width - side) / 2),
+    Math.round((height - side) / 2),
+    side,
+    side,
+    0,
+    0,
+    out,
+    out,
+  );
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((result) => resolve(result), 'image/webp', quality);
+  });
+  if (!blob) throw new CoverError('This browser could not convert the image. Try another browser.');
+
+  return new File([blob], `${name}.webp`, { type: 'image/webp' });
+}
+
+/** One picked file -> the square speaker pair (400px and its 96px thumbnail). */
+export async function compressSpeakerPhoto(
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<CoverPair> {
+  if (!file.type.startsWith('image/')) {
+    throw new CoverError('Choose a JPG, PNG or WebP image.');
+  }
+
+  const source = await decode(file);
+  onProgress(40);
+  const stem = file.name.replace(/\.[^.]+$/, '') || 'speaker';
+
+  try {
+    const [full, thumb] = await Promise.all([
+      renderSquare(source, SPEAKER_SIZE, FULL_QUALITY, `${stem}-full`),
+      renderSquare(source, SPEAKER_THUMB_SIZE, THUMB_QUALITY, `${stem}-thumb`),
+    ]);
+    onProgress(100);
+    return { full, thumb, width: SPEAKER_SIZE, height: SPEAKER_SIZE };
+  } finally {
+    if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
+  }
 }
 
 /**

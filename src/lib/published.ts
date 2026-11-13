@@ -11,6 +11,8 @@
  * `src/lib/contentMerge.ts`; nothing here decides what a page looks like.
  */
 
+import { coerceSpeakers, type SpeakerView } from './speakers';
+
 export type LivePostType = 'blog' | 'event';
 
 export type LivePost = {
@@ -34,6 +36,10 @@ export type LivePost = {
   registrationButtonLabel: string | null;
   /** The event's editable form, rendered by the registration modal. */
   registrationForm: unknown | null;
+  /** Whether the page shows the speakers section; absent means yes. */
+  showSpeakers?: boolean;
+  /** In position order, already reduced to what a page draws. */
+  speakers?: SpeakerView[];
   publishedAt: string | null;
   updatedAt: string;
 };
@@ -216,7 +222,14 @@ export function fetchLivePosts(): Promise<LiveFeed> {
       if (!response.ok) return { status: 'unavailable', posts: [] };
       const payload = (await response.json()) as { posts?: unknown };
       if (!Array.isArray(payload.posts)) return { status: 'unavailable', posts: [] };
-      return { status: 'ready', posts: payload.posts.filter(isLivePost) };
+      return {
+        status: 'ready',
+        posts: payload.posts.filter(isLivePost).map((post) => ({
+          ...post,
+          showSpeakers: post.showSpeakers !== false,
+          speakers: coerceSpeakers(post.speakers),
+        })),
+      };
     } catch {
       return { status: 'unavailable', posts: [] };
     }

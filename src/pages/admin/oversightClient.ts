@@ -1,5 +1,6 @@
 import { authRequest, NETWORK_FAILURE, type ApiFailure } from '../../lib/authClient';
-import { compressCover, CoverError } from '../../lib/coverImage';
+import { compressCover, compressSpeakerPhoto, CoverError, type CoverPair } from '../../lib/coverImage';
+import type { SpeakerDraftInput, SpeakerRecord } from '../../lib/speakers';
 import type { RegistrationForm } from '../../lib/registrationForm';
 
 /**
@@ -46,6 +47,10 @@ export type AdminPost = {
   author_id: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
+  /** Whether the public page shows the "Meet the speakers" section. */
+  show_speakers: boolean;
+  /** In position order, `[]` when the post has none. */
+  speakers: SpeakerRecord[];
 };
 
 export type AdminCategory = {
@@ -78,6 +83,9 @@ export type PostDraft = {
   registrationForm: RegistrationForm | null;
   status: 'draft' | 'published' | 'scheduled';
   publishAt: string | null;
+  /** The whole list, in display order: saving replaces what the post had. */
+  showSpeakers: boolean;
+  speakers: SpeakerDraftInput[];
 };
 
 export type Result<T> = { ok: true; data: T } | { ok: false; failure: ApiFailure };
@@ -183,11 +191,32 @@ export async function uploadCover(
   file: File,
   onProgress: (percent: number) => void,
 ): Promise<Result<{ url: string; thumbUrl: string }>> {
-  let pair: Awaited<ReturnType<typeof compressCover>>;
+  return uploadPair(file, 'cover', compressCover, onProgress);
+}
+
+/**
+ * A speaker photo: the same pipeline as a cover, squared and stored under
+ * speakers/ so the two kinds of image stay apart in the Blob store.
+ */
+export async function uploadSpeakerPhoto(
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<Result<{ url: string; thumbUrl: string }>> {
+  return uploadPair(file, 'speaker', compressSpeakerPhoto, onProgress);
+}
+
+/** The shared half: compress into a pair, then upload each one. */
+async function uploadPair(
+  file: File,
+  kind: 'cover' | 'speaker',
+  compress: (file: File, onProgress: (percent: number) => void) => Promise<CoverPair>,
+  onProgress: (percent: number) => void,
+): Promise<Result<{ url: string; thumbUrl: string }>> {
+  let pair: CoverPair;
   try {
     // Preparing the pair is the quiet, CPU-bound part; it owns the first third
     // of the bar so the two uploads that follow have something to fill.
-    pair = await compressCover(file, (percent) => onProgress(Math.round(percent * 0.3)));
+    pair = await compress(file, (percent) => onProgress(Math.round(percent * 0.3)));
   } catch (error) {
     return {
       ok: false,
@@ -201,12 +230,12 @@ export async function uploadCover(
     };
   }
 
-  const full = await postImage(pair.full, 'full', (percent) =>
+  const full = await postImage(pair.full, 'full', kind, (percent) =>
     onProgress(30 + Math.round(percent * 0.4)),
   );
   if (!full.ok) return full;
 
-  const thumb = await postImage(pair.thumb, 'thumb', (percent) =>
+  const thumb = await postImage(pair.thumb, 'thumb', kind, (percent) =>
     onProgress(70 + Math.round(percent * 0.3)),
   );
   if (!thumb.ok) {
@@ -226,6 +255,7 @@ export async function uploadCover(
 async function postImage(
   file: File,
   variant: 'full' | 'thumb',
+  kind: 'cover' | 'speaker',
   onProgress: (percent: number) => void,
 ): Promise<Result<{ url: string }>> {
   const base64 = await readAsBase64(file, onProgress);
@@ -239,6 +269,7 @@ async function postImage(
         filename: file.name,
         contentType: file.type,
         variant,
+        kind,
         data: base64,
       }),
     });

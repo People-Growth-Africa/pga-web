@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 import { endpoint, sendPublicJson } from '../http.js';
-import { listPublishedPosts, type PostRow } from '../db.js';
+import { listPublishedPosts, listSpeakersForPosts, type PostRow, type SpeakerRow } from '../db.js';
 import { contentVersion } from '../content/version.js';
 
 /**
@@ -33,6 +33,16 @@ const POSTS_STALE_SECONDS = 60;
 /** Never more than this many rows in one response, so the payload stays bounded. */
 const MAX_POSTS = 300;
 
+type PublicSpeaker = {
+  name: string;
+  role: string | null;
+  organisation: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  photoThumbUrl: string | null;
+  linkedinUrl: string | null;
+};
+
 type PublicPost = {
   type: 'blog' | 'event';
   slug: string;
@@ -54,11 +64,33 @@ type PublicPost = {
   registrationButtonLabel: string | null;
   /** The event's form, so the public modal renders what the panel saved. */
   registrationForm: unknown | null;
+  /** Whether the speakers section is shown on the page. */
+  showSpeakers: boolean;
+  /** In position order; an empty list means the page renders no section. */
+  speakers: PublicSpeaker[];
   publishedAt: string | null;
   updatedAt: string;
 };
 
-function toPublicPost(row: PostRow): PublicPost {
+/**
+ * One speaker, reduced to what a page draws.
+ *
+ * The row id stays on the server: a public reader links to a LinkedIn profile,
+ * not to a speaker record, and the editor is the only caller that needs ids.
+ */
+function toPublicSpeaker(row: SpeakerRow): PublicSpeaker {
+  return {
+    name: row.name,
+    role: row.role,
+    organisation: row.organisation,
+    bio: row.bio,
+    photoUrl: row.photo_url,
+    photoThumbUrl: row.photo_thumb_url,
+    linkedinUrl: row.linkedin_url,
+  };
+}
+
+function toPublicPost(row: PostRow, speakers: PublicSpeaker[]): PublicPost {
   return {
     type: row.type,
     slug: row.slug,
@@ -79,19 +111,35 @@ function toPublicPost(row: PostRow): PublicPost {
     registrationIntro: row.registration_intro,
     registrationButtonLabel: row.registration_button_label,
     registrationForm: row.registration_form,
+    showSpeakers: row.show_speakers,
+    speakers,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
   };
 }
 
+/** The speakers, grouped by post, in the order the table returned them. */
+function groupSpeakers(rows: SpeakerRow[]): Map<string, PublicSpeaker[]> {
+  const byPost = new Map<string, PublicSpeaker[]>();
+  for (const row of rows) {
+    const list = byPost.get(row.post_id);
+    if (list) list.push(toPublicSpeaker(row));
+    else byPost.set(row.post_id, [toPublicSpeaker(row)]);
+  }
+  return byPost;
+}
+
 export default endpoint({ methods: ['GET'] }, async (_req: VercelRequest, res: VercelResponse) => {
-  const rows = await listPublishedPosts();
+  const listed = (await listPublishedPosts()).slice(0, MAX_POSTS);
+  // One query for every page's speakers, not one per post: the feed carries all
+  // of them, and a hundred posts would otherwise cost a hundred round trips.
+  const speakers = groupSpeakers(await listSpeakersForPosts(listed.map((row) => row.id)));
 
   sendPublicJson(
     res,
     200,
     {
-      posts: rows.slice(0, MAX_POSTS).map(toPublicPost),
+      posts: listed.map((row) => toPublicPost(row, speakers.get(row.id) ?? [])),
       version: contentVersion(),
     },
     POSTS_CACHE_SECONDS,

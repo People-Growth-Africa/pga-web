@@ -6,6 +6,7 @@ import AnimateOnScroll from '../components/AnimateOnScroll';
 import ContentImage from '../components/ContentImage';
 import SafeContent from '../components/SafeContent';
 import PostBody from '../components/PostBody';
+import MeetTheSpeakers from '../components/MeetTheSpeakers';
 import SEO from '../components/SEO';
 import NewsletterSignup from '../components/NewsletterSignup';
 import { useContent } from '../hooks/useContent';
@@ -489,6 +490,10 @@ export default function BlogPostPage() {
           </AnimateOnScroll>
         </div>
       </section>
+
+      {/* The speakers, last: an addition after everything the post already had,
+          and nothing at all when there are none. */}
+      <MeetTheSpeakers speakers={post.speakers} show={post.showSpeakers !== false} />
     </>
   );
 }

@@ -21,6 +21,17 @@ const ORG_ID = `${SITE_URL}/#organization`;
 const DEFAULT_IMAGE = '/images/og-image.jpg';
 const MAX_DESCRIPTION_LENGTH = 155;
 
+/** One speaker as the crawler's copy of the page draws them. */
+export type PageSpeaker = {
+  name: string;
+  role: string | null;
+  organisation: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  photoThumbUrl: string | null;
+  linkedinUrl: string | null;
+};
+
 /** The fields a page needs, including the body so the response can carry it. */
 export type PagePost = {
   type: PostType;
@@ -40,6 +51,10 @@ export type PagePost = {
   registrationUrl: string | null;
   publishedAt: string | null;
   updatedAt: string;
+  /** Whether the manager left the speakers section on. */
+  showSpeakers: boolean;
+  /** In position order; an empty list means no section at all. */
+  speakers: PageSpeaker[];
 };
 
 export function postPath(post: Pick<PagePost, 'type' | 'slug'>): string {
@@ -306,6 +321,50 @@ function formatInstant(value: string | null): string {
   }).format(date);
 }
 
+/**"Role, Organisation", or whichever one is set. */
+function speakerLine(speaker: PageSpeaker): string {
+  return [speaker.role, speaker.organisation]
+    .map((part) => part?.trim() ?? '')
+    .filter(Boolean)
+    .join(', ');
+}
+
+/**
+ * The speakers, in the readable block a crawler gets.
+ *
+ * Inline styles for the same reason as the rest of this file: the site's CSS is
+ * built from src/, so a class that exists only here would not be in the
+ * stylesheet. Every value is escaped, and a bio is text in a <p> - never HTML,
+ * which is what keeps a manager's paragraph from becoming markup.
+ */
+function renderSpeakersHtml(speakers: PageSpeaker[]): string {
+  const items = speakers.map((speaker) => {
+    const photo = speaker.photoThumbUrl ?? speaker.photoUrl;
+    const line = speakerLine(speaker);
+    return [
+      '<li style="width:9.5rem;list-style:none">',
+      photo
+        ? `<img src="${escapeHtml(absoluteUrl(photo))}" alt="" width="96" height="96" loading="lazy" style="width:6rem;height:6rem;border-radius:999px;object-fit:cover;background:#d9ece5" />`
+        : `<div aria-hidden="true" style="display:flex;width:6rem;height:6rem;align-items:center;justify-content:center;border-radius:999px;background:#d9ece5;color:#0f6e56;font-family:Georgia,'Times New Roman',serif;font-size:1.75rem;font-weight:700">${escapeHtml(speaker.name.trim().charAt(0).toUpperCase())}</div>`,
+      `<p style="margin:.7rem 0 0;font-weight:600">${escapeHtml(speaker.name)}</p>`,
+      line ? `<p style="margin:.15rem 0 0;font-size:.9rem;color:#5b6b68">${escapeHtml(line)}</p>` : '',
+      speaker.bio
+        ? `<p style="margin:.4rem 0 0;font-size:.85rem;line-height:1.55;color:#5b6b68">${escapeHtml(speaker.bio)}</p>`
+        : '',
+      '</li>',
+    ]
+      .filter(Boolean)
+      .join('');
+  });
+
+  return [
+    '<section style="margin:2.5rem 0 0;border-top:1px solid #e2e5e2;padding-top:1.75rem">',
+    '<h2 style="font-family:Georgia,\'Times New Roman\',serif;font-size:1.5rem;margin:0 0 1.25rem">Meet the speakers</h2>',
+    `<ul style="display:flex;flex-wrap:wrap;gap:1.5rem;margin:0;padding:0">${items.join('')}</ul>`,
+    '</section>',
+  ].join('');
+}
+
 /** An http(s) link, or nothing. Used for the registration button. */
 function safeHttpUrl(value: string | null): string | null {
   return value && /^https?:\/\/[^"<>\s]+$/i.test(value) ? value : null;
@@ -386,6 +445,9 @@ export function renderFallbackArticle(post: PagePost): string {
       : '',
     isEvent && registration
       ? `<p style="margin:2rem 0 0"><a href="${escapeHtml(registration)}" rel="noopener noreferrer" style="display:inline-block;background:#0f6e56;color:#fff;padding:.7rem 1.4rem;border-radius:999px;text-decoration:none;font-weight:600">Register for this event</a></p>`
+      : '',
+    post.showSpeakers && post.speakers.length > 0
+      ? renderSpeakersHtml(post.speakers)
       : '',
     '</article>',
     '</div>',

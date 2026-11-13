@@ -10,7 +10,7 @@ import {
 } from '../http.js';
 import { hasEffectivePermission } from '../access.js';
 import { requireAnyPermission, requirePermission, requireSuperAdmin } from '../staff.js';
-import { auditActorForUser, prepareAuditWrite, recordAuthEvent } from '../audit.js';
+import { auditActorForUser, logAudit, prepareAuditWrite, recordAuthEvent } from '../audit.js';
 import {
   parseInput,
   postByIdSchema,
@@ -19,6 +19,7 @@ import {
   postStatusSchema,
   postRestoreSchema,
   postUpdateSchema,
+  type PostCreateInput,
 } from '../validation.js';
 import {
   deletePost,
@@ -27,15 +28,20 @@ import {
   insertPost,
   isUniqueViolation,
   listCategories,
+  listPostSpeakers,
   listPostsForAdmin,
+  listSpeakersForPosts,
   recordPostSlugRedirect,
   restorePost,
+  syncPostSpeakers,
   updatePost,
   type Role,
+  type SpeakerRow,
+  type SpeakerWrite,
 } from '../db.js';
 import { enforceRateLimit } from '../ratelimit.js';
 import { markContentChanged } from '../content/version.js';
-import { deleteCoverBlobs } from '../cover-blobs.js';
+import { deleteCoverBlobs, deleteMediaBlobs } from '../cover-blobs.js';
 import { announcePostChange } from '../indexnow.js';
 import { scheduleBestEffort } from '../best-effort.js';
 import { reportRecordDeletion } from '../security-alerts.js';
@@ -143,7 +149,8 @@ async function listHandler(req: VercelRequest, res: VercelResponse): Promise<voi
     listCategories(),
   ]);
 
-  sendJson(res, 200, { posts, categories });
+  const speakers = await listSpeakersForPosts(posts.map((post) => post.id));
+  sendJson(res, 200, { posts: withSpeakers(posts, speakers), categories });
 }
 
 /**
@@ -172,6 +179,7 @@ function postColumnsFrom(data: {
   registrationIntro?: string | null;
   registrationButtonLabel?: string | null;
   registrationForm?: unknown;
+  showSpeakers?: boolean;
   status: 'draft' | 'published' | 'scheduled';
   publishAt?: string | null;
 }) {
@@ -194,9 +202,147 @@ function postColumnsFrom(data: {
     registrationIntro: data.registrationIntro ?? null,
     registrationButtonLabel: data.registrationButtonLabel ?? null,
     registrationForm: data.registrationForm ?? null,
+    showSpeakers: data.showSpeakers ?? true,
     status: data.status,
     publishAt: data.status === 'scheduled' ? data.publishAt ?? null : null,
   };
+}
+
+/** The list rows, each carrying its own speakers in position order. */
+function withSpeakers<T extends { id: string }>(posts: T[], speakers: SpeakerRow[]) {
+  const byPost = new Map<string, SpeakerRow[]>();
+  for (const row of speakers) {
+    const list = byPost.get(row.post_id);
+    if (list) list.push(row);
+    else byPost.set(row.post_id, [row]);
+  }
+  return posts.map((post) => ({ ...post, speakers: byPost.get(post.id) ?? [] }));
+}
+
+/** One post, as create and update answer with it: the row plus its speakers. */
+async function postWithSpeakers(id: string) {
+  const post = await findPostById(id);
+  if (!post) return post;
+  return { ...post, speakers: await listPostSpeakers(id) };
+}
+
+/**
+ * The validated request, as the row writes expect it.
+ *
+ * The schema's optional fields are `undefined` when they were left out; the
+ * database columns want a value, so every one is normalised to null here rather
+ * than in six places.
+ */
+function speakerWrites(speakers: PostCreateInput['speakers']): SpeakerWrite[] {
+  return (speakers ?? []).map((speaker) => ({
+    id: speaker.id ?? null,
+    name: speaker.name,
+    role: speaker.role ?? null,
+    organisation: speaker.organisation ?? null,
+    bio: speaker.bio ?? null,
+    photoUrl: speaker.photoUrl ?? null,
+    photoThumbUrl: speaker.photoThumbUrl ?? null,
+    linkedinUrl: speaker.linkedinUrl ?? null,
+  }));
+}
+
+/**
+ * Saves a post's speakers and says who changed what.
+ *
+ * The audit is written per speaker rather than per request: a manager reading
+ * the log wants to see "Ada Obi removed", not "speakers saved". Reordering
+ * gets one entry of its own, because it changes the page without changing any
+ * speaker's details.
+ */
+async function saveSpeakers(input: {
+  req: VercelRequest;
+  userId: string;
+  postId: string;
+  speakers: SpeakerWrite[];
+}): Promise<void> {
+  const before = await listPostSpeakers(input.postId);
+  const { removed } = await syncPostSpeakers(input.postId, input.speakers);
+  const after = await listPostSpeakers(input.postId);
+  await logSpeakerChanges({ ...input, before, after, removed });
+
+  // Photos of a speaker that is gone, or that was given a different photo, are
+  // no longer pointed at by anything: object storage has no cascade.
+  const replaced = before.flatMap((row) => {
+    const now = after.find((entry) => entry.id === row.id);
+    if (!now) return [];
+    return [
+      now.photo_url !== row.photo_url ? row.photo_url : null,
+      now.photo_thumb_url !== row.photo_thumb_url ? row.photo_thumb_url : null,
+    ];
+  });
+  await deleteMediaBlobs([
+    ...removed.flatMap((row) => [row.photo_url, row.photo_thumb_url]),
+    ...replaced,
+  ]);
+}
+
+async function logSpeakerChanges(input: {
+  req: VercelRequest;
+  userId: string;
+  postId: string;
+  before: SpeakerRow[];
+  after: SpeakerRow[];
+  removed: SpeakerRow[];
+}): Promise<void> {
+  const actor = await auditActorForUser(input.userId);
+  const beforeById = new Map(input.before.map((row) => [row.id, row]));
+  const afterById = new Map(input.after.map((row) => [row.id, row]));
+
+  for (const row of input.after) {
+    const previous = beforeById.get(row.id);
+    const entity = { type: 'speaker', id: input.postId, label: row.name };
+
+    if (!previous) {
+      await logAudit({
+        req: input.req,
+        actor,
+        action: 'content.speaker_add',
+        entity,
+        after: { name: row.name, position: row.position },
+      });
+      continue;
+    }
+
+    const fields = ['name', 'role', 'organisation', 'bio', 'photo_url', 'photo_thumb_url', 'linkedin_url'] as const;
+    if (fields.some((key) => previous[key] !== row[key])) {
+      await logAudit({
+        req: input.req,
+        actor,
+        action: 'content.speaker_edit',
+        entity,
+        before: { name: previous.name, position: previous.position },
+        after: { name: row.name, position: row.position },
+      });
+    }
+  }
+
+  for (const row of input.removed) {
+    await logAudit({
+      req: input.req,
+      actor,
+      action: 'content.speaker_remove',
+      entity: { type: 'speaker', id: input.postId, label: row.name },
+      before: { name: row.name, position: row.position },
+    });
+  }
+
+  const commonBefore = input.before.filter((row) => afterById.has(row.id)).map((row) => row.id);
+  const commonAfter = input.after.filter((row) => beforeById.has(row.id)).map((row) => row.id);
+  if (commonBefore.length > 1 && commonBefore.join('|') !== commonAfter.join('|')) {
+    await logAudit({
+      req: input.req,
+      actor,
+      action: 'content.speaker_reorder',
+      entity: { type: 'speaker', id: input.postId, label: null },
+      before: { count: commonBefore.length },
+      after: { count: commonAfter.length },
+    });
+  }
 }
 
 async function createHandler(req: VercelRequest, res: VercelResponse, manager: PostActor): Promise<void> {
@@ -229,9 +375,12 @@ async function createHandler(req: VercelRequest, res: VercelResponse, manager: P
       audit,
     });
     if (!id) throw new ApiError(500, 'not_saved', 'The post could not be saved. Try again.');
+    if (data.speakers !== undefined) {
+      await saveSpeakers({ req, userId, postId: id, speakers: speakerWrites(data.speakers) });
+    }
 
     markContentChanged();
-    const post = await findPostById(id);
+    const post = await postWithSpeakers(id);
     // A post saved straight to published has a URL from this moment, so Bing and
     // Yandex are told rather than left to find it on their next crawl. A new
     // draft changes nothing public and sends nothing.
@@ -298,6 +447,14 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, manager: P
       audit,
     });
     if (!updated) throw new ApiError(500, 'not_saved', 'The post could not be saved. Try again.');
+    if (data.speakers !== undefined) {
+      await saveSpeakers({
+        req,
+        userId,
+        postId: data.id,
+        speakers: speakerWrites(data.speakers),
+      });
+    }
 
     if (existing.slug !== data.slug) {
       await recordPostSlugRedirect(existing.type, existing.slug, existing.id);
@@ -314,7 +471,7 @@ async function updateHandler(req: VercelRequest, res: VercelResponse, manager: P
     ]);
 
     markContentChanged();
-    const post = await findPostById(data.id);
+    const post = await postWithSpeakers(data.id);
     if (post) {
       announcePostChange({
         type: post.type,
@@ -386,6 +543,7 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, manager: P
     registrationIntro: existing.registration_intro,
     registrationButtonLabel: existing.registration_button_label,
     registrationForm: existing.registration_form,
+    showSpeakers: existing.show_speakers,
     status,
     publishAt: null,
     audit,
@@ -393,7 +551,7 @@ async function statusHandler(req: VercelRequest, res: VercelResponse, manager: P
   if (!updated) throw new ApiError(500, 'not_saved', 'That change could not be saved. Try again.');
 
   markContentChanged();
-  const post = await findPostById(id);
+  const post = await postWithSpeakers(id);
   if (post) {
     announcePostChange({
       type: post.type,
@@ -419,6 +577,11 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, manager: P
 
   const permanent = req.query?.purge === 'true';
   if (permanent) await requireSuperAdmin(req, res);
+  // Read before the delete: the rows cascade away with the post, and their
+  // photos are not in the database at all.
+  const speakerPhotos = permanent
+    ? (await listPostSpeakers(id)).flatMap((row) => [row.photo_url, row.photo_thumb_url])
+    : [];
   const audit = prepareAuditWrite({
     req,
     actor: await auditActorForUser(userId),
@@ -432,7 +595,10 @@ async function deleteHandler(req: VercelRequest, res: VercelResponse, manager: P
   if (!deleted) throw new ApiError(404, 'not_found', 'That post could not be found.');
   scheduleBestEffort(() => reportRecordDeletion(userId), 'security-alert');
 
-  if (permanent) await deleteCoverBlobs([existing.cover_image_url, existing.cover_image_thumb_url]);
+  if (permanent) {
+    await deleteCoverBlobs([existing.cover_image_url, existing.cover_image_thumb_url]);
+    await deleteMediaBlobs(speakerPhotos);
+  }
   await recordAuthEvent('admin_post_delete', { userId, ip: clientIp(req) });
   // A published URL is about to 404. IndexNow has no delete verb: submitting the
   // URL is how an engine is told to recrawl and drop it. A draft never had a

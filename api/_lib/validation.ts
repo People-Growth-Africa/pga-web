@@ -298,7 +298,7 @@ const id = z
  * api/_lib/cover-url.ts), so that path has to be accepted here or the panel could
  * not save a cover it had just uploaded itself.
  */
-const OWN_COVER_PATH = /^\/api\/media\/covers\/(?:full|thumb)\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:webp|jpe?g|png)$/;
+const OWN_COVER_PATH = /^\/api\/media\/(?:covers|speakers)\/(?:full|thumb)\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:webp|jpe?g|png)$/;
 
 /**
  * Cover images are URLs, http(s) or one of our own media paths. A `javascript:`
@@ -375,6 +375,60 @@ const optionalLine = (max: number, label: string) =>
     .nullable()
     .optional();
 
+const SPEAKER_NAME_MAX = 80;
+const SPEAKER_ROLE_MAX = 80;
+const SPEAKER_ORGANISATION_MAX = 120;
+const SPEAKER_BIO_MAX = 280;
+const MAX_SPEAKERS = 12;
+const LINKEDIN_MAX = 300;
+
+/**
+ * An optional LinkedIn profile: https only, on linkedin.com, with no credentials
+ * in the URL. The value is written into an href on a public page, so a
+ * `javascript:` or `http:` one is refused here rather than trusted to the
+ * renderer.
+ */
+const linkedinUrl = z
+  .string()
+  .trim()
+  .max(LINKEDIN_MAX, `LinkedIn URL must be ${LINKEDIN_MAX} characters or fewer.`)
+  .refine((value) => {
+    if (value === '') return true;
+    try {
+      const url = new URL(value);
+      return (
+        url.protocol === 'https:' &&
+        !url.username &&
+        !url.password &&
+        /^(?:[a-z0-9-]+\.)?linkedin\.com$/i.test(url.hostname)
+      );
+    } catch {
+      return false;
+    }
+  }, 'Use a full https://www.linkedin.com/… URL.')
+  .transform((value) => (value === '' ? null : value))
+  .nullable()
+  .optional();
+
+/**
+ * One speaker, as the editor sends it.
+ *
+ * `id` is present only for a speaker that already exists, which is what lets the
+ * server tell an edit from an add instead of replacing the whole list. Every
+ * text field is trimmed and capped here; the bio is the one with a limit a
+ * reader can see, and 280 is the number the counter shows.
+ */
+const postSpeakerSchema = z.strictObject({
+  id: id.optional(),
+  name: requiredText(SPEAKER_NAME_MAX, 'speaker name', "Enter the speaker's name."),
+  role: optionalLine(SPEAKER_ROLE_MAX, 'Role'),
+  organisation: optionalLine(SPEAKER_ORGANISATION_MAX, 'Organisation'),
+  bio: optionalLine(SPEAKER_BIO_MAX, 'Bio'),
+  photoUrl: coverImageUrl,
+  photoThumbUrl: coverImageUrl,
+  linkedinUrl,
+});
+
 const postFields = {
   type: z.enum(POST_TYPES),
   slug,
@@ -397,6 +451,12 @@ const postFields = {
   registrationForm: registrationFormSaveSchema.nullable().optional(),
   status: z.enum(POST_STATUS),
   publishAt: eventInstant,
+  /** Whether the public page shows the speakers section. */
+  showSpeakers: z.boolean().optional(),
+  speakers: z
+    .array(postSpeakerSchema)
+    .max(MAX_SPEAKERS, `A post can have ${MAX_SPEAKERS} speakers or fewer.`)
+    .optional(),
 };
 
 type PostValues = {

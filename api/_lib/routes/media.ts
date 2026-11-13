@@ -1,7 +1,7 @@
 import { get } from '@vercel/blob';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-import { isCoverPathname } from '../cover-url.js';
+import { isMediaPathname } from '../cover-url.js';
 import { endpoint } from '../http.js';
 
 /**
@@ -64,7 +64,7 @@ export default endpoint({ methods: ['GET', 'HEAD'] }, async (req: VercelRequest,
 
   // Without a token nothing can have been stored privately, so a request for one
   // is a miss rather than a configuration error worth a 500 on an image.
-  if (!isCoverPathname(pathname) || !token) {
+  if (!isMediaPathname(pathname) || !token) {
     notFound(res);
     return;
   }

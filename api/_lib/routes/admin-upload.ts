@@ -2,7 +2,7 @@ import { put } from '@vercel/blob';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHash, randomBytes } from 'node:crypto';
 
-import { coverUrl } from '../cover-url.js';
+import { mediaUrl } from '../cover-url.js';
 import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../http.js';
 import { requirePermission } from '../staff.js';
 import { enforceRateLimit } from '../ratelimit.js';
@@ -54,6 +54,12 @@ type UploadBody = {
    * folder it lands in, so a human browsing the store can see the pairing.
    */
   variant?: unknown;
+  /**
+   * Which image this is. A cover belongs to a post; a speaker photo is a square
+   * portrait for one speaker. It only decides the folder, so a human browsing
+   * the store can tell the two apart.
+   */
+  kind?: unknown;
 };
 
 /** The extensions we will store, and the bytes that actually identify them. */
@@ -147,6 +153,7 @@ export function makeUploadHandler(
 
   const extension = TYPES[type].extension;
   const variant = body.variant === 'thumb' ? 'thumb' : 'full';
+  const folder = body.kind === 'speaker' ? 'speakers' : 'covers';
   const stem = slugStem(typeof body.filename === 'string' ? body.filename : '');
   // Random suffix plus the content hash: two managers uploading the same photo
   // get two files, and a re-upload of an edited image never serves the old one
@@ -159,7 +166,7 @@ export function makeUploadHandler(
   // became a bare 500 that said nothing to the manager and nothing in the logs,
   // so `storeCover` answers with the store's own reason instead.
   const stored = await storeCover(
-    `covers/${variant}/${name}`,
+    `${folder}/${variant}/${name}`,
     buffer,
     TYPES[type].contentType,
   );
@@ -208,7 +215,7 @@ async function storeCover(
     try {
       const blob = await put(pathname, body, { access, contentType, allowOverwrite: false });
       return {
-        url: access === 'private' ? coverUrl(blob.pathname) : blob.url,
+        url: access === 'private' ? mediaUrl(blob.pathname) : blob.url,
         pathname: blob.pathname,
       };
     } catch (error) {
