@@ -2,6 +2,13 @@ import { neon } from '@neondatabase/serverless';
 import type { MutationAuditField } from './audit.js';
 import type { Permission } from './permissions.js';
 import { trafficClassificationCtes } from './traffic-bots.js';
+import {
+  MAX_SLUG_REDIRECT_DEPTH,
+  hasSlugConflict,
+  resolveSlugRedirectChain,
+  type SlugRedirectEdge,
+  type SlugRouteType,
+} from './slug-redirects.js';
 
 /**
  * Every statement in the app lives in this module. User input is only ever sent
@@ -1358,13 +1365,30 @@ export async function listPublishedPosts(type?: PostType): Promise<PostRow[]> {
   );
 }
 
-export async function findPublishedPostBySlug(slug: string): Promise<PostRow | null> {
+export async function findPublishedPostBySlug(type: PostType, slug: string): Promise<PostRow | null> {
   return queryOne<PostRow>(
     `SELECT ${POST_COLUMNS} ${POST_FROM}
-      WHERE p.slug = $1 AND p.deleted_at IS NULL
+      WHERE p.type = $1 AND p.slug = $2 AND p.deleted_at IS NULL
         AND (p.status = 'published' OR (p.status = 'scheduled' AND p.publish_at <= now()))`,
-    [slug],
+    [type, slug],
   );
+}
+
+export async function hasPostSlugConflict(
+  type: PostType,
+  slug: string,
+  postId: string | null,
+): Promise<boolean> {
+  const [posts, redirects] = await Promise.all([
+    query<{ id: string; slug: string }>('SELECT id, slug FROM posts WHERE slug = $1', [slug]),
+    query<{ type: SlugRouteType; oldSlug: string; postId: string }>(
+      `SELECT type, old_slug AS "oldSlug", post_id AS "postId"
+         FROM post_slug_redirects
+        WHERE type = $1 AND old_slug = $2`,
+      [type, slug],
+    ),
+  ]);
+  return hasSlugConflict({ type, slug, postId, posts, redirects });
 }
 
 /** A public registration may only name an event that is actually live. */
@@ -1605,14 +1629,65 @@ export async function listPublishedSlugs(): Promise<
 export async function findPostSlugRedirect(
   type: PostType,
   oldSlug: string,
-): Promise<{ slug: string } | null> {
-  return queryOne<{ slug: string }>(
-    `SELECT p.slug
-       FROM post_slug_redirects r
-       JOIN posts p ON p.id = r.post_id
-      WHERE r.type = $1 AND r.old_slug = $2 AND p.status = 'published' AND p.deleted_at IS NULL`,
-    [type, oldSlug],
+): Promise<{ post: PostRow; cycleDetected: boolean; depthExceeded: boolean } | null> {
+  const edges = await query<SlugRedirectEdge>(
+    `WITH RECURSIVE chain AS (
+       SELECT r.type AS "sourceType", r.old_slug AS "sourceSlug",
+              p.type AS "targetType", p.slug AS "targetSlug", p.id AS "postId",
+              1 AS depth, ARRAY[r.type || '/' || r.old_slug]::text[] AS visited,
+              p.type || '/' || p.slug = r.type || '/' || r.old_slug AS "cycleDetected"
+         FROM post_slug_redirects r
+         JOIN posts p ON p.id = r.post_id
+        WHERE r.type = $1 AND r.old_slug = $2
+          AND p.deleted_at IS NULL
+          AND (p.status = 'published' OR (p.status = 'scheduled' AND p.publish_at <= now()))
+       UNION ALL
+       SELECT r.type AS "sourceType", r.old_slug AS "sourceSlug",
+              p.type AS "targetType", p.slug AS "targetSlug", p.id AS "postId",
+              chain.depth + 1,
+              chain.visited || (chain."targetType" || '/' || chain."targetSlug"),
+              p.type || '/' || p.slug = ANY(
+                chain.visited || (chain."targetType" || '/' || chain."targetSlug")
+              )
+         FROM chain
+         JOIN post_slug_redirects r
+           ON r.type = chain."targetType" AND r.old_slug = chain."targetSlug"
+         JOIN posts p ON p.id = r.post_id
+        WHERE NOT chain."cycleDetected"
+          AND chain.depth < $3
+          AND p.deleted_at IS NULL
+          AND (p.status = 'published' OR (p.status = 'scheduled' AND p.publish_at <= now()))
+     )
+     SELECT chain."sourceType", chain."sourceSlug", chain."targetType",
+            chain."targetSlug", chain."postId",
+            chain.depth = $3 AND EXISTS (
+              SELECT 1 FROM post_slug_redirects next
+               WHERE next.type = chain."targetType" AND next.old_slug = chain."targetSlug"
+            ) AS "hasMore"
+       FROM chain
+      ORDER BY chain.depth`,
+    [type, oldSlug, MAX_SLUG_REDIRECT_DEPTH],
   );
+  const resolution = resolveSlugRedirectChain(type, oldSlug, edges);
+  if (!resolution) return null;
+
+  if (resolution.cycleDetected || resolution.depthExceeded) {
+    console.warn('[post-page] slug redirect chain is unsafe; serving the post by id', {
+      type,
+      slug: oldSlug,
+      postId: resolution.postId,
+      cycleDetected: resolution.cycleDetected,
+      depthExceeded: resolution.depthExceeded,
+    });
+  }
+
+  const post = await queryOne<PostRow>(
+    `SELECT ${POST_COLUMNS} ${POST_FROM}
+      WHERE p.id = $1 AND p.deleted_at IS NULL
+        AND (p.status = 'published' OR (p.status = 'scheduled' AND p.publish_at <= now()))`,
+    [resolution.postId],
+  );
+  return post ? { post, cycleDetected: resolution.cycleDetected, depthExceeded: resolution.depthExceeded } : null;
 }
 
 export async function listDueScheduledPosts(): Promise<{
@@ -1647,14 +1722,18 @@ export async function publishScheduledPost(id: string, audit: AuditWrite): Promi
 export async function recordPostSlugRedirect(
   type: PostType,
   oldSlug: string,
+  newSlug: string,
   postId: string,
 ): Promise<void> {
-  await query(
-    `INSERT INTO post_slug_redirects (type, old_slug, post_id)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (type, old_slug) DO UPDATE SET post_id = EXCLUDED.post_id`,
-    [type, oldSlug, postId],
-  );
+  await sql.transaction([
+    sql`DELETE FROM post_slug_redirects
+         WHERE type = ${type} AND old_slug = ${newSlug} AND post_id = ${postId}`,
+    sql`INSERT INTO post_slug_redirects (type, old_slug, post_id)
+        VALUES (${type}, ${oldSlug}, ${postId})
+        ON CONFLICT (type, old_slug) DO UPDATE
+          SET post_id = EXCLUDED.post_id
+          WHERE post_slug_redirects.post_id = EXCLUDED.post_id`,
+  ]);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

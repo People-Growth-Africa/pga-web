@@ -71,6 +71,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
   const [createType, setCreateType] = useState<PostType>('blog');
   const [saving, setSaving] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
+  const [editorSlugError, setEditorSlugError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
 
   const [categoriesOpen, setCategoriesOpen] = useState(false);
@@ -150,19 +151,23 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
     setEditing(null);
     setCreateType(nextType);
     setEditorError(null);
+    setEditorSlugError(null);
     setView('create');
   }
 
   async function handleSubmit(draft: PostDraft) {
     setSaving(true);
     setEditorError(null);
+    setEditorSlugError(null);
 
     const result = editing ? await updatePost(editing.id, draft) : await createPost(draft);
 
     setSaving(false);
 
     if (!result.ok) {
-      setEditorError(result.failure.fields?.slug ?? result.failure.error);
+      const slugError = result.failure.fields?.slug ?? null;
+      setEditorSlugError(slugError);
+      setEditorError(slugError ? null : result.failure.error);
       return;
     }
 
@@ -312,10 +317,13 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
             categories={categories}
             saving={saving}
             error={editorError}
+            slugError={editorSlugError}
+            onSlugChange={() => setEditorSlugError(null)}
             onCancel={() => {
               setView('list');
               setEditing(null);
               setEditorError(null);
+              setEditorSlugError(null);
             }}
             onSubmit={(draft) => void handleSubmit(draft)}
             onAddCategory={handleAddCategory}
@@ -486,6 +494,7 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
                             onClick={() => {
                               setEditing(post);
                               setEditorError(null);
+                              setEditorSlugError(null);
                               setView('edit');
                             }}
                             className={smallOutline}

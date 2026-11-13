@@ -32,6 +32,7 @@
     "migrate:auth-sessions": "node scripts/migrate-auth-sessions.mjs",
     "test:auth-sessions": "node scripts/test-auth-sessions.mjs",
     "test:retention-config": "node --experimental-strip-types scripts/test-retention-config.mjs",
+    "test:post-slug-redirects": "node --experimental-strip-types scripts/test-post-slug-redirects.mjs",
     "test:audit-log": "node scripts/test-audit-log.mjs",
     "test:traffic-bots": "node --experimental-strip-types scripts/test-traffic-bots.mjs",
     "test:notifications": "node scripts/test-notifications.mjs",

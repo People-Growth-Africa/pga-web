@@ -141,6 +141,8 @@ export default function PostEditor({
   canPublish = true,
   onCancel,
   onSubmit,
+  slugError,
+  onSlugChange,
   onAddCategory,
   uploadCover,
   uploadSpeakerPhoto,
@@ -156,6 +158,9 @@ export default function PostEditor({
   canPublish?: boolean;
   /** A failure from the last save, shown above the form. */
   error: string | null;
+  /** A slug collision from the API, shown beside the slug field. */
+  slugError: string | null;
+  onSlugChange: () => void;
   onCancel: () => void;
   onSubmit: (draft: PostDraft) => void;
   /** Asks the parent to open the category dialog; returns the new category id. */
@@ -999,21 +1004,23 @@ export default function PostEditor({
                         value={slug}
                         onChange={(event) => {
                           setSlugTouched(true);
+                          onSlugChange();
                           setSlug(event.target.value);
                         }}
                         maxLength={120}
                         placeholder="your-post"
-                        aria-describedby={slugTaken ? 'slug-taken' : undefined}
+                        aria-invalid={Boolean(slugTaken || slugError)}
+                        aria-describedby={slugTaken || slugError ? 'slug-taken' : undefined}
                         className={inputClass}
                       />
-                      {slugTaken && (
+                      {(slugTaken || slugError) && (
                         <p
                           id="slug-taken"
                           role="alert"
                           className="mt-2 font-[family-name:var(--font-body)] text-[0.82rem] text-amber-700"
                         >
-                          /{section}/{slugify(slug)} is already a page built into the site, and that page
-                          keeps the URL. Choose a different slug or this post will not be reachable.
+                          {slugError ??
+                            `/${section}/${slugify(slug)} is already a page built into the site, and that page keeps the URL. Choose a different slug or this post will not be reachable.`}
                         </p>
                       )}
                     </Field>

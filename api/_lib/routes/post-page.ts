@@ -63,7 +63,7 @@ export default async function postPage(req: VercelRequest, res: VercelResponse):
     return;
   }
 
-  const row = await findPublishedPostBySlug(slug);
+  const row = await findPublishedPostBySlug(type, slug);
   // A slug only belongs on its own route: /blog/<an-event> is a 404, not a
   // duplicate of the event page under a URL that claims it is an article.
   if (!row || row.type !== type) {
@@ -71,10 +71,22 @@ export default async function postPage(req: VercelRequest, res: VercelResponse):
     // URL keeps working rather than breaking every WhatsApp forward.
     const redirect = await findPostSlugRedirect(type, slug);
     if (redirect) {
-      res.statusCode = 301;
-      res.setHeader('Location', `/${type === 'blog' ? 'blog' : 'events'}/${redirect.slug}`);
-      res.setHeader('Cache-Control', 'public, max-age=300');
-      res.end();
+      if (redirect.cycleDetected || redirect.depthExceeded) {
+        await sendPostPage(res, shell, redirect.post);
+        return;
+      }
+
+      const targetPath = `/${redirect.post.type === 'blog' ? 'blog' : 'events'}/${redirect.post.slug}`;
+      const requestedPath = `/${type === 'blog' ? 'blog' : 'events'}/${slug}`;
+      if (targetPath !== requestedPath) {
+        res.statusCode = 301;
+        res.setHeader('Location', targetPath);
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        res.end();
+        return;
+      }
+
+      await sendPostPage(res, shell, redirect.post);
       return;
     }
 
@@ -90,6 +102,14 @@ export default async function postPage(req: VercelRequest, res: VercelResponse):
     return;
   }
 
+  await sendPostPage(res, shell, row);
+}
+
+async function sendPostPage(
+  res: VercelResponse,
+  shell: string,
+  row: NonNullable<Awaited<ReturnType<typeof findPublishedPostBySlug>>>,
+): Promise<void> {
   // The speakers are part of the page a crawler reads, not only of the app it
   // mounts afterwards: names, roles and bios belong in the HTML.
   const speakerRows = await listPostSpeakers(row.id);
