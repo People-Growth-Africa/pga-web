@@ -1,11 +1,12 @@
 import { ApiError, clientIp, endpoint, parseJsonBody, sendJson } from '../../http.js';
 import { eventRegistrationSchema, parseInput } from '../../validation.js';
-import { insertEventRegistration } from '../../db.js';
+import { findEventForRegistration, insertEventRegistration } from '../../db.js';
 import { appUrl, sendLeadNotification } from '../../email.js';
 import { enforceRateLimit } from '../../ratelimit.js';
 import { recordAuthEvent } from '../../audit.js';
 import { scheduleBestEffort } from '../../best-effort.js';
 import { syncEventRegistration } from '../../sheets-sync.js';
+import { isRegistrationOpen } from '../../../../src/lib/event-registration.js';
 
 /**
  * An event registration is stored first and the team is told about it second.
@@ -32,6 +33,18 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
     windowSeconds: 3600,
   });
 
+  const event = await findEventForRegistration(data.eventSlug);
+  if (!event || event.status !== 'published') {
+    throw new ApiError(404, 'event_not_found', 'That event is not open for registration.');
+  }
+  if (!event.event_start || !isRegistrationOpen({ eventStart: event.event_start }, event.server_now)) {
+    throw new ApiError(
+      409,
+      'registration_closed',
+      'Registration for this event has closed because it has started or its start time is unavailable.',
+    );
+  }
+
   const id = await insertEventRegistration({
     eventSlug: data.eventSlug,
     name: data.name,
@@ -46,9 +59,9 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   // confirmation for a place that does not exist.
   if (!id) {
     throw new ApiError(
-      500,
-      'lead_not_stored',
-      'We could not save your details. Try again in a moment.',
+      409,
+      'registration_closed',
+      'Registration for this event has closed because it has started or its start time changed.',
     );
   }
 

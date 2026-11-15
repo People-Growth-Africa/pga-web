@@ -128,7 +128,6 @@ async function sendPostPage(
     eventEnd: row.event_end,
     locationText: row.location_text,
     isOnline: row.is_online,
-    registrationUrl: row.registration_url ?? null,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
     showSpeakers: row.show_speakers,

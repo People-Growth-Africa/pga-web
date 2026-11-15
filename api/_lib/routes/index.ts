@@ -147,6 +147,7 @@ export const ROUTES: Record<string, RouteHandler> = {
   '/leads/consultation-booking': requiresDatabase(async () => (await import('./leads/consultation-booking.js')).default),
   '/leads/enquiry': requiresDatabase(async () => (await import('./leads/enquiry.js')).default),
   '/leads/event-registration': requiresDatabase(async () => (await import('./leads/event-registration.js')).default),
+  '/registration-availability': requiresDatabase(async () => (await import('./registration-availability.js')).default),
   //     The public registration form's write-only endpoint. POST only; it
   //     returns no registrant data and is rate limited per IP.
   '/registrations': requiresDatabase(async () => (await import('./registrations.js')).default),

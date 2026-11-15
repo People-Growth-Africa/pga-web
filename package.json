@@ -45,6 +45,8 @@
     "test:roles": "node scripts/test-staff-roles.mjs",
     "test:email-templates": "node scripts/test-email-templates.mjs --unit-only",
     "test:registration-confirmation": "node scripts/test-registration-confirmation.mjs",
+    "test:registration-cutoff": "node --experimental-strip-types scripts/test-registration-cutoff.mjs",
+    "test:registration-ui": "node scripts/test-registration-ui.mjs",
     "test:newsletter": "node scripts/test-newsletter.mjs",
     "test:leads": "node scripts/test-leads.mjs",
     "test:content": "node scripts/test-content.mjs",

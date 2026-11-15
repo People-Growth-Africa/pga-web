@@ -32,6 +32,7 @@ export type LivePost = {
   locationText: string | null;
   isOnline: boolean;
   registrationUrl: string | null;
+  hasExternalRegistration?: boolean;
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
   /** The event's editable form, rendered by the registration modal. */

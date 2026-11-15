@@ -18,6 +18,8 @@ import { checkApiImports } from './check-api-imports.mjs';
 const PREFIX = `test-leads-${Date.now().toString(36)}`;
 const EVENT_EMAIL = `${PREFIX}-event@example.com`;
 const EVENT_SLUG = `${PREFIX}-event`;
+const PAST_EVENT_SLUG = `${PREFIX}-past-event`;
+const ACTIVE_EVENT_EMAIL = `${PREFIX}-active-event@example.com`;
 const BOOKING_EMAIL = `${PREFIX}-booking@example.com`;
 const ENQUIRY_EMAIL = `${PREFIX}-enquiry@example.com`;
 const LIMITED_EMAIL = `${PREFIX}-limited@example.com`;
@@ -129,9 +131,10 @@ const enquiryBody = () => ({
 
 async function cleanup(sql) {
   if (!sql) return;
-  for (const table of ['event_registrations', 'consultation_bookings', 'enquiries']) {
+  for (const table of ['event_registrations', 'registrations', 'consultation_bookings', 'enquiries']) {
     await sql.query(`DELETE FROM ${table} WHERE email LIKE $1`, [`${PREFIX}%`]);
   }
+  await sql.query('DELETE FROM posts WHERE slug IN ($1, $2)', [EVENT_SLUG, PAST_EVENT_SLUG]);
   originalWarn.call(console, `Cleaned up test rows for ${PREFIX}`);
 }
 
@@ -179,6 +182,17 @@ async function main() {
     const { neon } = await import('@neondatabase/serverless');
     sql = neon(databaseUrl);
   }
+
+  if (sql) {
+    await sql.query(
+      `INSERT INTO posts (slug, title, excerpt, body, type, status, published_at, event_start, is_online)
+       VALUES
+         ($1, 'Registration cutoff test', 'Test event', 'Test event body', 'event', 'published', now(), now() + interval '1 hour', true),
+         ($2, 'Past registration cutoff test', 'Test event', 'Test event body', 'event', 'published', now(), now() - interval '1 minute', true)`,
+      [EVENT_SLUG, PAST_EVENT_SLUG],
+    );
+  }
+
   console.log(`\nTesting ${baseUrl} as ${PREFIX}\n`);
 
   try {
@@ -211,14 +225,93 @@ async function main() {
       skipCheck(1, 'An event registration is stored', 'no database access');
     }
 
-    check(
-      2,
-      'The team is emailed about the registration, with the sender as reply-to',
-      registrationNotice.includes(`Subject: Event registration: ${EVENT_EMAIL}`) &&
-        registrationNotice.includes('Organisation: Lead Test Ltd') &&
-        /To: [^\s]+@[^\s]+/.test(registrationNotice),
-      registrationNotice ? 'notification printed' : 'nothing printed',
-    );
+    if (sql) {
+      check(
+        2,
+        'The team is emailed about the registration, with the sender as reply-to',
+        registrationNotice.includes(`Subject: Event registration: ${EVENT_EMAIL}`) &&
+          registrationNotice.includes('Organisation: Lead Test Ltd') &&
+          /To: [^\s]+@[^\s]+/.test(registrationNotice),
+        registrationNotice ? 'notification printed' : 'nothing printed',
+      );
+    } else {
+      skipCheck(2, 'The team is emailed about the registration', 'no database fixture available');
+    }
+
+    // The main registration endpoint accepts a future event and rejects one
+    // that has already started, independently of the visitor's clock.
+    const activeRegistration = await call(baseUrl, '/api/registrations', {
+      body: {
+        eventSlug: EVENT_SLUG,
+        name: 'Ada Active',
+        email: ACTIVE_EVENT_EMAIL,
+        phone: '+234 800 000 0003',
+        organization: 'Lead Test Ltd',
+        notes: 'A future event registration.',
+      },
+    });
+    const expiredRegistration = await call(baseUrl, '/api/registrations', {
+      body: {
+        eventSlug: PAST_EVENT_SLUG,
+        name: 'Ada Expired',
+        email: `${PREFIX}-expired@example.com`,
+        phone: '+234 800 000 0004',
+        organization: 'Lead Test Ltd',
+        notes: 'A registration after the event start.',
+      },
+    });
+    if (sql) {
+      const activeRows = await sql.query(
+        'SELECT id FROM registrations WHERE email = $1',
+        [ACTIVE_EVENT_EMAIL],
+      );
+      check(
+        15,
+        'The first-party endpoint accepts a registration before the event starts',
+        activeRegistration.status === 201 && activeRows.length === 1,
+        `status ${activeRegistration.status}`,
+      );
+      check(
+        16,
+        'The first-party endpoint rejects registration after the event starts',
+        expiredRegistration.status === 409 &&
+          expiredRegistration.json?.code === 'registration_closed',
+        `status ${expiredRegistration.status}`,
+      );
+    } else {
+      skipCheck(15, 'The first-party endpoint accepts a future event registration', 'no database fixture available');
+      skipCheck(16, 'The first-party endpoint rejects a past event registration', 'no database fixture available');
+    }
+
+    const availability = await call(baseUrl, '/api/registration-availability', { method: 'GET' });
+    if (sql) {
+      const eventAvailability = availability.json?.events?.find((event) => event.slug === EVENT_SLUG);
+      check(
+        17,
+        'Registration availability is computed for published events without caching',
+        availability.status === 200 &&
+          eventAvailability?.open === true &&
+          availability.response.headers.get('cache-control')?.includes('no-store'),
+        `status ${availability.status}`,
+      );
+    } else {
+      skipCheck(17, 'Registration availability is computed for published events', 'no database fixture available');
+    }
+
+    const expiredLegacyRegistration = await call(baseUrl, '/api/leads/event-registration', {
+      body: { ...eventBody(), eventSlug: PAST_EVENT_SLUG, email: `${PREFIX}-legacy-expired@example.com` },
+    });
+    if (sql) {
+      check(
+        18,
+        'The legacy event-registration endpoint rejects a registration after start',
+        expiredLegacyRegistration.status === 409 &&
+          expiredLegacyRegistration.json?.code === 'registration_closed',
+        `status ${expiredLegacyRegistration.status}`,
+      );
+    } else {
+      skipCheck(18, 'The legacy event endpoint rejects a past event registration', 'no database fixture available');
+    }
 
     // 3. The event is named by slug, so a made up one is refused.
     const badSlug = await call(baseUrl, '/api/leads/event-registration', {

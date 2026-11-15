@@ -6,6 +6,7 @@ import { buildRegistrationEmailVariables } from '../registration-email.js';
 import { enforceRateLimit } from '../ratelimit.js';
 import { scheduleBestEffort } from '../best-effort.js';
 import { syncRegistration } from '../sheets-sync.js';
+import { isRegistrationOpen } from '../../../src/lib/event-registration.js';
 import {
   DEFAULT_REGISTRATION_FORM,
   answerText,
@@ -69,6 +70,13 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
   const event = await findEventForRegistration(data.eventSlug);
   if (!event || event.status !== 'published') {
     throw new ApiError(404, 'event_not_found', 'That event is not open for registration.');
+  }
+  if (!event.event_start || !isRegistrationOpen({ eventStart: event.event_start }, event.server_now)) {
+    throw new ApiError(
+      409,
+      'registration_closed',
+      'Registration for this event has closed because it has started or its start time is unavailable.',
+    );
   }
 
   const saved = parseRegistrationForm(event.registration_form);
@@ -173,9 +181,9 @@ export default endpoint({ methods: ['POST'], csrf: true }, async (req, res) => {
 
     if (!id) {
       throw new ApiError(
-        500,
-        'registration_not_saved',
-        'We could not save your registration. Try again in a moment.',
+        409,
+        'registration_closed',
+        'Registration for this event has closed because it has started or its start time changed.',
       );
     }
 

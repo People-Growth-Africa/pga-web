@@ -36,6 +36,7 @@ export type FeedEntry = {
   eventEndTime: string | null;
   location: string | null;
   registrationUrl: string | null;
+  hasExternalRegistration?: boolean;
 };
 
 let request: Promise<FeedEntry[] | null> | null = null;
@@ -62,7 +63,9 @@ function isFeedEntry(value: unknown): value is FeedEntry {
     optionalText(entry.eventEndDate) &&
     optionalText(entry.eventEndTime) &&
     optionalText(entry.location) &&
-    optionalText(entry.registrationUrl)
+    optionalText(entry.registrationUrl) &&
+    (entry.hasExternalRegistration === undefined ||
+      typeof entry.hasExternalRegistration === 'boolean')
   );
 }
 

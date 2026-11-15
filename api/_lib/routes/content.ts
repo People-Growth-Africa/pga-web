@@ -19,5 +19,10 @@ import { REVALIDATE_SECONDS, getAllEntries } from '../content/source.js';
  */
 export default endpoint({ methods: ['GET'] }, async (_req: VercelRequest, res: VercelResponse) => {
   const entries = await getAllEntries();
-  sendPublicJson(res, 200, { entries }, REVALIDATE_SECONDS);
+  const publicEntries = entries.map((entry) => ({
+    ...entry,
+    registrationUrl: null,
+    hasExternalRegistration: entry.type === 'event' && Boolean(entry.registrationUrl),
+  }));
+  sendPublicJson(res, 200, { entries: publicEntries }, REVALIDATE_SECONDS);
 });

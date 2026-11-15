@@ -85,10 +85,10 @@ function badSpecifiers(relative) {
   return found;
 }
 
-/** Writes the api/ tree as the extension-explicit .js files Node sees in production. */
+/** Writes the api/ tree and its shared source dependency as production .js files. */
 function writeCompiled(files) {
   rmSync(buildDir, { recursive: true, force: true });
-  for (const relative of files) {
+  for (const relative of [...files, 'src/lib/event-registration.ts']) {
     const target = path.join(buildDir, relative.replace(/\.ts$/, '.js'));
     const source = readFileSync(path.join(root, relative), 'utf8');
     mkdirSync(path.dirname(target), { recursive: true });

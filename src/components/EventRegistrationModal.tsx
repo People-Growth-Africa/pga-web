@@ -223,12 +223,14 @@ function AnswerField({
 interface EventRegistrationModalProps {
   event: EventItem | null;
   onClose: () => void;
+  onRegistrationClosed?: () => void;
   returnFocusRef?: { current: HTMLButtonElement | null };
 }
 
 export default function EventRegistrationModal({
   event,
   onClose,
+  onRegistrationClosed,
   returnFocusRef,
 }: EventRegistrationModalProps) {
   const confirm = useConfirm();
@@ -384,6 +386,7 @@ export default function EventRegistrationModal({
     }
 
     if (result.failure.fields) setFieldErrors(result.failure.fields);
+    if (result.failure.code === 'registration_closed') onRegistrationClosed?.();
     setError(leadFailureMessage(result.failure));
   };
 

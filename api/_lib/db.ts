@@ -960,7 +960,12 @@ export async function insertEventRegistration(
 ): Promise<string | null> {
   const row = await queryOne<{ id: string }>(
     `INSERT INTO event_registrations (event_slug, name, email, phone, organisation, role, question)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     SELECT $1, $2, $3, $4, $5, $6, $7
+      WHERE EXISTS (
+        SELECT 1 FROM posts
+         WHERE slug = $1 AND type = 'event' AND status = 'published'
+           AND deleted_at IS NULL AND event_start > clock_timestamp()
+      )
      RETURNING id`,
     [
       input.eventSlug,
@@ -986,6 +991,7 @@ export async function findEventForRegistration(slug: string): Promise<{
   status: PostStatus;
   event_start: string | null;
   event_end: string | null;
+  server_now: string;
   location_text: string | null;
   is_online: boolean;
   link_url: string | null;
@@ -995,9 +1001,22 @@ export async function findEventForRegistration(slug: string): Promise<{
     `SELECT slug, title, status,
             ${isoTimestamp('posts', 'event_start')} AS event_start,
             ${isoTimestamp('posts', 'event_end')} AS event_end,
-            location_text, is_online, link_url, registration_form
-       FROM posts WHERE slug = $1 AND type = 'event'`,
+            location_text, is_online, link_url, registration_form,
+            to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS server_now
+       FROM posts WHERE slug = $1 AND type = 'event' AND deleted_at IS NULL`,
     [slug],
+  );
+}
+
+export async function listEventRegistrationCutoffs(): Promise<
+  Array<{ slug: string; event_start: string | null; server_now: string }>
+> {
+  return query(
+    `SELECT slug,
+            ${isoTimestamp('posts', 'event_start')} AS event_start,
+            to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS server_now
+       FROM posts
+      WHERE type = 'event' AND status = 'published' AND deleted_at IS NULL`,
   );
 }
 
@@ -1782,7 +1801,12 @@ export async function insertRegistration(input: {
 }): Promise<string | null> {
   const row = await queryOne<{ id: string }>(
     `INSERT INTO registrations (event_slug, name, email, phone, organization, notes, answers)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+     SELECT $1, $2, $3, $4, $5, $6, $7::jsonb
+      WHERE EXISTS (
+        SELECT 1 FROM posts
+         WHERE slug = $1 AND type = 'event' AND status = 'published'
+           AND deleted_at IS NULL AND event_start > clock_timestamp()
+      )
      RETURNING id`,
     [
       input.eventSlug,

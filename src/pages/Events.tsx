@@ -53,7 +53,7 @@ export default function Events() {
         featured={event.featured}
         detailHref={event.detailHref}
         isPast={event.isPast}
-        registrationUrl={event.registrationUrl}
+        hasExternalRegistration={event.hasExternalRegistration}
         onRegister={(ev) => setSelectedEvent(ev)}
       />
     </AnimateOnScroll>
