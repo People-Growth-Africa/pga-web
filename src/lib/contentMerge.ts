@@ -354,6 +354,10 @@ export function eventFromLive(post: LivePost, today: string = todayInLagos()): E
     isOnline: post.isOnline,
     speakers: post.speakers ?? [],
     showSpeakers: post.showSpeakers ?? true,
+    linkUrl: post.linkUrl,
+    linkLabel: post.linkLabel,
+    eventStartISO: post.eventStart,
+    eventEndISO: post.eventEnd,
   };
 }
 

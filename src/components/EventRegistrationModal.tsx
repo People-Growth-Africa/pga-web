@@ -393,8 +393,19 @@ export default function EventRegistrationModal({
       return isoString.replace(/[-:]/g, '').split('.')[0] + 'Z';
     };
 
-    const startDate = formatDate(event.isoDate + 'T14:00:00.000Z'); // Using event time
-    const endDate = formatDate(event.isoDate + 'T15:30:00.000Z'); // Default 1.5 hours
+    // Use actual event times if available, otherwise fallback to defaults
+    let startDate: string;
+    let endDate: string;
+
+    if (event.eventStartISO && event.eventEndISO) {
+      // Use the full ISO timestamps from the database
+      startDate = formatDate(event.eventStartISO);
+      endDate = formatDate(event.eventEndISO);
+    } else {
+      // Fallback to date + default time (shouldn't happen for live events)
+      startDate = formatDate(event.isoDate + 'T20:00:00.000Z'); // 8:00 PM WAT (7:00 PM UTC+1)
+      endDate = formatDate(event.isoDate + 'T22:00:00.000Z'); // 10:00 PM WAT
+    }
 
     let description = `${event.subtitle}\n\nSpeaker: ${event.speaker.name}, ${event.speaker.title}`;
     if (event.linkUrl && event.format === 'Online') {

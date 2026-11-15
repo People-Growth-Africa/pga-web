@@ -39,6 +39,10 @@ export interface EventItem {
   /** Meeting link (e.g., Zoom, Google Meet, Teams) for online events */
   linkUrl?: string | null;
   linkLabel?: string | null;
+  /** Full ISO 8601 start time (e.g., 2026-11-15T20:00:00Z) for calendar integration */
+  eventStartISO?: string | null;
+  /** Full ISO 8601 end time (e.g., 2026-11-15T22:00:00Z) for calendar integration */
+  eventEndISO?: string | null;
 }
 
 export const eventCategories = [
