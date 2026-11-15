@@ -82,6 +82,8 @@ export type PostDraft = {
   registrationButtonLabel: string | null;
   registrationForm: RegistrationForm | null;
   status: 'draft' | 'published' | 'scheduled';
+  /** Whether to auto-generate a Google Meet link after saving (online events only) */
+  generateMeetLink?: boolean;
   publishAt: string | null;
   /** The whole list, in display order: saving replaces what the post had. */
   showSpeakers: boolean;

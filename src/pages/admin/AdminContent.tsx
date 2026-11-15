@@ -155,6 +155,15 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
     setView('create');
   }
 
+  async function getCalendarSecret(): Promise<string> {
+    const response = await fetch('/api/admin/get-calendar-secret');
+    if (!response.ok) {
+      throw new Error('Failed to get calendar secret');
+    }
+    const data = await response.json();
+    return data.secret;
+  }
+
   async function handleSubmit(draft: PostDraft) {
     setSaving(true);
     setEditorError(null);
@@ -169,6 +178,55 @@ export default function AdminContent({ portal = 'admin' }: { portal?: Portal }) 
       setEditorSlugError(slugError);
       setEditorError(slugError ? null : result.failure.error);
       return;
+    }
+
+    // Auto-generate Google Meet link if requested for online events
+    if (draft.generateMeetLink && draft.isOnline && draft.eventStart) {
+      try {
+        const secret = await getCalendarSecret();
+        const meetResponse = await fetch('/api/admin/create-meet-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventSlug: draft.slug,
+            title: draft.title,
+            description: draft.excerpt || draft.title,
+            startTime: draft.eventStart,
+            endTime: draft.eventEnd || draft.eventStart,
+            isOnline: true,
+            secret,
+          }),
+        });
+
+        if (!meetResponse.ok) {
+          const errorData = await meetResponse.json();
+          throw new Error(errorData.error || 'Failed to generate Google Meet link');
+        }
+
+        const meetData = await meetResponse.json();
+
+        // Update the post with the generated Meet link
+        const updateResult = await updatePost(result.data.post.id, {
+          ...draft,
+          linkUrl: meetData.meetingLink,
+        });
+
+        if (!updateResult.ok) {
+          console.error('Failed to save Meet link:', updateResult.failure.error);
+          // Continue anyway - the event is saved, just without the link
+        }
+      } catch (error) {
+        console.error('Error generating Meet link:', error);
+        // Continue anyway - the event is saved, just without the Meet link
+        setNotice({
+          kind: 'error',
+          text: `Event saved, but failed to generate Meet link: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        });
+        await refresh();
+        setView('list');
+        setEditing(null);
+        return;
+      }
     }
 
     await refresh();

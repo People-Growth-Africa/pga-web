@@ -198,6 +198,8 @@ export default function PostEditor({
   const [eventEnd, setEventEnd] = useState(initial.eventEnd ?? '');
   const [locationText, setLocationText] = useState(initial.locationText ?? '');
   const [isOnline, setIsOnline] = useState(initial.isOnline);
+  const [generateMeetLink, setGenerateMeetLink] = useState(false);
+  const [meetLinkError] = useState<string | null>(null);
   const [registrationUrl, setRegistrationUrl] = useState(initial.registrationUrl ?? '');
   const [registrationIntro, setRegistrationIntro] = useState(initial.registrationIntro ?? '');
   const [registrationButtonLabel, setRegistrationButtonLabel] = useState(
@@ -385,7 +387,7 @@ export default function PostEditor({
       coverImageUrl: coverImageUrl || null,
       coverImageThumbUrl: coverImageThumbUrl,
       linkLabel: isEvent ? null : linkLabel.trim() || null,
-      linkUrl: isEvent ? null : linkUrl.trim() || null,
+      linkUrl: isEvent ? linkUrl.trim() || null : linkUrl.trim() || null,
       eventStart: isEvent ? lagosInputToIso(eventStart) : null,
       eventEnd: isEvent ? lagosInputToIso(eventEnd) : null,
       locationText: isEvent && !isOnline ? locationText.trim() || null : null,
@@ -396,6 +398,7 @@ export default function PostEditor({
       registrationForm: isEvent ? cleanedForm : null,
       status: nextStatus,
       publishAt: nextStatus === 'scheduled' ? lagosInputToIso(publishAt) : null,
+      generateMeetLink: isEvent && isOnline && generateMeetLink,
       showSpeakers,
       speakers: speakers.map((speaker) => ({
         ...(speaker.id ? { id: speaker.id } : {}),
@@ -1200,6 +1203,30 @@ export default function PostEditor({
                       No venue is needed, and the page shows an online badge.
                     </p>
                   </div>
+
+                  {isOnline && (
+                    <div>
+                      <label className="flex min-h-[44px] cursor-pointer items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={generateMeetLink}
+                          onChange={(event) => setGenerateMeetLink(event.target.checked)}
+                          className="h-4 w-4 accent-deep-green cursor-pointer"
+                        />
+                        <span className="font-[family-name:var(--font-body)] text-sm font-semibold text-charcoal">
+                          Auto-generate Google Meet link
+                        </span>
+                      </label>
+                      <p className="ml-7 font-[family-name:var(--font-body)] text-[0.78rem] text-charcoal/45">
+                        A video conference link will be created automatically when you save.
+                      </p>
+                      {meetLinkError && (
+                        <p className="ml-7 mt-1 font-[family-name:var(--font-body)] text-[0.78rem] text-red-600">
+                          {meetLinkError}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {!isOnline && (
                     <Field
