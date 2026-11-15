@@ -10,12 +10,12 @@ import MeetTheSpeakers from '../components/MeetTheSpeakers';
 import SEO from '../components/SEO';
 import NotFound from './NotFound';
 import type { EventItem } from '../data/events';
-import { isSafeHttpUrl } from '../lib/content';
 import { findEvent, mergeBlogPosts, mergeEvents, splitEvents } from '../lib/contentMerge';
 import { formWindow } from '../lib/registrationForm';
 import { useContent } from '../hooks/useContent';
 import { useLivePosts } from '../hooks/useLivePosts';
 import { eventMeta } from '../lib/pageMeta';
+import { useRegistrationAvailability } from '../hooks/useRegistrationAvailability';
 
 const EventRegistrationModal = lazy(() => import('../components/EventRegistrationModal'));
 
@@ -33,6 +33,7 @@ const EventRegistrationModal = lazy(() => import('../components/EventRegistratio
  */
 export default function EventDetail() {
   const { slug } = useParams<{ slug: string }>();
+  const registrationAvailability = useRegistrationAvailability(slug ?? null);
   const { status, entries } = useContent();
   const live = useLivePosts();
   // The modal still takes an EventItem; an EventView is one, with extra facts.
@@ -89,9 +90,10 @@ export default function EventDetail() {
     return <NotFound />;
   }
 
-  const registrationUrl = isSafeHttpUrl(event.registrationUrl) ? event.registrationUrl : null;
+  const hasExternalRegistration =
+    event.hasExternalRegistration || Boolean(event.registrationUrl);
   const registrationWindow =
-    !registrationUrl && event.origin !== 'sheet' && event.registrationForm
+    !hasExternalRegistration && event.origin !== 'sheet' && event.registrationForm
       ? formWindow(event.registrationForm)
       : 'open';
   const detail = event.format;
@@ -105,28 +107,40 @@ export default function EventDetail() {
   const relatedEvents = [...related.upcoming, ...related.past].slice(0, 3);
   const relatedPosts = mergeBlogPosts(entries, live.posts).slice(0, 3);
 
-  const registerButton = registrationUrl ? (
-    <a
-      href={registrationUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-deep-green px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 max-[380px]:w-full"
+  const supportsFirstPartyRegistration =
+    !hasExternalRegistration && event.origin !== 'sheet';
+  const registerButton = !supportsFirstPartyRegistration ? (
+    <button
+      type="button"
+      disabled
+      className="inline-flex min-h-12 cursor-not-allowed items-center justify-center rounded-full bg-charcoal/15 px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-charcoal/60 max-[380px]:w-full"
     >
-      {event.registrationButtonLabel?.trim() || 'Register for this event'}
-      <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-current fill-none stroke-2 stroke-linecap-round stroke-linejoin-round" aria-hidden="true">
-        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-        <polyline points="15 3 21 3 21 9" />
-        <line x1="10" y1="14" x2="21" y2="3" />
-      </svg>
-      <span className="sr-only">(opens in a new tab)</span>
-    </a>
-  ) : event.origin === 'sheet' ? (
-    <a
-      href={`mailto:hello@peoplegrowthafrica.com?subject=${encodeURIComponent(`Registration: ${event.title}`)}`}
-      className="inline-flex min-h-12 items-center justify-center rounded-full bg-deep-green px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-white transition-colors hover:bg-terracotta focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 max-[380px]:w-full"
+      Registration unavailable
+    </button>
+  ) : registrationAvailability.status === 'checking' ? (
+    <button
+      type="button"
+      disabled
+      className="inline-flex min-h-12 cursor-not-allowed items-center justify-center rounded-full bg-charcoal/15 px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-charcoal/60 max-[380px]:w-full"
     >
-      Register your interest
-    </a>
+      Checking registration…
+    </button>
+  ) : registrationAvailability.status === 'unavailable' ? (
+    <button
+      type="button"
+      disabled
+      className="inline-flex min-h-12 cursor-not-allowed items-center justify-center rounded-full bg-charcoal/15 px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-charcoal/60 max-[380px]:w-full"
+    >
+      Registration unavailable
+    </button>
+  ) : registrationAvailability.status === 'closed' ? (
+    <button
+      type="button"
+      disabled
+      className="inline-flex min-h-12 cursor-not-allowed items-center justify-center rounded-full bg-charcoal/15 px-7 py-3.5 font-[family-name:var(--font-body)] text-[0.95rem] font-semibold text-charcoal/60 max-[380px]:w-full"
+    >
+      Registration closed
+    </button>
   ) : registrationWindow !== 'open' ? (
     <button
       type="button"
@@ -275,11 +289,6 @@ export default function EventDetail() {
               </AnimateOnScroll>
             )}
 
-            {event.origin === 'sheet' && isSafeHttpUrl(event.registrationUrl) && (
-              <p className="mt-6 font-[family-name:var(--font-body)] text-[0.9rem] text-charcoal/50">
-                Registration is handled on the organiser's page, which opens in a new tab.
-              </p>
-            )}
           </div>
 
           <aside className="h-fit rounded-[20px] border border-charcoal/10 bg-cream/50 p-6">
@@ -349,7 +358,7 @@ export default function EventDetail() {
                     event={candidate}
                     detailHref={candidate.detailHref}
                     isPast={candidate.isPast}
-                    registrationUrl={candidate.registrationUrl}
+                    hasExternalRegistration={candidate.hasExternalRegistration}
                     onRegister={(ev) => setRegistering(ev)}
                   />
                 </AnimateOnScroll>
@@ -393,6 +402,7 @@ export default function EventDetail() {
           <EventRegistrationModal
             event={registering}
             onClose={() => setRegistering(null)}
+            onRegistrationClosed={() => void registrationAvailability.refresh()}
             returnFocusRef={registerButtonRef}
           />
         </Suspense>

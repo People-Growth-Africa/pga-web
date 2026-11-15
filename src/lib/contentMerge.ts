@@ -69,6 +69,7 @@ export type EventView = EventItem & {
   origin: 'site' | 'sheet' | 'live';
   detailHref: string;
   registrationUrl: string | null;
+  hasExternalRegistration: boolean;
   /** Last day of a multi-day event, or null. Used by the Event JSON-LD. */
   eventEndDate: string | null;
   /** Local start time as `HH:MM` when the sheet had one, for the Event JSON-LD. */
@@ -282,6 +283,8 @@ export function eventFromSheet(entry: FeedEntry, today: string = todayInLagos())
     origin: 'sheet',
     detailHref: `/events/${entry.slug}`,
     registrationUrl: entry.registrationUrl,
+    hasExternalRegistration:
+      entry.hasExternalRegistration ?? Boolean(entry.registrationUrl),
     eventEndDate: entry.eventEndDate,
     startTime: entry.eventTime,
     imageUrl: entry.imageUrl,
@@ -343,6 +346,8 @@ export function eventFromLive(post: LivePost, today: string = todayInLagos()): E
     origin: 'live',
     detailHref: `/events/${post.slug}`,
     registrationUrl: post.registrationUrl,
+    hasExternalRegistration:
+      post.hasExternalRegistration ?? Boolean(post.registrationUrl),
     registrationIntro: post.registrationIntro,
     registrationButtonLabel: post.registrationButtonLabel,
     registrationForm: coerceRegistrationForm(post.registrationForm),
@@ -373,6 +378,7 @@ export function mergeEvents(
     origin: 'site',
     detailHref: `/events/${event.slug}`,
     registrationUrl: null,
+    hasExternalRegistration: false,
     registrationForm: null,
     eventEndDate: null,
     startTime: null,

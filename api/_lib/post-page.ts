@@ -50,7 +50,6 @@ export type PagePost = {
   eventEnd: string | null;
   locationText: string | null;
   isOnline: boolean;
-  registrationUrl: string | null;
   publishedAt: string | null;
   updatedAt: string;
   /** Whether the manager left the speakers section on. */
@@ -367,7 +366,7 @@ function renderSpeakersHtml(speakers: PageSpeaker[]): string {
   ].join('');
 }
 
-/** An http(s) link, or nothing. Used for the registration button. */
+/** An http(s) link, or nothing. */
 function safeHttpUrl(value: string | null): string | null {
   return value && /^https?:\/\/[^"<>\s]+$/i.test(value) ? value : null;
 }
@@ -389,7 +388,6 @@ export function renderFallbackArticle(post: PagePost): string {
   const isEvent = post.type === 'event';
   const section = isEvent ? 'Events' : 'Blog';
   const cover = post.coverImageUrl ? absoluteUrl(post.coverImageUrl) : null;
-  const registration = safeHttpUrl(post.registrationUrl);
   // A blog post can point at an outside page - a LinkedIn post, a source, a
   // longer read. The manager's own label is the button text, and a URL that is
   // not http(s) is dropped rather than written into the response.
@@ -444,9 +442,6 @@ export function renderFallbackArticle(post: PagePost): string {
     `<div>${renderBodyHtml(post.body)}</div>`,
     external
       ? `<p style="margin:2rem 0 0"><a href="${escapeHtml(external)}" rel="noopener noreferrer" style="display:inline-block;background:#0f6e56;color:#fff;padding:.7rem 1.4rem;border-radius:999px;text-decoration:none;font-weight:600">${escapeHtml(post.linkLabel?.trim() || 'Read more')}</a></p>`
-      : '',
-    isEvent && registration
-      ? `<p style="margin:2rem 0 0"><a href="${escapeHtml(registration)}" rel="noopener noreferrer" style="display:inline-block;background:#0f6e56;color:#fff;padding:.7rem 1.4rem;border-radius:999px;text-decoration:none;font-weight:600">Register for this event</a></p>`
       : '',
     // Speakers belong to events; a blog post's byline is its author, not a cast.
     isEvent && post.showSpeakers && post.speakers.length > 0

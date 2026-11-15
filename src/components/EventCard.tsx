@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import type { EventItem } from '../data/events';
 import { todayInLagos } from '../lib/contentMerge';
+import { useRegistrationAvailability } from '../hooks/useRegistrationAvailability';
 import EventShareButton from './EventShareButton';
 
 interface EventCardProps {
@@ -13,8 +14,8 @@ interface EventCardProps {
   detailHref?: string;
   /** A past event offers its page, not a registration button. */
   isPast?: boolean;
-  /** A sheet event's external registration page, when it has one. */
-  registrationUrl?: string | null;
+  /** Off-site registration cannot be cutoff-enforced, so cards do not link to it. */
+  hasExternalRegistration?: boolean;
 }
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -143,7 +144,14 @@ function initials(name: string): string {
 }
 
 /** Memoised because the carousel re-renders on every auto-advance. */
-function EventCard({ event, featured = false, detailHref, isPast = false }: EventCardProps) {
+function EventCard({
+  event,
+  featured = false,
+  detailHref,
+  isPast = false,
+  hasExternalRegistration = false,
+}: EventCardProps) {
+  const availability = useRegistrationAvailability(event.slug);
   const href = detailHref ?? `/events/${event.slug}`;
   const { month, day } = eventDay(event.isoDate);
   const days = daysUntil(event.isoDate);
@@ -173,6 +181,15 @@ function EventCard({ event, featured = false, detailHref, isPast = false }: Even
     .concat(isOnline || !venue ? [] : [venue])
     .filter(Boolean)
     .join(' · ');
+  const registrationStatus = hasExternalRegistration ? 'unavailable' : availability.status;
+  const registrationLabel =
+    registrationStatus === 'open'
+      ? 'Register free'
+      : registrationStatus === 'closed'
+        ? 'Registration closed'
+        : registrationStatus === 'checking'
+          ? 'Checking registration…'
+          : 'Registration unavailable';
 
   return (
     <article
@@ -286,16 +303,27 @@ function EventCard({ event, featured = false, detailHref, isPast = false }: Even
         )}
 
         <div className="mt-auto flex items-center gap-2.5 pt-5">
-          <Link
-            to={href}
-            className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-deep-green px-5 font-[family-name:var(--font-body)] text-[0.9rem] font-semibold text-white transition-colors hover:bg-brand-green focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
-          >
-            {isPast ? 'View event' : 'Register free'}
-            <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-current fill-none stroke-2 stroke-linecap-round" aria-hidden="true">
-              <line x1="4" y1="12" x2="19" y2="12" />
-              <polyline points="13 6 19 12 13 18" />
-            </svg>
-          </Link>
+          {registrationStatus === 'open' ? (
+            <Link
+              to={href}
+              className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-deep-green px-5 font-[family-name:var(--font-body)] text-[0.9rem] font-semibold text-white transition-colors hover:bg-brand-green focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
+            >
+              {registrationLabel}
+              <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-current fill-none stroke-2 stroke-linecap-round" aria-hidden="true">
+                <line x1="4" y1="12" x2="19" y2="12" />
+                <polyline points="13 6 19 12 13 18" />
+              </svg>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              className="inline-flex h-12 flex-1 cursor-not-allowed items-center justify-center rounded-full bg-charcoal/10 px-5 font-[family-name:var(--font-body)] text-[0.9rem] font-semibold text-charcoal/60"
+            >
+              {registrationLabel}
+            </button>
+          )}
           <EventShareButton slug={event.slug} title={event.title} />
         </div>
       </div>

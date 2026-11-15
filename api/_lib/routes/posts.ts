@@ -61,7 +61,8 @@ type PublicPost = {
   eventEnd: string | null;
   locationText: string | null;
   isOnline: boolean;
-  registrationUrl: string | null;
+  registrationUrl: null;
+  hasExternalRegistration: boolean;
   registrationIntro: string | null;
   registrationButtonLabel: string | null;
   /** The event's form, so the public modal renders what the panel saved. */
@@ -111,7 +112,8 @@ function toPublicPost(row: PostRow, speakers: PublicSpeaker[]): PublicPost {
     eventEnd: row.event_end,
     locationText: row.location_text,
     isOnline: row.is_online,
-    registrationUrl: row.registration_url,
+    registrationUrl: null,
+    hasExternalRegistration: Boolean(row.registration_url),
     registrationIntro: row.registration_intro,
     registrationButtonLabel: row.registration_button_label,
     registrationForm: row.registration_form,
