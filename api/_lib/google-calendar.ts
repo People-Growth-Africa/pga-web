@@ -2,7 +2,7 @@ import { google } from 'googleapis';
 
 /**
  * Google Calendar integration for event registrations
- * Creates calendar events and generates shareable links for attendees
+ * Creates calendar events with Google Meet links and generates shareable links for attendees
  */
 
 interface CalendarConfig {
@@ -68,17 +68,20 @@ function getConfig(): CalendarConfig | null {
 }
 
 /**
- * Create a Google Calendar event for an event registration
+ * Create a Google Calendar event with an automatic Google Meet link
+ * This is used when creating/publishing events in the admin panel
+ * 
+ * @returns Object containing eventId, meetingLink (Google Meet URL), and calendarLink
  */
-export async function createCalendarEvent(data: {
+export async function createCalendarEventWithMeet(data: {
   eventSlug: string;
   title: string;
   description: string;
   startTime: string; // ISO 8601 format
   endTime: string; // ISO 8601 format
-  meetingLink?: string | null;
   location?: string | null;
-}): Promise<{ eventId: string; calendarLink: string } | null> {
+  isOnline?: boolean;
+}): Promise<{ eventId: string; meetingLink: string; calendarLink: string } | null> {
   const calendar = getGoogleCalendarClient();
   const config = getConfig();
 
@@ -89,14 +92,12 @@ export async function createCalendarEvent(data: {
 
   try {
     // Build event description
-    let eventDescription = data.description;
-    if (data.meetingLink) {
-      eventDescription += `\n\nJoin the meeting: ${data.meetingLink}`;
-    }
+    const eventDescription = `${data.description}\n\nEvent slug: ${data.eventSlug}`;
 
-    // Create the event
+    // Create the event with Google Meet conference
     const response = await calendar.events.insert({
       calendarId: config.calendarId,
+      conferenceDataVersion: 1, // Required for creating Google Meet
       requestBody: {
         summary: data.title,
         description: eventDescription,
@@ -108,14 +109,21 @@ export async function createCalendarEvent(data: {
           dateTime: data.endTime,
           timeZone: 'Africa/Lagos',
         },
-        location: data.meetingLink || data.location || 'Online',
+        location: data.location || (data.isOnline ? 'Online' : undefined),
         status: 'confirmed',
-        // Make it visible to anyone with the link
         visibility: 'public',
-        // Allow guests to see other guests and modify event
-        guestsCanSeeOtherGuests: true,
+        guestsCanSeeOtherGuests: false,
         guestsCanInviteOthers: false,
         guestsCanModify: false,
+        // Request Google Meet conference creation
+        conferenceData: data.isOnline ? {
+          createRequest: {
+            requestId: `pga-${data.eventSlug}-${Date.now()}`, // Unique ID for idempotency
+            conferenceSolutionKey: {
+              type: 'hangoutsMeet', // Google Meet
+            },
+          },
+        } : undefined,
       },
     });
 
@@ -125,72 +133,27 @@ export async function createCalendarEvent(data: {
       return null;
     }
 
+    // Extract the Google Meet link from the conference data
+    const meetingLink = response.data.conferenceData?.entryPoints?.find(
+      (entry) => entry.entryPointType === 'video'
+    )?.uri || '';
+
+    if (data.isOnline && !meetingLink) {
+      console.warn('[Calendar] Google Meet link was not created - check that Google Meet is enabled for your calendar');
+    }
+
     // Generate public link to the event
     const calendarLink = `https://calendar.google.com/calendar/event?eid=${encodeEventId(eventId, config.calendarId)}`;
 
-    console.log(`[Calendar] Created event ${eventId} for ${data.eventSlug}`);
+    console.log(`[Calendar] Created event ${eventId} for ${data.eventSlug}${meetingLink ? ` with Meet link: ${meetingLink}` : ''}`);
 
     return {
       eventId,
+      meetingLink,
       calendarLink,
     };
   } catch (error: any) {
     console.error(`[Calendar] Failed to create calendar event:`, error?.message || error);
-    return null;
-  }
-}
-
-/**
- * Get or create a calendar event for an event registration
- * Returns existing event if one was already created for this slug
- */
-export async function getOrCreateCalendarEvent(data: {
-  eventSlug: string;
-  title: string;
-  description: string;
-  startTime: string;
-  endTime: string;
-  meetingLink?: string | null;
-  location?: string | null;
-}): Promise<{ eventId: string; calendarLink: string } | null> {
-  const calendar = getGoogleCalendarClient();
-  const config = getConfig();
-
-  if (!calendar || !config) {
-    return null;
-  }
-
-  try {
-    // Search for existing event with this slug in the summary or description
-    const searchResponse = await calendar.events.list({
-      calendarId: config.calendarId,
-      q: data.eventSlug,
-      timeMin: new Date(data.startTime).toISOString(),
-      timeMax: new Date(new Date(data.endTime).getTime() + 24 * 60 * 60 * 1000).toISOString(), // +1 day
-      singleEvents: true,
-      maxResults: 10,
-    });
-
-    // Check if we found a matching event
-    const existingEvent = searchResponse.data.items?.find(
-      (event) =>
-        event.summary?.includes(data.title) ||
-        event.description?.includes(data.eventSlug)
-    );
-
-    if (existingEvent && existingEvent.id) {
-      console.log(`[Calendar] Found existing event ${existingEvent.id} for ${data.eventSlug}`);
-      const calendarLink = `https://calendar.google.com/calendar/event?eid=${encodeEventId(existingEvent.id, config.calendarId)}`;
-      return {
-        eventId: existingEvent.id,
-        calendarLink,
-      };
-    }
-
-    // No existing event, create a new one
-    return await createCalendarEvent(data);
-  } catch (error: any) {
-    console.error(`[Calendar] Failed to get or create calendar event:`, error?.message || error);
     return null;
   }
 }
@@ -236,12 +199,8 @@ export function generateAddToCalendarLink(data: {
 
 /**
  * Encode event ID for Google Calendar public link
- * This is a simplified version - Google uses base64-like encoding
  */
 function encodeEventId(eventId: string, calendarId: string): string {
-  // Google Calendar uses a special encoding for event IDs in public links
-  // For now, return the event ID directly - Google Calendar will handle it
-  // In production, you might need proper base64 encoding
   return Buffer.from(`${eventId} ${calendarId}`).toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
