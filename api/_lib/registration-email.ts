@@ -1,4 +1,5 @@
 import type { StoredAnswer } from './registration-form.js';
+import { generateAddToCalendarLink } from './google-calendar.js';
 
 export type RegistrationEmailEvent = {
   slug: string;
@@ -7,6 +8,7 @@ export type RegistrationEmailEvent = {
   event_end: string | null;
   location_text: string | null;
   is_online: boolean;
+  link_url?: string | null; // Meeting link
 };
 
 function parseTimestamp(value: string | null): Date | null {
@@ -63,6 +65,18 @@ export function buildRegistrationEmailVariables(
   answers: StoredAnswer[],
   siteUrl: string,
 ): Record<string, string> {
+  // Generate Google Calendar "Add to Calendar" link
+  const calendarLink = event.event_start && event.event_end
+    ? generateAddToCalendarLink({
+        title: event.title,
+        description: `You're registered for ${event.title}. We look forward to seeing you there!`,
+        startTime: event.event_start,
+        endTime: event.event_end,
+        meetingLink: event.is_online ? event.link_url : null,
+        location: event.is_online ? 'Online' : event.location_text,
+      })
+    : '';
+
   return {
     eventName: event.title,
     eventDate: formatEventDate(event.event_start),
@@ -71,5 +85,7 @@ export function buildRegistrationEmailVariables(
     eventFormat: event.is_online ? 'Online' : 'In person',
     eventUrl: `${siteUrl.replace(/\/+$/, '')}/events/${event.slug}`,
     registrationAnswers: formatRegistrationAnswers(answers),
+    calendarLink, // Google Calendar "Add to Calendar" link
+    meetingLink: event.is_online && event.link_url ? event.link_url : '',
   };
 }

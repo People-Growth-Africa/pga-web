@@ -988,13 +988,14 @@ export async function findEventForRegistration(slug: string): Promise<{
   event_end: string | null;
   location_text: string | null;
   is_online: boolean;
+  link_url: string | null;
   registration_form: unknown | null;
 } | null> {
   return queryOne(
     `SELECT slug, title, status,
             ${isoTimestamp('posts', 'event_start')} AS event_start,
             ${isoTimestamp('posts', 'event_end')} AS event_end,
-            location_text, is_online, registration_form
+            location_text, is_online, link_url, registration_form
        FROM posts WHERE slug = $1 AND type = 'event'`,
     [slug],
   );

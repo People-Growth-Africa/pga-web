@@ -387,47 +387,30 @@ export default function EventRegistrationModal({
     setError(leadFailureMessage(result.failure));
   };
 
-  const downloadCalendarFile = () => {
-    const icsDate = event.isoDate.replace(/-/g, '');
-    
-    // Build description with meeting link if available
-    let description = `${event.subtitle}\\n\\nSpeaker: ${event.speaker.name}, ${event.speaker.title}`;
-    
-    // Add meeting link to description if this is an online event and link exists
-    if (event.format === 'Online' && event.linkUrl) {
-      description += `\\n\\nJoin the meeting:\\n${event.linkUrl}`;
-    }
-    
-    // Set LOCATION field - use meeting link for online events, otherwise use format
-    const location = event.format === 'Online' && event.linkUrl 
-      ? event.linkUrl 
-      : event.format;
-    
-    const icsContent = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//People Growth Africa//Events//EN',
-      'CALSCALE:GREGORIAN',
-      'METHOD:REQUEST',
-      'BEGIN:VEVENT',
-      `SUMMARY:${event.title}`,
-      `DESCRIPTION:${description}`,
-      `LOCATION:${location}`,
-      `DTSTART:${icsDate}T140000Z`,
-      `DTEND:${icsDate}T153000Z`,
-      'STATUS:CONFIRMED',
-      'END:VEVENT',
-      'END:VCALENDAR',
-    ].join('\r\n');
+  const getGoogleCalendarLink = () => {
+    // Generate Google Calendar "Add to Calendar" link
+    const formatDate = (isoString: string) => {
+      return isoString.replace(/[-:]/g, '').split('.')[0] + 'Z';
+    };
 
-    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${event.slug}.ics`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const startDate = formatDate(event.isoDate + 'T14:00:00.000Z'); // Using event time
+    const endDate = formatDate(event.isoDate + 'T15:30:00.000Z'); // Default 1.5 hours
+
+    let description = `${event.subtitle}\n\nSpeaker: ${event.speaker.name}, ${event.speaker.title}`;
+    if (event.linkUrl && event.format === 'Online') {
+      description += `\n\nJoin the meeting: ${event.linkUrl}`;
+    }
+
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: event.title,
+      dates: `${startDate}/${endDate}`,
+      details: description,
+      location: event.linkUrl || event.format,
+      ctz: 'Africa/Lagos',
+    });
+
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
   };
 
   const emailAnswer =
@@ -577,16 +560,33 @@ export default function EventRegistrationModal({
                   <div><strong>Schedule:</strong> {event.date} at {event.time}</div>
                   <div><strong>Platform:</strong> {event.format}</div>
                   <div><strong>Speaker:</strong> {event.speaker.name} ({event.speaker.title})</div>
+                  {event.linkUrl && event.format === 'Online' && (
+                    <div>
+                      <strong>Meeting Link:</strong>{' '}
+                      <a
+                        href={event.linkUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-deep-green underline decoration-brand-green/50 underline-offset-2 transition-colors hover:text-terracotta"
+                      >
+                        Join Meeting
+                      </a>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={downloadCalendarFile}
-                    className="px-6 py-2.5 bg-deep-green text-white text-xs font-semibold rounded-full hover:bg-brand-green transition-all"
+                  <a
+                    href={getGoogleCalendarLink()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-6 py-2.5 bg-deep-green text-white text-xs font-semibold rounded-full hover:bg-brand-green transition-all inline-flex items-center gap-2"
                   >
-                    Add to calendar (.ics)
-                  </button>
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/>
+                    </svg>
+                    Add to Google Calendar
+                  </a>
                   <button
                     type="button"
                     onClick={() => void requestClose()}

@@ -121,10 +121,17 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateId, EmailTemplateConte
     subject: 'Registration confirmed: {{eventName}}',
     preheader: 'Your place is saved for {{eventName}}.',
     heading: 'Your place is saved',
-    paragraphs: ['Hi {{name}}, your registration for {{eventName}} is confirmed.', 'Our team will email your joining link before the session. If you have a question in the meantime, reply to this message.'],
+    paragraphs: [
+      'Hi {{name}}, your registration for {{eventName}} is confirmed.',
+      '{{#if meetingLink}}Join the meeting: {{meetingLink}}{{/if}}',
+      'Add this event to your calendar using the button below, and we will send reminders as the date approaches.',
+    ],
     notes: ['If you did not register for this event, you can ignore this message.'],
-    actionLabel: 'See all events',
-    actionUrl: 'https://www.peoplegrowthafrica.com/events',
+    actionLabel: 'Add to Google Calendar',
+    actionUrl: '{{calendarLink}}',
+    links: [
+      { label: 'See all events', url: 'https://www.peoplegrowthafrica.com/events' },
+    ],
   },
   lead_notification: {
     ...buttonDefaults,
