@@ -36,6 +36,9 @@ export interface EventItem {
   price: string;
   featured?: boolean;
   status: 'upcoming' | 'ongoing' | 'completed';
+  /** Meeting link (e.g., Zoom, Google Meet, Teams) for online events */
+  linkUrl?: string | null;
+  linkLabel?: string | null;
 }
 
 export const eventCategories = [

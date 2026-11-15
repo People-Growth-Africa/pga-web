@@ -389,6 +389,20 @@ export default function EventRegistrationModal({
 
   const downloadCalendarFile = () => {
     const icsDate = event.isoDate.replace(/-/g, '');
+    
+    // Build description with meeting link if available
+    let description = `${event.subtitle}\\n\\nSpeaker: ${event.speaker.name}, ${event.speaker.title}`;
+    
+    // Add meeting link to description if this is an online event and link exists
+    if (event.format === 'Online' && event.linkUrl) {
+      description += `\\n\\nJoin the meeting:\\n${event.linkUrl}`;
+    }
+    
+    // Set LOCATION field - use meeting link for online events, otherwise use format
+    const location = event.format === 'Online' && event.linkUrl 
+      ? event.linkUrl 
+      : event.format;
+    
     const icsContent = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
@@ -397,8 +411,8 @@ export default function EventRegistrationModal({
       'METHOD:REQUEST',
       'BEGIN:VEVENT',
       `SUMMARY:${event.title}`,
-      `DESCRIPTION:${event.subtitle}\\n\\nSpeaker: ${event.speaker.name}, ${event.speaker.title}`,
-      `LOCATION:${event.format}`,
+      `DESCRIPTION:${description}`,
+      `LOCATION:${location}`,
       `DTSTART:${icsDate}T140000Z`,
       `DTEND:${icsDate}T153000Z`,
       'STATUS:CONFIRMED',
