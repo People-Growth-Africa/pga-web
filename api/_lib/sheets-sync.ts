@@ -96,6 +96,62 @@ async function appendRow(sheetName: string, values: any[]): Promise<boolean> {
 }
 
 /**
+ * Find and clear a row by ID in a Google Sheet
+ */
+async function clearRowById(sheetName: string, id: string, columnCount: number): Promise<boolean> {
+  const sheets = getGoogleSheetsClient();
+  const config = getConfig();
+
+  if (!sheets || !config) {
+    console.warn(`[Sheets] Skipping clear row in ${sheetName} - not configured`);
+    return false;
+  }
+
+  try {
+    // First, get all data to find the row with matching ID
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.spreadsheetId,
+      range: `${sheetName}!A:A`, // Get all IDs in column A
+    });
+
+    const rows = response.data.values || [];
+    
+    // Find the row index (1-based) where the ID matches
+    let rowIndex = -1;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (row && row.length > 0 && row[0] === id) {
+        rowIndex = i + 1; // Convert to 1-based index
+        break;
+      }
+    }
+
+    if (rowIndex === -1) {
+      console.log(`[Sheets] ID ${id} not found in ${sheetName}, nothing to clear`);
+      return false;
+    }
+
+    // Clear the entire row by setting all cells to empty strings
+    const emptyValues = Array(columnCount).fill('');
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId,
+      range: `${sheetName}!A${rowIndex}:${String.fromCharCode(64 + columnCount)}${rowIndex}`,
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: [emptyValues],
+      },
+    });
+
+    console.log(`[Sheets] Successfully cleared row ${rowIndex} (ID: ${id}) in ${sheetName}`);
+    return true;
+  } catch (error: any) {
+    console.error(`[Sheets] Failed to clear row in ${sheetName}:`, error?.message || error);
+    return false;
+  }
+}
+
+
+/**
  * Sync event registration to Google Sheets (new format - event_registrations table)
  */
 export async function syncEventRegistration(data: {
@@ -275,4 +331,34 @@ export async function syncEnquiry(data: {
   ];
 
   return appendRow('Enquiries', values);
+}
+
+/**
+ * Clear a registration row from Google Sheets by ID
+ */
+export async function syncRegistrationDeletion(data: {
+  id: string;
+}) {
+  // Event Registrations has 12 columns (A through L)
+  return clearRowById('Event Registrations', data.id, 12);
+}
+
+/**
+ * Clear a consultation booking row from Google Sheets by ID
+ */
+export async function syncConsultationDeletion(data: {
+  id: string;
+}) {
+  // Consultation Bookings has 14 columns
+  return clearRowById('Consultation Bookings', data.id, 14);
+}
+
+/**
+ * Clear an enquiry row from Google Sheets by ID
+ */
+export async function syncEnquiryDeletion(data: {
+  id: string;
+}) {
+  // Enquiries has 8 columns
+  return clearRowById('Enquiries', data.id, 8);
 }
