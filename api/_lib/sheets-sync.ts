@@ -141,14 +141,17 @@ export async function syncRegistration(data: {
   // Skip basic fields (name, email, phone) from questions/answers since they have their own columns
   const skipQuestionIds = ['name', 'email', 'phone', 'full_name', 'fullName'];
 
-  // Format answers JSON into clean Questions and Answers columns
-  let questionsText = '';
-  let answersText = '';
+  // The 4 specific questions we're looking for
+  const targetQuestions = {
+    'How did you hear about this event?': '',
+    'What is your primary area of interest in agriculture?': '',
+    'Which of the following topics would you like to see covered during the event?': '',
+    'How many years of experience do you have in the agricultural sector?': ''
+  };
 
   if (data.answers && typeof data.answers === 'object') {
     try {
       const answersObj = data.answers as Record<string, any>;
-      const formattedQA: Array<{ question: string; answer: string }> = [];
 
       Object.entries(answersObj).forEach(([key, value]) => {
         // Check if this is a structured question object
@@ -179,26 +182,14 @@ export async function syncRegistration(data: {
             }
           }
 
-          if (question && answer) {
-            formattedQA.push({ question, answer });
+          // Match the question to our target questions
+          if (question in targetQuestions) {
+            targetQuestions[question as keyof typeof targetQuestions] = answer;
           }
         }
       });
-
-      // Format as numbered lists
-      if (formattedQA.length > 0) {
-        questionsText = formattedQA
-          .map((qa, index) => `${index + 1}. ${qa.question}`)
-          .join('\n');
-        
-        answersText = formattedQA
-          .map((qa, index) => `${index + 1}. ${qa.answer}`)
-          .join('\n');
-      }
     } catch (error) {
       console.error('[Sheets] Failed to parse answers:', error);
-      questionsText = '';
-      answersText = '';
     }
   }
 
@@ -211,8 +202,10 @@ export async function syncRegistration(data: {
     data.phone,
     data.organization || '',
     data.notes || '',
-    questionsText, // Clean questions column
-    answersText,   // Clean answers column
+    targetQuestions['How did you hear about this event?'],
+    targetQuestions['What is your primary area of interest in agriculture?'],
+    targetQuestions['Which of the following topics would you like to see covered during the event?'],
+    targetQuestions['How many years of experience do you have in the agricultural sector?']
   ];
 
   return appendRow('Event Registrations', values);
@@ -279,6 +272,58 @@ export async function syncEnquiry(data: {
     data.subject,
     data.message,
     data.source,
+  ];
+
+  return appendRow('Enquiries', values);
+}
+
+/**
+ * Mark a registration as deleted in Google Sheets
+ * Appends a deletion record to track when items are removed
+ */
+export async function syncRegistrationDeletion(data: {
+  id: string;
+  deletedAt: Date;
+}) {
+  const values = [
+    data.id,
+    data.deletedAt.toISOString(),
+    'DELETED',
+    '', '', '', '', '', '', '', '', '' // Empty columns to match registration structure
+  ];
+
+  return appendRow('Event Registrations', values);
+}
+
+/**
+ * Mark a consultation booking as deleted in Google Sheets
+ */
+export async function syncConsultationDeletion(data: {
+  id: string;
+  deletedAt: Date;
+}) {
+  const values = [
+    data.id,
+    data.deletedAt.toISOString(),
+    'DELETED',
+    '', '', '', '', '', '', '', '', '', '', '' // Empty columns to match booking structure
+  ];
+
+  return appendRow('Consultation Bookings', values);
+}
+
+/**
+ * Mark an enquiry as deleted in Google Sheets
+ */
+export async function syncEnquiryDeletion(data: {
+  id: string;
+  deletedAt: Date;
+}) {
+  const values = [
+    data.id,
+    data.deletedAt.toISOString(),
+    'DELETED',
+    '', '', '', '', '' // Empty columns to match enquiry structure
   ];
 
   return appendRow('Enquiries', values);
