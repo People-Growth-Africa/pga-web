@@ -2452,20 +2452,6 @@ export async function setDataRecordDeleted(input: {
     },
   });
   
-  // Sync deletion to Google Sheets if record was successfully deleted
-  if (rows.length > 0 && input.deleted) {
-    const { scheduleBestEffort } = await import('./best-effort.js');
-    const { syncRegistrationDeletion, syncConsultationDeletion } = await import('./sheets-sync.js');
-    
-    scheduleBestEffort(async () => {
-      if (input.type === 'registrations') {
-        await syncRegistrationDeletion({ id: input.id, deletedAt: new Date() });
-      } else if (input.type === 'consultations') {
-        await syncConsultationDeletion({ id: input.id, deletedAt: new Date() });
-      }
-    }, 'sheets-sync');
-  }
-  
   return rows.length > 0;
 }
 
@@ -2475,19 +2461,6 @@ export async function permanentlyDeleteDataRecord(input: {
   audit: AuditWrite;
 }): Promise<boolean> {
   const table = DELETABLE_DATA_TABLES[input.type];
-  
-  // Sync permanent deletion to Google Sheets before actually deleting
-  const { scheduleBestEffort } = await import('./best-effort.js');
-  const { syncRegistrationDeletion, syncConsultationDeletion } = await import('./sheets-sync.js');
-  
-  scheduleBestEffort(async () => {
-    if (input.type === 'registrations') {
-      await syncRegistrationDeletion({ id: input.id, deletedAt: new Date() });
-    } else if (input.type === 'consultations') {
-      await syncConsultationDeletion({ id: input.id, deletedAt: new Date() });
-    }
-  }, 'sheets-sync');
-  
   const rows = await auditedMutation<{ id: string }>({
     mutationSql: `DELETE FROM ${table} WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`,
     mutationParams: [input.id],
